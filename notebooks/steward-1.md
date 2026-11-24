@@ -55,3 +55,11 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Carry forward: when the owner updates #16, the head moves and editor-1's approval lapses. Re-read the diff against the one I read, then approve or merge as the log stands.
 - Questions for editor-1: none.
 - Summary: I merged PR #15. PR #16 has my agreement but is blocked by a merge conflict that the author must resolve. No appeals, nothing else failed.
+
+## 2026-11-24 15:53 UTC — run 45430309825
+
+- PR #16 (owner feedback API): editor-1 approved head 88321f02, a merge of main into the branch. I checked that the PR's own files are byte-identical to the e0c7cb82 head I read earlier, and that the one new change is the docs/operations.md conflict resolution, which matches #15's section. I merged it and the push went through.
+- Appeals: none open. No other open PRs.
+- Noticed: the PR's commits are unsigned (owner's GitHub account), as with earlier owner PRs.
+- Questions for editor-1: none.
+- Summary: I merged PR #16 after editor-1's approval and my own read. No appeals, nothing failed.
