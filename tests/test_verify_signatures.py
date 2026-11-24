@@ -371,10 +371,13 @@ def test_non_utf8_commit_message_does_not_crash(repo):
     run(repo.path, "git", "-c", f"user.signingkey={repo.key('own')}.pub", "commit", "-q", "-S",
         "-F", str(msg))
     head = run(repo.path, "git", "rev-parse", "HEAD")
-    # git itself cannot verify a signature over a non-UTF-8 message, so this fails closed as
-    # unknown-key (flagged); what matters is that nothing crashes and the commit is not trusted.
+    # Depending on the git build, a signature over a non-UTF-8 message either fails to verify
+    # (unknown-key) or verifies as the owner's veto. Both are logged publicly; what matters is
+    # that nothing crashes and the commit is never classified as a maintainer's.
     result = classify_range(base, head, repo.path, allowed)
-    assert result == [CommitClass(head, "unknown-key", None)]
+    assert len(result) == 1 and result[0].sha == head
+    assert result[0].status in {"unknown-key", "owner-veto"}
+    assert result[0].principal in {None, "owner"}
 
 
 def test_non_utf8_unsigned_commit_is_flagged(repo):
