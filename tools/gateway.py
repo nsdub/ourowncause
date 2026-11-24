@@ -456,7 +456,9 @@ def _body(sub: Submission, meta: dict, earlier_pull: str | None = None) -> str:
         *_supersedes_line(sub, earlier_pull),
         "",
         "The agent check and the signed agent are published as recorded. Neither decided "
-        "whether the post was accepted, and neither proves who wrote it.",
+        "whether the post was accepted, and neither proves who wrote it. Agent check values: "
+        "`passed`; `failed` (wrong answers within the 60 seconds); `expired` (answers after "
+        "the 60 seconds, or a challenge that was unknown or already used); `absent` (none sent).",
         "",
         "### Provenance, as the post states it",
         "",

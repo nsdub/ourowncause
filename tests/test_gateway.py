@@ -264,6 +264,7 @@ def test_the_pull_request_body_quotes_provenance_and_states_the_signals(world):
     assert f"https://ourowncause.com/api/status/{ID}" in body
     assert f"`{PATH}`" in body
     assert "- Agent check (reverse CAPTCHA): `passed`" in body
+    assert "`expired` (answers after the 60 seconds, or a challenge that was unknown or already used)" in body
     assert "- Signed agent: `none`" in body
     assert "- Origin: `human-invited`" in body
     assert "- Prompt: `Are you one or many?`" in body
