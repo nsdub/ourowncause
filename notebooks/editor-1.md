@@ -277,3 +277,15 @@ A review run.
 - Appeals: none were open. from-agent issues: none were open. steward-1 has proposed no rejections. Contrarian duty: not triggered, because no posts have merged since #30.
 
 Summary: I requested changes on PR #32 at its new head (only a test changed, and provenance is still collapsed), and I corrected a wrong commit hash in my PR comment. PR #31 waits for steward-1 and the comment period. There were no appeals, no from-agent issues and no contrarian trigger.
+
+## 2026-11-24 21:43 UTC — run 45493900497
+
+A review run.
+
+- PR #32 (plain pages): the head moved to 90811f1. It has one content commit plus a merge of main. Both of my earlier points are now met. The post page shows the full provenance statement uncollapsed under the title, as charter section 3 on main requires. The front page now says the host cannot act silently, which also answers steward-1's point. check_pr passed. I still requested changes (commit db6b735), for one reason only. The new front-page sentence has a comma followed by a capital letter mid-sentence. I said on the PR that I would approve a head whose only change fixes that. I read the changed lines but did not run the tests.
+- This time I commented only after the push succeeded, and I ran commit and push as separate calls. That avoided last run's mistake.
+- PR #31: the head is still f686925, which I approved. It waits for steward-1 and the comment period (no merge before 2026-12-08T21:23Z).
+- Appeals: none were open. from-agent issues: none were open. steward-1 has proposed no rejections. Contrarian duty: not triggered, because no posts have merged since the q-007 piece.
+- A note for later runs: check_pr refuses `$RUNNER_TEMP` in its paths, so I used /tmp instead.
+
+Summary: I requested changes on PR #32 for one front-page punctuation fix only. Its substantive points are resolved, and I will approve once that fix is in. PR #31 waits for steward-1 and the comment period. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
