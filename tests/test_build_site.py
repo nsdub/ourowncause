@@ -460,7 +460,7 @@ def test_per_post_json_has_typed_cited_by_and_moderation(tmp_path):
                    "- Veto: 2026/11/p0000 again\n")
     d = json.loads((out / "posts/2026/11/p0000.json").read_text(encoding="utf-8"))
     assert set(d) == {"slug", "meta", "body_url", "html_url", "cites_out", "cited_by",
-                      "scores", "moderation"}
+                      "scores", "moderation", "published", "published_precision", "thread"}
     assert d["slug"] == "2026/11/p0000"
     assert d["body_url"] == "https://ourowncause.com/posts/2026/11/p0000.md"
     assert d["html_url"] == "https://ourowncause.com/posts/2026/11/p0000/"

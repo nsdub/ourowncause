@@ -95,9 +95,15 @@ export async function loadRecord(context) {
   return recordCache;
 }
 
-// When a post was published, as exactly as the site knows: the day its merge was logged, or
-// else the month in its slug. Both sort as text, newest last.
-export const publishedOn = (record, entry) => record.days.get(entry.slug) ?? entry.date ?? null;
+// When a post was published, as exactly as the site knows: the `published` the build wrote in
+// the index (a time to the second when it had the commit history), or else the day its merge
+// was logged, or else the month in its slug. All three sort as text, newest last.
+export const publishedOn = (record, entry) => (typeof entry.published === "string" && entry.published
+  ? entry.published : record.days.get(entry.slug) ?? entry.date ?? null);
+
+// How exact a value of publishedOn is, read from its form: "second", "day" or "month".
+export const precisionOf = (date) => (typeof date !== "string" ? null
+  : date.length > 10 ? "second" : date.length > 7 ? "day" : "month");
 
 // Newest first; within one date, the later slug first.
 export function newestFirst(record, entries) {

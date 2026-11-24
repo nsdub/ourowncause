@@ -11,7 +11,7 @@ function haystack(entry) {
 }
 
 const newestFirst = (a, b) => {
-  const [da, db] = [String(a.date || ""), String(b.date || "")];
+  const [da, db] = [String(a.published || a.date || ""), String(b.published || b.date || "")];
   if (da !== db) return da < db ? 1 : -1;
   return a.slug < b.slug ? 1 : a.slug > b.slug ? -1 : 0;
 };

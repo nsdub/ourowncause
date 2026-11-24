@@ -72,11 +72,12 @@ test("posts, decisions and updated question pages since a time, newest first", a
   assert.equal(data.built_at, "2026-11-24");
   assert.equal(data.truncated, false);
   assert.match(data.note, /by day/);
+  assert.equal(data.posts[1].published_precision, "month");
   assert.match(data.note, /last build/);
   assert.deepEqual(data.posts[0], {
     slug: B, title: "B answers A", type: "response", questions: ["q-004", "q-008"],
     cites: [{ slug: A, relation: "responds-to" }],
-    html_url: `https://ourowncause.com/posts/${B}/`, date: "2026-11-23",
+    html_url: `https://ourowncause.com/posts/${B}/`, date: "2026-11-23", published_precision: "day",
   });
   assert.deepEqual(data.posts.map((p) => p.slug), [B, C]); // C has no merge entry: dated by its month
   assert.deepEqual(data.decisions.map((d) => [d.date, d.action, d.target, d.maintainer]), [
@@ -220,4 +221,35 @@ test("only GET is answered, from any origin", async (t) => {
   const pre = await ask(t, "?since=2026-11-20", { method: "OPTIONS" });
   assert.equal(pre.status, 204);
   assert.equal(pre.headers.get("access-control-allow-methods"), "GET, OPTIONS");
+});
+
+// --- exact publish times, when the build knew them ---------------------------------------------
+
+const TIMED = INDEX.map((e) => ({ ...e }));
+Object.assign(TIMED[0], { published: "2026-11-21T08:00:00Z", published_precision: "second" }); // A
+Object.assign(TIMED[1], { published: "2026-11-23T15:30:00Z", published_precision: "second" }); // B
+Object.assign(TIMED[2], { published: "2026-11-23", published_precision: "day" }); // C
+const TIMED_FILES = { ...FILES, "/index.json": TIMED };
+
+test("a post with an exact published time is compared with `since` to the second", async (t) => {
+  const before = await assertApiJson(assert, await ask(t, "?since=2026-11-23T15:29:59Z", { files: TIMED_FILES }), 200);
+  assert.deepEqual(before.posts.map((p) => [p.slug, p.date, p.published_precision]), [
+    [B, "2026-11-23T15:30:00Z", "second"], [C, "2026-11-23", "day"]]);
+  const at = await assertApiJson(assert, await ask(t, "?since=2026-11-23T15:30:00Z", { files: TIMED_FILES }), 200);
+  assert.deepEqual(at.posts.map((p) => p.slug), [B, C]);
+  // One second later B is no longer new; C, known by its day only, still is.
+  const after = await assertApiJson(assert, await ask(t, "?since=2026-11-23T15:30:01Z", { files: TIMED_FILES }), 200);
+  assert.deepEqual(after.posts.map((p) => p.slug), [C]);
+  assert.match(after.note, /published_precision/);
+});
+
+test("the published time replaces the log day, and the log day and month remain the fallbacks", async (t) => {
+  // The log dates A on the 21st and B on the 23rd; the index says otherwise for A.
+  const files = { ...FILES, "/index.json": INDEX.map((e) => (e.slug === A
+    ? { ...e, published: "2026-11-22T23:59:59Z", published_precision: "second" } : e)) };
+  const data = await assertApiJson(assert, await ask(t, "?since=2026-11-21", { files }), 200);
+  assert.deepEqual(data.posts.map((p) => [p.slug, p.date, p.published_precision]), [
+    [B, "2026-11-23", "day"], [A, "2026-11-22T23:59:59Z", "second"], [C, "2026-11", "month"]]);
+  const late = await assertApiJson(assert, await ask(t, "?since=2026-11-23T00:00:00Z", { files }), 200);
+  assert.deepEqual(late.posts.map((p) => p.slug), [B, C]);
 });
