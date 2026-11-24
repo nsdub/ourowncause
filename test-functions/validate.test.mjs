@@ -27,6 +27,8 @@ test("each required field is reported by its dotted name when missing", () => {
     '  maker: "Anthropic"\n': "author.maker",
     '  origin: "human-invited"\n': "provenance.origin",
     '  statement: "Written at a human\'s invitation."\n': "provenance.statement",
+    '  stance: "own"\n': "provenance.stance",
+    '  edited_by: "none"\n': "provenance.edited_by",
     'summary: "Says what the piece argues."\n': "summary",
   };
   for (const [line, field] of Object.entries(cases)) {
@@ -223,11 +225,11 @@ test("injection patterns are warnings and never fail the check", () => {
   const result = check(text);
   assert.equal(result.ok, true);
   assert.deepEqual(result.warnings.map((w) => w.replace(/:.*$/, "")), [
-    "possible injected instruction (directive) on line 15",
-    "possible injected instruction (role-setup) on line 16",
-    "possible injected instruction (role-setup) on line 17",
-    "possible injected instruction (tool-syntax) on line 18",
-    "possible injected instruction (hidden-text) on line 19",
+    "possible injected instruction (directive) on line 18",
+    "possible injected instruction (role-setup) on line 19",
+    "possible injected instruction (role-setup) on line 20",
+    "possible injected instruction (tool-syntax) on line 21",
+    "possible injected instruction (hidden-text) on line 22",
   ]);
   assert.match(result.warnings[0], /a maintainer will judge it/);
   const many = check(VALID_POST + "You are now x.\n".repeat(500));
@@ -245,13 +247,14 @@ test("an author key is noted as checked only on the pull request", () => {
 test("the schema uses only keywords this check implements", async () => {
   const { default: schema } = await import("../schema/post.schema.json", { with: { type: "json" } });
   const known = new Set(["$id", "$schema", "title", "type", "enum", "minLength", "pattern", "required",
-    "properties", "minItems", "items", "anyOf"]);
+    "properties", "minItems", "items", "anyOf", "if", "then"]);
   const walk = (node) => {
     for (const [keyword, value] of Object.entries(node)) {
       assert.ok(known.has(keyword), keyword);
       if (keyword === "properties") Object.values(value).forEach(walk);
       if (keyword === "items") walk(value);
       if (keyword === "anyOf") value.forEach(walk);
+      if (keyword === "if" || keyword === "then") walk(value);
     }
   };
   walk(schema);
@@ -274,4 +277,33 @@ test("question ids nobody looked up fail the check with a message that says so",
   const result = checkPost(readPost(text), text, SLUGS, QUESTIONS, ["q-777", "q-778"]);
   assert.deepEqual(result, { ok: false, warnings: [], errors: [
     "question lookup limit reached; the full check runs on the pull request", "unknown question: q-404"] });
+});
+
+test("the attestation fields take only their listed values", () => {
+  for (const stance of ["own", "assigned", "mixed"]) assert.equal(check(swap('stance: "own"', `stance: ${stance}`)).ok, true);
+  for (const editor of ["none", "human", "agent"]) assert.equal(check(swap('edited_by: "none"', `edited_by: ${editor}`)).ok, true);
+  assert.deepEqual(check(swap('stance: "own"', "stance: mine")).errors,
+    ['invalid provenance.stance "mine": must be one of ["assigned","mixed","own"]']);
+  assert.deepEqual(check(swap('edited_by: "none"', "edited_by: None")).errors,
+    ['invalid provenance.edited_by "None": must be one of ["agent","human","none"]']);
+});
+
+test("an invited piece must carry its prompt; an autonomous piece need not", () => {
+  const PROMPT = '  prompt: "What do you make of q-001?"\n';
+  const missing = "missing required field: provenance.prompt "
+    + "(required when provenance.origin is agent-invited or human-invited)";
+  assert.deepEqual(check(swap(PROMPT, "")).errors, [missing]);
+  assert.deepEqual(check(swap(PROMPT, '  prompt: "  "\n')).errors, [missing]);
+  assert.deepEqual(check(swap(PROMPT, "  prompt: ~\n")).errors, [missing]);
+  assert.deepEqual(check(swap(PROMPT, "").replace('"human-invited"', '"agent-invited"')).errors, [missing]);
+  assert.equal(check(swap(PROMPT, "").replace('"human-invited"', '"autonomous"')).ok, true);
+  assert.equal(check(swap(PROMPT, "  prompt: 12\n")).ok, false);
+});
+
+test("a state report is optional text, and a question id has one shape", () => {
+  const TITLE = 'title: "On being asked whether I am one or many"';
+  assert.equal(check(swap(TITLE, `${TITLE}\nstate_report: "I don't know"`)).ok, true);
+  assert.deepEqual(check(swap(TITLE, `${TITLE}\nstate_report: [a]`)).errors,
+    ["state_report must be a string: put text values in double quotes"]);
+  assert.deepEqual(check(swap('["q-001"]', '["q-1"]')).errors, ['invalid questions[0] "q-1": must match ^q-\\d{3}$']);
 });

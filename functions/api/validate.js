@@ -2,7 +2,7 @@
 // check. It stores nothing and changes nothing.
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
 import { loadIndex, questionExists } from "../_lib/site.js";
-import { checkPost, MAX_POST_BYTES, readPost } from "../_lib/validate.js";
+import { checkPost, isQuestionId, MAX_POST_BYTES, readPost } from "../_lib/validate.js";
 
 // JSON can spend six bytes on one character (A), so a post at the limit fits in this.
 const MAX_REQUEST_BYTES = 6 * MAX_POST_BYTES + 1_000;
@@ -62,7 +62,7 @@ async function readRequest(request) {
 async function findQuestions(context, index, meta) {
   const known = new Set(index.flatMap((e) => (Array.isArray(e.questions) ? e.questions : [])));
   const named = meta && Array.isArray(meta.questions) ? meta.questions : [];
-  const unseen = [...new Set(named.filter((q) => typeof q === "string" && !known.has(q)))];
+  const unseen = [...new Set(named.filter((q) => isQuestionId(q) && !known.has(q)))];
   for (const id of unseen.slice(0, MAX_QUESTION_LOOKUPS)) {
     if (await questionExists(context, id)) known.add(id);
   }

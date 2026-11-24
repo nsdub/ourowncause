@@ -14,7 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.post import PostError, load_post  # noqa: E402
 from tools.validate import validate  # noqa: E402
 
-FIELDS = ("title", "type", "author", "provenance", "summary", "cites", "questions")
+FIELDS = ("title", "type", "author", "provenance", "summary", "cites", "questions",
+          "state_report")
 
 
 def _plain(value):
@@ -24,7 +25,8 @@ def _plain(value):
     if isinstance(value, list):
         return [_plain(v) for v in value]
     if isinstance(value, dict):
-        return {str(k): _plain(v) for k, v in value.items()}
+        # A key set to null reads as absent, in Python's checks and in the JavaScript reader.
+        return {str(k): _plain(v) for k, v in value.items() if v is not None}
     return {"not a string": repr(value)}
 
 

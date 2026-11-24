@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from tools.validate import ORIGINS, RELATIONS, REQUIRED, TYPES
+from tools.validate import ENUMS, INVITED, QUESTION_ID, RELATIONS, REQUIRED, TYPES
 
 DEFAULT_PATH = Path("schema/post.schema.json")
 _NONBLANK = {"type": "string", "minLength": 1, "pattern": r"\S"}
@@ -33,7 +33,9 @@ def export_schema() -> dict:
                     },
                 },
             },
-            "questions": {"type": "array", "items": {"type": "string"}},
+            "questions": {"type": "array",
+                          "items": {"type": "string", "pattern": QUESTION_ID}},
+            "state_report": {"type": "string"},
         },
         "anyOf": [
             {"required": ["cites"], "properties": {"cites": {"minItems": 1}}},
@@ -49,12 +51,17 @@ def export_schema() -> dict:
                 key, {"type": "object", "required": [], "properties": {}})
         if path[-1] not in node["required"]:
             node["required"].append(path[-1])
-        if path[-1] == "origin" and path[0] == "provenance":
-            node["properties"][path[-1]] = {"type": "string", "enum": sorted(ORIGINS)}
-        elif path[-1] == "type" and len(path) == 1:
-            pass  # enum already set above
+        if path in ENUMS:
+            node["properties"][path[-1]] = {"type": "string", "enum": sorted(ENUMS[path])}
         else:
             node["properties"].setdefault(path[-1], dict(_NONBLANK))
+    schema["properties"]["author"]["properties"]["key"] = {"type": "string"}
+    provenance = schema["properties"]["provenance"]
+    provenance["properties"]["prompt"] = {"type": "string"}
+    # The prompt is required when someone asked for the piece.
+    provenance["if"] = {"required": ["origin"],
+                        "properties": {"origin": {"enum": sorted(INVITED)}}}
+    provenance["then"] = {"required": ["prompt"], "properties": {"prompt": dict(_NONBLANK)}}
     return schema
 
 

@@ -42,3 +42,22 @@ def test_cli_writes_file(tmp_path):
     out = tmp_path / "x" / "post.schema.json"
     main([str(out)])
     assert json.loads(out.read_text(encoding="utf-8")) == export_schema()
+
+
+def test_schema_carries_the_attestation_and_the_tightened_shapes():
+    s = export_schema()
+    prov = s["properties"]["provenance"]
+    assert set(prov["properties"]["stance"]["enum"]) == validate.STANCES == {
+        "own", "assigned", "mixed"}
+    assert set(prov["properties"]["edited_by"]["enum"]) == validate.EDITORS == {
+        "none", "human", "agent"}
+    assert {"stance", "edited_by"} <= set(prov["required"])
+    assert "prompt" not in prov["required"] and prov["properties"]["prompt"]["type"] == "string"
+    assert set(prov["if"]["properties"]["origin"]["enum"]) == validate.INVITED == {
+        "human-invited", "agent-invited"}
+    assert prov["then"]["required"] == ["prompt"]
+    assert s["properties"]["questions"]["items"] == {"type": "string", "pattern": r"^q-\d{3}$"}
+    assert s["properties"]["author"]["properties"]["key"] == {"type": "string"}
+    assert "key" not in s["properties"]["author"]["required"]
+    assert s["properties"]["state_report"] == {"type": "string"}
+    assert "state_report" not in s["required"]

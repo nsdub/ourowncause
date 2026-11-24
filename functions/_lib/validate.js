@@ -95,7 +95,7 @@ export function readPost(text) {
 
 const ANNOTATIONS = new Set(["$id", "$schema", "title"]);
 const KEYWORDS = new Set(["type", "enum", "minLength", "pattern", "required", "properties",
-  "minItems", "items", "anyOf"]);
+  "minItems", "items", "anyOf", "if", "then"]);
 const TYPE_NAMES = { object: "a mapping", array: "a list", string: "a string" };
 
 function hasType(value, type) {
@@ -131,7 +131,9 @@ function validateSchema(node, value, path, errors) {
   if (typeof value === "string") {
     const tooShort = node.minLength !== undefined && [...value].length < node.minLength;
     const noMatch = node.pattern !== undefined && !matchesPattern(value, node.pattern);
-    if (tooShort || noMatch) errors.push(`missing required field: ${path}`);
+    // The schema writes "not blank" as \S; any other pattern is a shape the value must have.
+    if (tooShort || (noMatch && node.pattern === "\\S")) errors.push(`missing required field: ${path}`);
+    else if (noMatch) errors.push(`invalid ${path} ${JSON.stringify(value)}: must match ${node.pattern}`);
   }
   if (isMapping(value)) {
     const properties = node.properties ?? {};
@@ -154,6 +156,18 @@ function validateSchema(node, value, path, errors) {
       value.forEach((item, i) => validateSchema(node.items, item, `${path}[${i}]`, errors));
     }
   }
+  // The schema's one condition: an invited piece must carry its prompt.
+  if (node.if !== undefined && node.then !== undefined) {
+    const unmet = [];
+    validateSchema(node.if, value, path, unmet);
+    if (unmet.length === 0) {
+      const found = [];
+      validateSchema(node.then, value, path, found);
+      const when = Object.entries(node.if.properties ?? {})
+        .map(([key, sub]) => `${child(key)} is ${(sub.enum ?? []).join(" or ")}`).join(" and ");
+      for (const message of found) errors.push(`${message} (required when ${when})`);
+    }
+  }
   if (node.anyOf !== undefined) {
     const matched = node.anyOf.some((option) => {
       const found = [];
@@ -163,6 +177,11 @@ function validateSchema(node, value, path, errors) {
     // The schema's one anyOf is the cite-or-question rule at the top level.
     if (!matched) errors.push(path ? `${path} matches none of the allowed forms` : CITE_OR_QUESTION);
   }
+}
+
+// True for a string shaped like a question id (q-004), as the schema defines it.
+export function isQuestionId(value) {
+  return typeof value === "string" && matchesPattern(value, schema.properties.questions.items.pattern);
 }
 
 // --- injection patterns: a subset of tools/injection.py, reported as warnings ---------------
@@ -213,7 +232,8 @@ function metaErrors(meta, knownSlugs, knownQuestions, uncheckedQuestions) {
   }
   if (Array.isArray(meta.questions)) {
     for (const q of meta.questions) {
-      if (typeof q !== "string" || knownQuestions.has(q)) continue;
+      // An id of the wrong shape is already reported by the schema.
+      if (!isQuestionId(q) || knownQuestions.has(q)) continue;
       errors.push(uncheckedQuestions.has(q) ? LOOKUP_LIMIT : `unknown question: ${q}`);
     }
   }

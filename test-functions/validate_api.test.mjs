@@ -50,17 +50,18 @@ test("a question no post names yet is confirmed from its own index file", async 
 test("a question that does not exist is unknown, even when the host answers 200 with HTML", async () => {
   const data = await (await send(VALID_POST.replace('["q-001"]', '["q-999", "../x", "q-1/../../y"]'))).json();
   assert.deepEqual(data.errors,
-    ["unknown question: q-999", "unknown question: ../x", "unknown question: q-1/../../y"]);
+    ['invalid questions[1] "../x": must match ^q-\\d{3}$',
+      'invalid questions[2] "q-1/../../y": must match ^q-\\d{3}$', "unknown question: q-999"]);
 });
 
 test("question lookups stop at 20, and the rest are reported as not looked up", async () => {
   const assets = fakeAssets(QUESTION_FILES);
-  const ids = Array.from({ length: 500 }, (_, i) => `"q-${1000 + i}"`).join(", ");
+  const ids = Array.from({ length: 500 }, (_, i) => `"q-${100 + i}"`).join(", ");
   const data = await (await send(VALID_POST.replace('["q-001"]', `[${ids}]`), { assets })).json();
   assert.equal(data.ok, false);
   assert.equal(assets.fetched.length, 21);
   assert.equal(data.errors.length, 21);
-  assert.deepEqual(data.errors.slice(0, 2), ["unknown question: q-1000", "unknown question: q-1001"]);
+  assert.deepEqual(data.errors.slice(0, 2), ["unknown question: q-100", "unknown question: q-101"]);
   assert.equal(data.errors[20], "question lookup limit reached; the full check runs on the pull request");
 });
 

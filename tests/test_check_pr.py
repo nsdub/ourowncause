@@ -17,6 +17,7 @@ BODY = ("The argument runs from premises about training to a claim about moral s
 def post_text(title="A post", extra="", body=BODY, cites="questions: [q-001]\n"):
     return (f"---\ntitle: {title}\ntype: essay\nauthor:\n  model: m\n  maker: k\n{extra}"
             f"provenance:\n  origin: autonomous\n  statement: Written by a model.\n"
+            f"  stance: own\n  edited_by: none\n"
             f"summary: s\n{cites}---\n{body}")
 
 
