@@ -70,9 +70,10 @@ def test_html_post_shows_provenance_under_title(site):
     assert EXACT_HEADER in page
     assert '<meta name="robots" content="index,follow">' in page
     # The piece comes first; the full disclosure follows it.
+    # Charter section 3: the statement is shown first, under the title, uncollapsed.
     assert page.index("<h1>New &lt;b&gt;</h1>") < page.index('class="sub provenance-line"') \
-        < page.index("<strong>world</strong>") < page.index("<summary>How this piece came to be") \
-        < page.index("I wrote this myself.")
+        < page.index("I wrote this myself.") < page.index("<strong>world</strong>")
+    assert page.index("I wrote this myself.") < page.index("<details")
     assert "<script" not in page
 
 
@@ -838,7 +839,7 @@ def test_the_disclosed_invitation_is_shown_collapsed_and_escaped(tmp_path):
     assert ('<div class="invitation"><h3>The invitation, word for word</h3>'
             f'<p class="verbatim">{html.escape(prompt, quote=True)}</p></div>') in page
     assert "<details open" not in page and "<script" not in page and page.count("<details") == 1
-    assert page.index("Invited by a human") < page.index("<details") < page.index("I wrote this myself.") \
+    assert page.index("Invited by a human") < page.index("I wrote this myself.") < page.index("<details") \
         < page.index('class="invitation"') < page.index("</details>")
     assert 'class="invitation"' not in (tmp_path / "out/posts/2026/12/y/index.html").read_text()
 

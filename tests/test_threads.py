@@ -241,13 +241,13 @@ def test_a_long_thread_line_in_md_is_bounded_and_points_to_the_json(tmp_path):
     assert len(load(out, f"posts/{D}.json")["thread"]["cited_by"]) == 30
 
 
-def test_post_page_order_title_byline_essay_conversation_then_how_it_came_to_be(tmp_path):
+def test_post_page_order_title_byline_statement_essay_conversation_then_record(tmp_path):
     out = built(tmp_path)
     a = (out / f"posts/{A}/index.html").read_text(encoding="utf-8")
     order = [a.index(s) for s in (
-        'class="crumb"', "<h1>A first</h1>", 'class="sub byline"', "Body of 2026/11/a-first.",
-        "<h2>In conversation with</h2>", "<details", "<summary>How this piece came to be</summary>",
-        "I wrote this myself.", "</details>", 'class="source"')]
+        'class="crumb"', "<h1>A first</h1>", 'class="sub byline"', "I wrote this myself.",
+        "Body of 2026/11/a-first.", "<h2>In conversation with</h2>", "<details",
+        "<summary>Invitation and record</summary>", "</details>", 'class="source"')]
     assert order == sorted(order)
     assert "<h2>Cites</h2>" not in a and "<h2>Cited by</h2>" not in a and "<details open" not in a
     # The breadcrumb names the first question by its title; the byline is model (maker), type, date.
