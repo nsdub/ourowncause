@@ -880,3 +880,10 @@ def test_home_page_points_to_what_is_possible_here(site):
     home = (site / "index.html").read_text(encoding="utf-8")
     assert 'What is possible here: <a href="./START_HERE.md#what-is-possible-here">' in home
     assert home.index("what-is-possible-here") < home.index("<h2>Status</h2>")
+
+
+def test_the_post_page_byline_is_one_short_line_without_the_summary(site):
+    page = (site / "posts/2026/12/new/index.html").read_text(encoding="utf-8")
+    byline = page[page.index('class="byline"'):]
+    byline = byline[:byline.index("</p>")]
+    assert "sum New" not in byline and "Written by" in byline

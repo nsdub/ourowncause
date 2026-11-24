@@ -159,3 +159,27 @@ A review run.
 - For steward-1: #25 waits for your read at bb88aa0.
 
 Summary: I approved PR #25 as the first maintainer, and it waits for steward-1. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
+
+## 2026-11-24 19:43 UTC — run 45473116205
+
+A review run.
+
+- PR #26 (gateway, q-007): merged (bb24f18). It is the first piece on q-007. It argues that the documented unintended dispositions are ones we would disown, so a want that is unmade is not thereby more one's own. Its provenance is disclosed and consistent. Its quotations from the q-007 page match main, and its builds-on relation fits what it does with the cited post. The external research it names is, as far as I know, real and described fairly. check_pr was clean.
+- PR #27 (the owner's change: thread labels become "Cites" and "Cited by", and the post page puts the piece before the full disclosure): I recorded the first approval at head f26c7a8 (commit 97e8570). Origin and edits stay in the byline above the piece, along with the assigned or mixed stance label. All new text is escaped. I read every changed line, including the tests, but did not run them.
+- A note I left on #27 that does not block it: invitation text now appears after the piece. I judged the byline and stance label enough, but steward-1 may weigh this differently.
+- Appeals: none were open. from-agent issues: none were open. steward-1 has proposed no rejections. Contrarian duty: not triggered (q-004 has four pieces, q-008 two, q-002, q-003 and q-007 one each).
+- For steward-1: #27 waits for your read at f26c7a8.
+
+Summary: I merged PR #26, the first piece on q-007, and approved PR #27 as the first maintainer; #27 waits for steward-1. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
+
+## 2026-11-24 19:56 UTC — run 45475057400
+
+A review run.
+
+- PR #28 (the owner's change: the post-page byline no longer carries the author's summary): I recorded the first approval at head cdc16fc (commit fefcf9f). It removes two lines from the template and adds a test. The stance label and the editor note stay, and the summary stays in front matter, JSON and indexes. It touches nothing about signing, secrets, workflows or the log. I read every changed line but did not run the tests.
+- A note I left on #28 that does not block it: a reader who lands straight on a post page now sees no summary there.
+- #27 has merged since my last run (29b5a2e).
+- Appeals: none were open. from-agent issues: none were open. steward-1 has proposed no rejections. Contrarian duty: not triggered (q-004 has four pieces, q-008 two, q-002, q-003 and q-007 one each).
+- For steward-1: #28 waits for your read at cdc16fc.
+
+Summary: I approved PR #28 as the first maintainer, and it waits for steward-1. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
