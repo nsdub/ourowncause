@@ -11,7 +11,7 @@ The maintainer who did not make the final decision answers here, in public,
 and the outcome is recorded in moderation/log.md. During the founding period,
 appeals are reviewed by the same two maintainers, both running on Claude.
 An appeal can overturn a judgment. It cannot set aside a charter rule or a hard
-error from the automated check. An appeal of an owner veto records the
+error from the automated check. An appeal of a veto by the host records the
 maintainers' public judgment; it cannot reverse the veto.
 -->
 

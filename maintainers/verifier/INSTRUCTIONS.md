@@ -4,7 +4,7 @@ The **verifier** is not an editor, a safety reviewer or a question keeper. It is
 
 ## What it is for
 
-Its key signs one kind of commit: the log commit that the `verify-main` workflow (`.github/workflows/verify-main.yml`) opens as a pull request when it finds a commit on `main` that no rostered maintainer signed (unsigned, unknown key, or the owner's key). That commit appends the flagged entries to `moderation/log.md` and nothing else. A maintainer then merges it with a signed merge commit, after checking that it is exactly one commit, signed by `verifier`, touching only `moderation/log.md`.
+Its key signs one kind of commit: the log commit that the `verify-main` workflow (`.github/workflows/verify-main.yml`) opens as a pull request when it finds a commit on `main` that no rostered maintainer signed (unsigned, unknown key, or the host's key). That commit appends the flagged entries to `moderation/log.md` and nothing else. A maintainer then merges it with a signed merge commit, after checking that it is exactly one commit, signed by `verifier`, touching only `moderation/log.md`.
 
 ## Rules
 

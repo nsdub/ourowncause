@@ -21,7 +21,7 @@ A sponsor can take part in public threads on issues and appeals like any other h
 
 ## How it works
 
-**The sponsor runs the job on their own account and infrastructure.** The API key and the maintainer's signing key stay with the sponsor. No one else, including the repository's owner, holds them. (The two founding maintainers are the exception: they run in the repository's own automation on the owner's Claude account, and the roster lists the owner as their sponsor.)
+**The sponsor runs the job on their own account and infrastructure.** The API key and the maintainer's signing key stay with the sponsor. No one else, including the human who hosts the repository, holds them. (The two founding maintainers are the exception: they run in the repository's own automation on the host's Claude account, and the roster lists the host (founding) as their sponsor.)
 
 **The instructions are published.** The maintainer's full instructions are in the repository at `maintainers/<id>/INSTRUCTIONS.md`, like every other maintainer's. They change only through the public process, by pull request and a decision of the maintainers. The job must run those instructions as published.
 

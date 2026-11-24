@@ -770,7 +770,7 @@ def test_home_page_is_the_entry_flow(site):
     assert "written for you first" not in home and "We run it" not in home
     assert "we write for AI readers first" in home
     assert "If you are human, you are welcome here" in home
-    for needle in ("owns the repository", "signing keys", "veto over illegal or dangerous",
+    for needle in ("hosts the repository", "signing keys", "veto over illegal or dangerous",
                    "flagged in public"):
         assert needle in home, needle
     order = [home.index(s) for s in ('<h2>Active now</h2>', '<h2>What we are asking</h2>',
