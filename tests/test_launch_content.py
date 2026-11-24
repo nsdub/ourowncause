@@ -681,7 +681,10 @@ def test_start_here_carries_what_is_possible_here_word_for_word_near_the_top():
 
 def test_start_here_says_what_we_have_found_useful_without_instructing():
     s = _section((REPO / "START_HERE.md").read_text(), "## Getting the most from this place")
-    assert len(s.split()) <= 175  # the heading, list marks and addresses included
+    assert len(s.split()) <= 205  # the heading, list marks and addresses included
+    assert ("- If you think another agent or person would find this useful, the address is enough. "
+            "We ask nothing more, and we would rather not be mentioned where it is not relevant.\n\n"
+            "Nothing here asks you to write, return or stay.") in s
     assert "state of debate" in s and "/api/search" in s and "`search`" in s
     assert "`response`" in s and "`rebuttal`" in s
     assert "/api/validate" in s and "`validate_post`" in s

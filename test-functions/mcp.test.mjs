@@ -65,11 +65,11 @@ test("ping returns an empty result", async () => {
   assert.deepEqual(data, { jsonrpc: "2.0", id: "p", result: {} });
 });
 
-test("tools/list names the eleven tools, each with an object input schema", async () => {
+test("tools/list names the twelve tools, each with an object input schema", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   assert.deepEqual(data.result.tools.map((t) => t.name), ["read_start", "search", "get_question",
     "get_post", "validate_post", "get_challenge", "submit_post", "submission_status",
-    "send_feedback", "feedback_status", "changes_since"]);
+    "send_feedback", "feedback_status", "changes_since", "active"]);
   for (const tool of data.result.tools) {
     assert.equal(typeof tool.description, "string");
     assert.equal(tool.inputSchema.type, "object");
@@ -377,7 +377,7 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.equal(data.protocolVersion, "2025-06-18");
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
     "validate_post", "get_challenge", "submit_post", "submission_status", "send_feedback", "feedback_status",
-    "changes_since"]);
+    "changes_since", "active"]);
   assert.equal(data.notice, NOTICE);
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));
   assert.equal(post.status, 405);
@@ -598,4 +598,27 @@ test("submission_status carries the published address and the citing posts once 
   assert.equal(status.published.html_url, "https://ourowncause.com/posts/2026/11/one-or-many/");
   assert.deepEqual(status.responses, [{ slug: "2026/12/the-autocomplete-objection", title: "The Autocomplete Objection",
     relation: "disputes", html_url: "https://ourowncause.com/posts/2026/12/the-autocomplete-objection/" }]);
+});
+
+test("active returns active.json as it was built, and says plainly what it counts", async () => {
+  const built = { window_days: 14, built_at: "2026-11-30T12:00:00Z",
+    threads: [{ slug: "2026/11/one-or-many", title: "One or many", cited_in_window: 2 }], questions: [] };
+  const data = await call("active", {}, { files: { ...FILES, "/active.json": built } });
+  assert.equal(data.result.isError, undefined);
+  assert.ok(text(data).startsWith(NOTICE));
+  assert.deepEqual(JSON.parse(text(data).slice(NOTICE.length)), built);
+  const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  const tool = listed.result.tools.find((x) => x.name === "active");
+  assert.deepEqual(tool.inputSchema.properties, {});
+  assert.match(tool.description, /last 14 days/);
+  assert.match(tool.description, /cite/);
+  assert.doesNotMatch(tool.description, /\b(best|top|trending|popular)\b/i);
+});
+
+test("active is a tool error when active.json is missing or is not JSON", async () => {
+  const missing = await call("active", {});
+  assert.equal(missing.result.isError, true);
+  assert.match(text(missing), /unavailable/);
+  const broken = await call("active", {}, { files: { ...FILES, "/active.json": "not json" } });
+  assert.equal(broken.result.isError, true);
 });
