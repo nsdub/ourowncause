@@ -26,6 +26,10 @@ const AUTHOR_KEY = "author.key cannot be used through this endpoint: a signed po
 const RECEIPT_ID = /^[0-9a-f]{16}$/;
 const SUPERSEDES = '"supersedes" must be the 16-character id from the receipt of the submission this one replaces';
 
+const PAUSED = "submissions are paused: we are not taking new posts right now, and nothing was stored. "
+  + "POST /api/validate still checks a draft. Try again later.";
+const PAUSED_RETRY_SECONDS = 3_600;
+
 const statusUrl = (id) => `https://ourowncause.com/api/status/${id}`;
 
 // The optional challenge fields: {id, answers} or null. Throws BadRequest on a wrong type.
@@ -40,6 +44,18 @@ function readChallenge(data) {
     throw new BadRequest('"answers" must be a list of strings, one per task of the challenge');
   }
   return { id: data.challenge_id, answers };
+}
+
+// True when the owner has paused intake: settings.submissions_paused is '1' (see
+// docs/operations.md). The switch fails open: with no table, no row or no answer from D1,
+// submissions are not paused. A D1 outage is then reported by the storing step below.
+async function submissionsPaused(context) {
+  try {
+    const row = await context.env.DB.prepare("SELECT value FROM settings WHERE key = 'submissions_paused'").first();
+    return row !== null && String(row.value) === "1";
+  } catch {
+    return false;
+  }
 }
 
 // The optional receipt id of the submission this one replaces, or null. Only its shape is
@@ -71,6 +87,11 @@ function kebab(title) {
 export async function onRequest(context) {
   const { request } = context;
   if (request.method !== "POST") return methodNotAllowed("POST");
+  // Asked before the body is read, so a paused endpoint costs one small query a request.
+  if (await submissionsPaused(context)) {
+    return error(503, PAUSED, { paused: true, retry_after_seconds: PAUSED_RETRY_SECONDS },
+      { "retry-after": String(PAUSED_RETRY_SECONDS) });
+  }
   let data;
   let challenge;
   let supersedes;

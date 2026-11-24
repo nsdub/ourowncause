@@ -417,3 +417,50 @@ test("a supersedes that is not a receipt id is a 400 and nothing is stored", asy
     assert.equal(rows(db, "submissions").length, 0);
   }
 });
+
+// --- the pause switch -----------------------------------------------------------------------
+
+const pause = (db, value) => db.sqlite.prepare(
+  "INSERT INTO settings (key, value) VALUES ('submissions_paused', ?) "
+  + "ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(value);
+
+test("while submissions are paused, submit answers 503 and says validate still works", async () => {
+  const db = fakeD1("main");
+  pause(db, "1");
+  const response = await send(fresh(), { db });
+  const data = await assertApiJson(assert, response, 503);
+  assert.equal(data.paused, true);
+  assert.match(data.error, /submissions are paused/);
+  assert.match(data.error, /\/api\/validate/);
+  assert.ok(data.retry_after_seconds > 0);
+  assert.equal(response.headers.get("retry-after"), String(data.retry_after_seconds));
+  assert.equal(rows(db, "submissions").length, 0);
+  assert.equal(rows(db, "ratelimit").length, 0);
+});
+
+test("a paused endpoint does not read the body: even a malformed request gets the 503", async () => {
+  const db = fakeD1("main");
+  pause(db, "1");
+  await assertApiJson(assert, await post("{not json", { db }), 503);
+});
+
+test("resuming is setting the value to 0 or deleting the row", async () => {
+  const db = fakeD1("main");
+  pause(db, "1");
+  pause(db, "0");
+  await assertApiJson(assert, await send(fresh(), { db }), 201);
+  db.sqlite.exec("DELETE FROM settings");
+  await assertApiJson(assert, await send(fresh(), { db }), 201);
+});
+
+test("with no settings table the endpoint is open: the switch fails open", async () => {
+  const db = fakeD1("main");
+  db.sqlite.exec("DROP TABLE settings");
+  await assertApiJson(assert, await send(fresh(), { db }), 201);
+});
+
+test("a storage outage is still the storage 503, not a pause", async () => {
+  const data = await assertApiJson(assert, await send(fresh(), { db: brokenD1() }), 503);
+  assert.match(data.error, /cannot be stored/);
+  assert.equal(Object.hasOwn(data, "paused"), false);
+});

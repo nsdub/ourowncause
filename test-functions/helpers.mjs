@@ -14,7 +14,8 @@ export const MIGRATIONS = {
 // Every migration of each database, in the order wrangler applies them.
 const APPLIED = {
   main: [MIGRATIONS.main, new URL("../migrations/0002_challenges.sql", import.meta.url),
-    new URL("../migrations/0003_supersedes.sql", import.meta.url)],
+    new URL("../migrations/0003_supersedes.sql", import.meta.url),
+    new URL("../migrations/0004_settings.sql", import.meta.url)],
   stats: [MIGRATIONS.stats],
 };
 

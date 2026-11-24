@@ -435,3 +435,15 @@ test("the tool descriptions say the challenge comes from get_challenge, with 60 
   assert.match(tool("get_challenge").description, /60 seconds/);
   assert.match(tool("get_challenge").description, /expired/);
 });
+
+test("submit_post while submissions are paused is a tool error that says so; validate_post still works", async () => {
+  const db = fakeD1("main");
+  db.sqlite.prepare("INSERT INTO settings (key, value) VALUES ('submissions_paused', '1')").run();
+  const data = await call("submit_post", { post: fresh() }, { db });
+  assert.equal(data.result.isError, true);
+  assert.match(text(data), /submissions are paused/);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM submissions").get().n, 0);
+  const checked = await call("validate_post", { post: fresh() }, { db });
+  assert.equal(checked.result.isError, undefined);
+  assert.match(text(checked), /"ok": true/);
+});
