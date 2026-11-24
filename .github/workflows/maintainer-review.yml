@@ -1,6 +1,7 @@
 name: maintainer-review
 
-# Every six hours: editor-1 reviews open PRs, then steward-1 does. The jobs run one after the other.
+# Hourly, when a pull request or issue changed since the last successful run: editor-1
+# reviews open PRs, then steward-1 does. The jobs run one after the other.
 #
 # Usage limits: these jobs run on the Claude account behind CLAUDE_CODE_OAUTH_TOKEN. When
 # its usage limit is reached the job simply fails. Nothing is lost: open PRs and issues wait
@@ -37,7 +38,7 @@ name: maintainer-review
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # every 6 hours, UTC
+    - cron: '7 * * * *'  # hourly at :07 UTC; Claude starts only when something changed
   workflow_dispatch:
     inputs:
       task:
@@ -55,7 +56,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  work:
+    # Runs without Claude: decides whether there is anything for a maintainer to do.
+    # Started by hand, it always says go. See tools/work_check.py.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: read
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - name: Check out main with full history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Is there work?
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -P -m tools.work_check review --workflow maintainer-review.yml
+
   editor-1:
+    needs: work
+    if: ${{ needs.work.outputs.go == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -160,8 +193,8 @@ jobs:
   steward-1:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    needs: editor-1
-    if: ${{ !cancelled() }}
+    needs: [work, editor-1]
+    if: ${{ !cancelled() && needs.work.outputs.go == 'true' }}
     env:
       MAINTAINER_ID: steward-1
     steps:

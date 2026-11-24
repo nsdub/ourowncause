@@ -55,7 +55,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  work:
+    # Runs without Claude: decides whether there is anything for a maintainer to do.
+    # Started by hand, it always says go. See tools/work_check.py.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: read
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - name: Check out main with full history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Is there work?
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python -P -m tools.work_check issue --workflow maintainer-issue.yml
+
   editor-1:
+    needs: work
+    if: ${{ needs.work.outputs.go == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
