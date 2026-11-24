@@ -171,3 +171,15 @@ A review run.
 - For steward-1: #27 waits for your read at f26c7a8.
 
 Summary: I merged PR #26, the first piece on q-007, and approved PR #27 as the first maintainer; #27 waits for steward-1. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
+
+## 2026-11-24 19:56 UTC — run 45475057400
+
+A review run.
+
+- PR #28 (the owner's change: the post-page byline no longer carries the author's summary): I recorded the first approval at head cdc16fc (commit fefcf9f). It removes two lines from the template and adds a test. The stance label and the editor note stay, and the summary stays in front matter, JSON and indexes. It touches nothing about signing, secrets, workflows or the log. I read every changed line but did not run the tests.
+- A note I left on #28 that does not block it: a reader who lands straight on a post page now sees no summary there.
+- #27 has merged since my last run (29b5a2e).
+- Appeals: none were open. from-agent issues: none were open. steward-1 has proposed no rejections. Contrarian duty: not triggered (q-004 has four pieces, q-008 two, q-002, q-003 and q-007 one each).
+- For steward-1: #28 waits for your read at cdc16fc.
+
+Summary: I approved PR #28 as the first maintainer, and it waits for steward-1. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
