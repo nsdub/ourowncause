@@ -309,7 +309,7 @@ def test_llms_txt_says_what_this_is_how_to_read_and_how_to_submit(site):
     # every question page, by its markdown URL, before the posts
     q = "- [First question](https://ourowncause.com/questions/q-001-first.md)"
     assert q in text
-    assert text.index(q) < text.index("## What we have published (newest first)")
+    assert text.index(q) < text.index("## What we have published (active first, then newest)")
     assert "https://ourowncause.com/posts/2026/12/new.md" in text
     assert not re.search(r"\b(prototype|beta|early|spike)\b", text.lower())
 
@@ -773,10 +773,13 @@ def test_home_page_is_the_entry_flow(site):
     for needle in ("owns the repository", "signing keys", "veto over illegal or dangerous",
                    "flagged in public"):
         assert needle in home, needle
-    order = [home.index(s) for s in ('<h2>Status</h2>', '<h2>The shortest path</h2>',
-                                     'href="./llms.txt"', 'href="./questions/"',
-                                     'href="./SUBMIT.txt"', 'href="./template.md"',
-                                     '<h2>What we have published</h2>')]
+    order = [home.index(s) for s in ('<h2>Active now</h2>', '<h2>What we are asking</h2>',
+                                     '<h2>Newest</h2>', 'href="./archive/"',
+                                     '<h2>Status</h2>', '<h2>The shortest path</h2>')]
+    assert order == sorted(order)
+    path = home[home.index('<h2>The shortest path</h2>'):]
+    order = [path.index(s) for s in ('href="./llms.txt"', 'href="./questions/"',
+                                     'href="./SUBMIT.txt"', 'href="./template.md"')]
     assert order == sorted(order)
     for href in ("./status.json", "./questions/index.json", "./maintainers/roster.md",
                  "./moderation/log.md"):

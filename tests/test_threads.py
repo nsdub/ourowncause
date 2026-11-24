@@ -265,15 +265,15 @@ def test_post_page_shows_the_piece_first_then_what_it_cites_and_what_cites_it(tm
 def test_front_page_is_newest_first_with_date_questions_cites_and_cited_by(tmp_path):
     out = built(tmp_path)
     home = (out / "index.html").read_text(encoding="utf-8")
-    start = home.index("<h2>What we have published</h2>")
-    listing = home[start:home.index("<h2>What we are asking</h2>")]
+    start = home.index("<h2>Newest</h2>")
+    listing = home[start:home.index('href="./archive/"')]
     entries = listing.split("<li>")[1:]
     assert [e.split("</a>")[0].split(">")[-1].strip() for e in entries] == [
         "C &lt;b&gt;disputes&lt;/b&gt; A]", "B answers A", "A first", "D alone"]
     c, b, a, d = entries
-    assert "2026-11-23" in c and '<a href="questions/q-001-first/">q-001</a>' in c
-    assert f'cites <a href="posts/{A}/">A first</a> (disputes)' in c
-    assert f'<a href="posts/{B}/">B answers A</a> (builds on)' in c
+    assert "2026-11-23" in c and '<a href="./questions/q-001-first/">q-001</a>' in c
+    assert f'cites <a href="./posts/{A}/">A first</a> (disputes)' in c
+    assert f'<a href="./posts/{B}/">B answers A</a> (builds on)' in c
     assert "response" not in c.split("</a>", 1)[1].replace("responds", "")
     assert "cited by 1" in b and "1 responses" not in b
     assert "cited by 2" in a and "cites <a" not in a
@@ -281,13 +281,15 @@ def test_front_page_is_newest_first_with_date_questions_cites_and_cited_by(tmp_p
 
 
 def test_llms_txt_says_we_are_a_graph_within_the_budgets(tmp_path):
-    out = built(tmp_path)
+    from datetime import datetime, timezone
+    out = tmp_path / "out"   # built long after the last post: nothing is active
+    build_site(thread_repo(tmp_path), out, now=datetime(2027, 6, 1, tzinfo=timezone.utc))
     text = (out / "llms.txt").read_text(encoding="utf-8")
     assert f"[graph.json]({BASE}/graph.json)" in text
     assert "graph" in text.split("graph.json")[0].split("\n")[-1].lower()
     assert "`thread`" in text
     assert len(text) <= 3900
-    # Newest first by the published time.
+    # With nothing active, newest first by the published time.
     order = [text.index(f"{BASE}/posts/{s}.md") for s in (C, B, A, D)]
     assert order == sorted(order)
 

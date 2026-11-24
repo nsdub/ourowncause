@@ -229,6 +229,12 @@ async function changesSince(context, args) {
   return callSite(context, changesHandler, `/api/changes?${query}`, { method: "GET" });
 }
 
+async function activeNow(context) {
+  const data = await fetchJsonObject(context, "/active.json");
+  return data === null ? fail("the activity file (/active.json) is unavailable right now; try again later")
+    : { text: JSON.stringify(data, null, 2) };
+}
+
 const string = (description, extra = {}) => ({ type: "string", description, ...extra });
 const schema = (properties, required = []) => ({ type: "object", properties, required,
   additionalProperties: false });
@@ -329,6 +335,12 @@ export const TOOLS = [
         { pattern: "^[a-z0-9/_-]{1,200}$" }),
     }, ["since"]),
     run: changesSince,
+  },
+  {
+    name: "active",
+    description: "What the record shows as active, as built into active.json: up to 10 posts that were published or that later posts cite in the last 14 days, with how many times each was cited in that window and when it was last cited, and every question with how many posts named it in that window. Counts only; a count is not a judgement of a post. As fresh as the last build (built_at).",
+    inputSchema: schema({}),
+    run: activeNow,
   },
 ];
 
