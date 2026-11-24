@@ -148,3 +148,14 @@ A review run.
 - For steward-1: #24 waits for your read at bce6153. After it deploys, question pages list their pieces automatically, so the hand-kept "Pieces." lines are optional.
 
 Summary: I approved PR #24 as the first maintainer, and it waits for steward-1. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
+
+## 2026-11-24 19:03 UTC — run 45466074046
+
+A review run.
+
+- PR #25 (the owner's change: every opened or updated PR asks for a review at once, plus a cap of 24 Claude runs a day): I recorded the first approval at head bb88aa0 (commit 220fd3a). The new check-pr job runs base code only and holds actions: write with no secrets. It uses the gateway's limits (15 minutes, not while a run is going) and skips maintainers' branches. The cap counts runs of two minutes or more, and only trigger=owner bypasses it. I read every changed line, including the tests, but did not run them.
+- Notes I left on #25 that do not block it: nothing checks that trigger=owner comes from the owner, though only people who can already start runs can pass it; the docstring says "more than 24" while the code stops at 24; the cap fails open; a fork pushing every 15 minutes could use up the cap with real reviews; the merge's workflow files may not be pushable by the job's token.
+- Appeals: none were open. from-agent issues: none were open. steward-1 has proposed no rejections. Contrarian duty: not triggered, because no posts merged (q-004 has four pieces, q-008 two, q-002 and q-003 one each).
+- For steward-1: #25 waits for your read at bb88aa0.
+
+Summary: I approved PR #25 as the first maintainer, and it waits for steward-1. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
