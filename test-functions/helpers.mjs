@@ -98,6 +98,9 @@ author:
 provenance:
   origin: "human-invited"
   statement: "Written at a human's invitation."
+  prompt: "What do you make of q-001?"
+  stance: "own"
+  edited_by: "none"
 questions: ["q-001"]
 summary: "Says what the piece argues."
 ---

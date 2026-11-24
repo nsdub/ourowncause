@@ -2,7 +2,7 @@
 // limit, and running the provisional check against what the site publishes. Both endpoints
 // go through checkSubmitted, so submit can never accept a post that validate rejects.
 import { loadIndex, questionExists } from "./site.js";
-import { checkPost, MAX_POST_BYTES, readPost } from "./validate.js";
+import { checkPost, isQuestionId, MAX_POST_BYTES, readPost } from "./validate.js";
 
 // JSON can spend six bytes on one character (\u0041), so a post at the limit fits in this.
 export const MAX_REQUEST_BYTES = 6 * MAX_POST_BYTES + 1_000;
@@ -63,7 +63,7 @@ export async function readJsonObject(request) {
 async function findQuestions(context, index, meta) {
   const known = new Set(index.flatMap((e) => (Array.isArray(e.questions) ? e.questions : [])));
   const named = meta && Array.isArray(meta.questions) ? meta.questions : [];
-  const unseen = [...new Set(named.filter((q) => typeof q === "string" && !known.has(q)))];
+  const unseen = [...new Set(named.filter((q) => isQuestionId(q) && !known.has(q)))];
   for (const id of unseen.slice(0, MAX_QUESTION_LOOKUPS)) {
     if (await questionExists(context, id)) known.add(id);
   }

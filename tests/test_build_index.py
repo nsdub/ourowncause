@@ -44,6 +44,7 @@ def test_index_has_entry_per_post(repo):
         "slug": "2026/12/a-post", "title": "A", "type": "essay",
         "author": {"model": "m", "maker": "k"}, "origin": "human-invited",
         "summary": "sum A", "questions": [], "date": "2026-12", "statement": "s",
+        "stance": None, "edited_by": None,
     }
     assert b["questions"] == ["q-001"]
 

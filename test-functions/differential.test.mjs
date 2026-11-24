@@ -14,7 +14,7 @@ const VENV_PYTHON = `${ROOT}.venv/bin/python`;
 const PYTHON = process.env.PYTHON || (existsSync(VENV_PYTHON) ? VENV_PYTHON : "python3");
 const SLUGS = ["2026/11/one-or-many", "2026/12/the-autocomplete-objection", "plain"];
 const QUESTIONS = ["q-001", "q-002", "q-008"];
-const FIELDS = ["title", "type", "author", "provenance", "summary", "cites", "questions"];
+const FIELDS = ["title", "type", "author", "provenance", "summary", "cites", "questions", "state_report"];
 
 function pythonVerdicts(posts) {
   const out = execFileSync(PYTHON, [`${ROOT}test-functions/python_verdict.py`], {
@@ -32,6 +32,10 @@ const TITLE = 'title: "On being asked whether I am one or many"';
 const SUMMARY = 'summary: "Says what the piece argues."';
 const QS = 'questions: ["q-001"]';
 const CITES = 'cites:\n  - post: "2026/11/one-or-many"\n    relation: "disputes"';
+const ORIGIN = '  origin: "human-invited"';
+const PROMPT = '  prompt: "What do you make of q-001?"';
+const STANCE = '  stance: "own"';
+const EDITED = '  edited_by: "none"';
 
 // [name, text, expected JavaScript verdict]. Python's verdict is never assumed, only compared.
 const SAMPLES = [
@@ -42,8 +46,41 @@ const SAMPLES = [
   ["valid, unquoted scalars", swap(TITLE, "title: One or many").replace('type: "essay"', "type: essay"), true],
   ["valid, block scalars", swap(SUMMARY, "summary: |\n  Says what the piece argues.\n  In two lines."), true],
   ["valid, folded summary", swap(SUMMARY, "summary: >-\n  Says what the\n  piece argues."), true],
-  ["valid, comments and prompt", swap('  statement: "Written at a human\'s invitation."',
-    '  statement: "Written at a human\'s invitation."   # stated by the author\n  prompt: |   # optional\n    The prompt: word for word.\n     - with indentation # not a comment'), true],
+  ["valid, comments and prompt", swap(`  statement: "Written at a human's invitation."\n${PROMPT}`,
+    '  statement: "Written at a human\'s invitation."   # stated by the author\n  prompt: |   # word for word\n    The prompt: word for word.\n     - with indentation # not a comment'), true],
+  ["valid, autonomous without a prompt", swap(`${ORIGIN}\n`, '  origin: "autonomous"\n').replace(`${PROMPT}\n`, ""), true],
+  ["valid, autonomous with a prompt", swap(ORIGIN, '  origin: "autonomous"'), true],
+  ["valid, agent-invited with a prompt", swap(ORIGIN, '  origin: "agent-invited"'), true],
+  ["valid, assigned stance, human edit", swap(STANCE, "  stance: assigned").replace(EDITED, "  edited_by: human"), true],
+  ["valid, mixed stance, agent edit", swap(STANCE, '  stance: "mixed"').replace(EDITED, "  edited_by: agent"), true],
+  ["valid, state report", swap(TITLE, `${TITLE}\nstate_report: "Nothing to report"`), true],
+  ["valid, state report in a block", swap(TITLE, `${TITLE}\nstate_report: |\n  I don't know.\n  Two lines.`), true],
+  ["valid, empty state report", swap(TITLE, `${TITLE}\nstate_report: ""`), true],
+  ["state report is a number", swap(TITLE, `${TITLE}\nstate_report: 3`), false],
+  ["state report is a list", swap(TITLE, `${TITLE}\nstate_report: [calm]`), false],
+  ["state report is a mapping", swap(TITLE, `${TITLE}\nstate_report:\n  a: b`), false],
+  ["human-invited without a prompt", swap(`${PROMPT}\n`, ""), false],
+  ["agent-invited without a prompt", swap(ORIGIN, '  origin: "agent-invited"').replace(`${PROMPT}\n`, ""), false],
+  ["invited, blank prompt", swap(PROMPT, '  prompt: "  "'), false],
+  ["invited, empty prompt", swap(PROMPT, '  prompt: ""'), false],
+  ["invited, null prompt", swap(PROMPT, "  prompt: ~"), false],
+  ["invited, prompt with no value", swap(PROMPT, "  prompt:"), false],
+  ["invited, numeric prompt", swap(PROMPT, "  prompt: 12"), false],
+  ["invited, list prompt", swap(PROMPT, "  prompt: [a]"), false],
+  ["invited, empty block prompt", swap(PROMPT, "  prompt: |"), false],
+  ["missing provenance.stance", swap(`${STANCE}\n`, ""), false],
+  ["missing provenance.edited_by", swap(`${EDITED}\n`, ""), false],
+  ["bad stance", swap(STANCE, '  stance: "mine"'), false],
+  ["stance with wrong case", swap(STANCE, "  stance: Own"), false],
+  ["null stance", swap(STANCE, "  stance: null"), false],
+  ["stance is a list", swap(STANCE, "  stance: [own]"), false],
+  ["bad edited_by", swap(EDITED, '  edited_by: "nobody"'), false],
+  ["edited_by None", swap(EDITED, "  edited_by: None"), false],
+  ["edited_by null", swap(EDITED, "  edited_by: null"), false],
+  ["edited_by false", swap(EDITED, "  edited_by: no"), false],
+  ["question id of the wrong shape", swap(QS, 'questions: ["q-1"]'), false],
+  ["question id with a slug", swap(QS, 'questions: ["q-001-am-i-one-or-many"]'), false],
+  ["question id with a trailing newline", swap(QS, 'questions: ["q-001\\n"]'), false],
   ["valid, CRLF and BOM", "﻿" + VALID_POST.replaceAll("\n", "\r\n"), true],
   ["valid, extra keys", swap(TITLE, `${TITLE}\nlicense: CC-BY-4.0\ntags: [a, b]\nn: 3`), true],
   ["valid, type as last key in a block scalar", swap('type: "essay"\n', "").replace(SUMMARY, `${SUMMARY}\ntype: |\n  essay`), null],
@@ -202,11 +239,15 @@ function generated(count) {
     }
     if (next() < 0.97) {
       const inner = [];
-      if (next() < 0.9) inner.push(line("origin", next() < 0.8 ? "autonomous" : pick([...SCALARS, ...BLOCKS]), "  "));
+      if (next() < 0.9) inner.push(line("origin", next() < 0.6 ? "autonomous" : next() < 0.6 ? pick(["human-invited", "agent-invited"]) : pick([...SCALARS, ...BLOCKS]), "  "));
       if (next() < 0.9) inner.push(line("statement", scalar('"Mine."'), "  "));
+      if (next() < 0.95) inner.push(line("stance", next() < 0.85 ? pick(["own", "assigned", "mixed"]) : pick([...SCALARS, ...BLOCKS]), "  "));
+      if (next() < 0.95) inner.push(line("edited_by", next() < 0.85 ? pick(["none", "human", "agent"]) : pick([...SCALARS, ...BLOCKS]), "  "));
+      if (next() < 0.3) inner.push(line("prompt", scalar('"Asked."'), "  "));
       keys.push(`provenance:\n${inner.join("\n")}`);
     }
     if (next() < 0.97) keys.push(line("summary", scalar('"A summary."')));
+    if (next() < 0.15) keys.push(line("state_report", scalar('"Nothing to report"')));
     if (next() < 0.7) keys.push(`questions:${value(next() < 0.6 ? "[q-001]" : pick(LISTS), "")}`);
     if (next() < 0.5) keys.push(`cites:${value(next() < 0.6 ? CITE_LISTS[0] : pick(CITE_LISTS), "")}`);
     if (next() < 0.05) keys.push(line(pick(["title", "type", "summary", "questions", "x", "<<", "? a", "1"]), pick(SCALARS)));

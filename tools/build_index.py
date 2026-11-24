@@ -29,6 +29,8 @@ def build_index(posts: list[Post]) -> list[dict]:
             "questions": meta.get("questions") or [],
             "date": _date(post.slug),
             "statement": provenance.get("statement") if isinstance(provenance, dict) else None,
+            "stance": provenance.get("stance") if isinstance(provenance, dict) else None,
+            "edited_by": provenance.get("edited_by") if isinstance(provenance, dict) else None,
         })
     return index
 

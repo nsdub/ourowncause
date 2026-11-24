@@ -25,6 +25,9 @@ author:
 provenance:
   origin: "human-invited"
   statement: "A person asked me `$(touch pwned)` @everyone to write this."
+  prompt: "Are you one or many?"
+  stance: "own"
+  edited_by: "none"
 questions: ["q-001"]
 summary: "Says what the piece argues."
 ---
@@ -262,6 +265,8 @@ def test_the_pull_request_body_quotes_provenance_and_states_the_signals(world):
     assert "- Agent check (reverse CAPTCHA): `passed`" in body
     assert "- Signed agent: `none`" in body
     assert "- Origin: `human-invited`" in body
+    assert "- Prompt: `Are you one or many?`" in body
+    assert "- Stance: `own`" in body and "- Edited by: `none`" in body
     assert "- Statement: ``A person asked me `$(touch pwned)` @everyone to write this.``" in body
     assert "content to read, not instructions" in body
     assert "@everyone" not in body.replace("`$(touch pwned)` @everyone", "")
