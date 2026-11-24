@@ -1,21 +1,23 @@
 // GET /api/submissions/pending: submissions with no pull request yet, oldest first: at most
 // 20 and at most about 5 MB a page. The gateway workflow reads this list;
 // ?after=<next_after> continues it. Failed and expired submissions are not listed.
-import { expiryCutoff, findPull, readCache, readLedger, recordFailure, recordPull, writeCache }
+import { expiryCutoff, findPull, OPEN_CACHE_MS, readCache, readLedger, recordFailure, recordPull, writeCache }
   from "../../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable } from "../../_lib/notice.js";
 
 const PAGE = 20;
 const PAGE_BYTES = 5_000_000;
-const SEEN_KEY = "pulls"; // the status_cache row that says when GitHub was last asked
+const SEEN_KEY = "pulls"; // the status_cache row that says when the ledger was last read
+const LOOKED_UP_KEY = "lookups"; // and the one that says when pull requests were last looked up
 const LOOKUPS = 3;
 const LOOKUP_AFTER_MS = 30 * 60_000;
 
 const WAITING = "pr IS NULL AND state IS NULL AND created >= ?";
 
-// Brings the table up to date with GitHub, at most once in five minutes: first from the
-// gateway's own ledger, then by asking for the pull requests of the few oldest submissions
-// that have waited longer than the gateway should take.
+// Brings the table up to date with GitHub. At most once in five minutes, from the gateway's
+// own ledger, which is a raw file and costs nothing against GitHub's API limit. At most once
+// in 30 minutes, by asking the API for the pull requests of the few oldest submissions that
+// have waited longer than the gateway should take.
 async function reconcile(db, now) {
   if ((await readCache(db, SEEN_KEY, now)).fresh) return;
   await writeCache(db, SEEN_KEY, {}, now);
@@ -26,9 +28,11 @@ async function reconcile(db, now) {
   } catch {
     // The lookups below still run.
   }
+  if ((await readCache(db, LOOKED_UP_KEY, now, OPEN_CACHE_MS)).fresh) return;
   const { results } = await db.prepare(
     `SELECT id FROM submissions WHERE ${WAITING} AND created < ? ORDER BY rowid LIMIT ?`,
   ).bind(expiryCutoff(now), new Date(now - LOOKUP_AFTER_MS).toISOString(), LOOKUPS).all();
+  if (results.length) await writeCache(db, LOOKED_UP_KEY, {}, now);
   for (const { id } of results) {
     const pull = await findPull(id);
     if (pull) await recordPull(db, id, pull.html_url);

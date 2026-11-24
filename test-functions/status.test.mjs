@@ -100,16 +100,79 @@ test("a pull request from a fork with the same branch name is not the submission
   assert.equal(db.sqlite.prepare("SELECT pr FROM submissions").get().pr, null);
 });
 
-test("the lookup is cached for five minutes", async (t) => {
+const ageCache = (db, ms) => db.sqlite.prepare("UPDATE status_cache SET fetched = ?")
+  .run(new Date(Date.now() - ms).toISOString());
+
+test("an open pull request is looked up again after 30 minutes, not before", async (t) => {
   const calls = stubFetch(t, github([pull()], [bot(CHECK)]));
   const db = seeded();
   const first = await (await get(db)).json();
   const second = await (await get(db)).json();
   assert.deepEqual(second, first);
   assert.equal(calls.length, 2);
-  db.sqlite.prepare("UPDATE status_cache SET fetched = ?").run(new Date(Date.now() - 301_000).toISOString());
+  ageCache(db, 29 * 60_000);
+  await get(db);
+  assert.equal(calls.length, 2);
+  ageCache(db, 31 * 60_000);
   await get(db);
   assert.equal(calls.length, 4);
+});
+
+test("a queued submission is looked up again after five minutes", async (t) => {
+  const calls = stubFetch(t, github([]));
+  const db = seeded();
+  await get(db);
+  await get(db);
+  assert.equal(calls.length, 1);
+  ageCache(db, 301_000);
+  await get(db);
+  assert.equal(calls.length, 2);
+});
+
+test("a merged or closed pull request is read once and never asked about again", async (t) => {
+  for (const [over, state] of [[{ state: "closed", merged_at: "2026-11-23T12:00:00Z" }, "merged"], [{ state: "closed" }, "closed"]]) {
+    const calls = stubFetch(t, github([pull(over)], [bot(CHECK)]));
+    const db = seeded();
+    const first = await assertApiJson(assert, await get(db), 200);
+    assert.equal(first.state, state);
+    const asked = calls.length;
+    ageCache(db, 400 * 86_400_000);
+    const later = await assertApiJson(assert, await get(db), 200);
+    assert.deepEqual(later, first);
+    assert.equal(calls.length, asked);
+  }
+});
+
+test("when GitHub cannot be read and the pull request is already recorded, the state is open with it", async (t) => {
+  const url = "https://github.com/nsdub/ourowncause/pull/41";
+  for (const failure of [() => githubJson({ message: "rate limit" }, 403), () => { throw new TypeError("fetch failed"); }]) {
+    stubFetch(t, failure);
+    const db = seeded();
+    db.sqlite.prepare("UPDATE submissions SET pr = ?").run(url);
+    const data = await assertApiJson(assert, await get(db), 200);
+    assert.equal(data.state, "open");
+    assert.equal(data.pr_url, url);
+    assert.equal(data.refreshed, false);
+    assert.match(data.note, /GitHub could not be read/);
+    assert.doesNotMatch(data.note, /No pull request/);
+
+    // A stale "queued" in the cache does not hide the recorded pull request either.
+    const stale = seeded();
+    stubFetch(t, github([]));
+    await get(stale);
+    ageCache(stale, 301_000);
+    stale.sqlite.prepare("UPDATE submissions SET pr = ?").run(url);
+    stubFetch(t, failure);
+    const again = await assertApiJson(assert, await get(stale), 200);
+    assert.equal(again.state, "open");
+    assert.equal(again.pr_url, url);
+  }
+});
+
+test("a fresh answer from GitHub carries no refreshed field", async (t) => {
+  stubFetch(t, github([pull()]));
+  const data = await assertApiJson(assert, await get(seeded()), 200);
+  assert.equal(Object.hasOwn(data, "refreshed"), false);
 });
 
 test("while the repository is not public GitHub answers 404: the state is queued with a note", async (t) => {
@@ -139,12 +202,13 @@ test("when GitHub cannot be reached the last known state is returned with a note
     const db = seeded();
     handler = github([pull()], [bot(CHECK)]);
     await get(db);
-    db.sqlite.prepare("UPDATE status_cache SET fetched = ?").run(new Date(Date.now() - 301_000).toISOString());
+    ageCache(db, 31 * 60_000);
     handler = failure;
     const stale = await assertApiJson(assert, await get(db), 200);
     assert.equal(stale.state, "open");
     assert.equal(stale.check, CHECK);
     assert.match(stale.note, /GitHub could not be read/);
+    assert.equal(stale.refreshed, false);
   }
 });
 

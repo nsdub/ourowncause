@@ -4,7 +4,7 @@ import { onRequest } from "../functions/api/submissions/pending.js";
 import { assertApiJson, brokenD1, fakeContext, fakeD1, githubJson, stubFetch } from "./helpers.mjs";
 
 const API = "https://api.github.com/repos/nsdub/ourowncause";
-const LEDGER = `${API}/contents/state.json?ref=gateway-state`;
+const LEDGER = "https://raw.githubusercontent.com/nsdub/ourowncause/gateway-state/state.json";
 const pullsOf = (n) => `${API}/pulls?head=nsdub%3Agateway%2F${id(n)}&state=all&per_page=10`;
 const id = (n) => n.toString(16).padStart(16, "0");
 const NOW = Date.now();
@@ -25,7 +25,7 @@ const pull = (n, repo = "nsdub/ourowncause") => ({
   number: n, state: "open", html_url: `https://github.com/nsdub/ourowncause/pull/${n}`,
   head: { ref: `gateway/${id(n)}`, repo: { full_name: repo } },
 });
-const ledgerFile = (entries) => githubJson({ encoding: "base64", content: btoa(JSON.stringify(entries)) });
+const ledgerFile = (entries) => githubJson(entries); // the raw file is the JSON itself
 // GitHub as the tests need it: a ledger, and pull requests by submission number.
 const github = ({ ledger = null, pulls = {} } = {}) => (url) => {
   if (url === LEDGER) return ledger === null ? githubJson({ message: "Not Found" }, 404) : ledgerFile(ledger);
@@ -130,21 +130,38 @@ test("with more than 1,000 waiting every one is listed exactly once", async (t) 
   assert.deepEqual(await all(db), Array.from({ length: 1_050 }, (_, i) => id(i + 1)));
 });
 
-test("GitHub is asked at most once in five minutes", async (t) => {
+const ageCache = (db, ms) => db.sqlite.prepare("UPDATE status_cache SET fetched = ?")
+  .run(new Date(Date.now() - ms).toISOString());
+
+test("the ledger is read from raw.githubusercontent.com, at most once in five minutes", async (t) => {
   const calls = stubFetch(t, github());
   const db = seeded(1);
   await get(db);
   await get(db);
-  assert.equal(calls.length, 1);
-  db.sqlite.prepare("UPDATE status_cache SET fetched = ?").run(new Date(Date.now() - 301_000).toISOString());
+  assert.deepEqual(calls, [LEDGER]);
+  assert.ok(calls[0].startsWith("https://raw.githubusercontent.com/"));
+  ageCache(db, 301_000);
   await get(db);
-  assert.equal(calls.length, 2);
+  assert.deepEqual(calls, [LEDGER, LEDGER]);
+});
+
+test("pull requests are looked up through the API at most once in 30 minutes", async (t) => {
+  const calls = stubFetch(t, github());
+  const db = seeded(1, { age: () => 100 });
+  await get(db);
+  assert.deepEqual(calls, [LEDGER, pullsOf(1)]);
+  ageCache(db, 29 * 60_000);
+  await get(db);
+  assert.deepEqual(calls, [LEDGER, pullsOf(1), LEDGER]);
+  ageCache(db, 31 * 60_000);
+  await get(db);
+  assert.deepEqual(calls, [LEDGER, pullsOf(1), LEDGER, LEDGER, pullsOf(1)]);
 });
 
 test("when GitHub cannot be read the list is still served", async (t) => {
   for (const failure of [() => githubJson({ message: "Not Found" }, 404), () => { throw new TypeError("fetch failed"); },
-    () => githubJson({ not: "a file" }), () => githubJson({ content: "!!!not base64" }),
-    () => githubJson({ content: btoa("[1, 2") }), () => githubJson({}, 500)]) {
+    () => githubJson([1, 2]), () => githubJson(null), () => new Response("[1, 2"),
+    () => new Response("<html>"), () => githubJson({}, 500)]) {
     stubFetch(t, failure);
     const data = await assertApiJson(assert, await get(seeded(2, { age: () => 60 })), 200);
     assert.equal(data.pending.length, 2);
