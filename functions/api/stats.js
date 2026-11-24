@@ -2,12 +2,12 @@
 // that reach Functions: the API, the MCP server and /.well-known. Static files (llms.txt,
 // posts, questions, the indexes) are served without Functions and are not counted.
 import { readStats, utcDay } from "../_lib/db.js";
-import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
+import { error, json, methodNotAllowed, unavailable, withReadCors } from "../_lib/notice.js";
 
 const DEFAULT_DAYS = 30;
 const MAX_DAYS = 90;
 
-export async function onRequest(context) {
+async function handle(context) {
   const method = context.request.method;
   if (method !== "GET" && method !== "HEAD") return methodNotAllowed("GET, HEAD");
 
@@ -29,3 +29,5 @@ export async function onRequest(context) {
     return unavailable("usage counts are unavailable right now; try again later");
   }
 }
+
+export const onRequest = withReadCors(handle, "GET, HEAD");

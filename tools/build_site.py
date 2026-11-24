@@ -67,8 +67,11 @@ SAFE_SCHEMES = ("http", "https", "mailto")
 
 # No rule labels *.json. Pages labels a .json file application/json by itself, and a rule here
 # would also apply to the HTML "not found" page that Pages serves for a missing .json path.
+# Everything static is public and needs no credentials, so any origin may read it (agents
+# that run in a browser page included).
 HEADERS_FILE = """/*
   X-Content-Type-Options: nosniff
+  Access-Control-Allow-Origin: *
   Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 /*.md
   Content-Type: text/markdown; charset=utf-8

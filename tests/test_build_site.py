@@ -143,6 +143,8 @@ def test_questions_issues_and_headers(site):
     # rule would also label the HTML "not found" page served for a missing .json path.
     assert "json" not in hdr
     assert "/SUBMIT.txt\n  Content-Type: text/plain; charset=utf-8\n" in hdr
+    # Everything static is public and credential-free, so any origin may read it.
+    assert hdr.startswith("/*\n  X-Content-Type-Options: nosniff\n  Access-Control-Allow-Origin: *\n")
     nav = page.split("</nav>")[0]
     assert '<a href="../../SUBMIT.txt">how to submit</a>' in nav
 

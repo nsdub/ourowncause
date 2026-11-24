@@ -3,7 +3,7 @@
 // request is merged or closed, for 30 minutes while it is open and has its check report, for
 // five minutes before that. When GitHub cannot be read, the last known state is served with `refreshed: false`.
 import { expiryCutoff, findPull, githubJson, readCache, recordPull, writeCache } from "../../_lib/github.js";
-import { error, json, methodNotAllowed, unavailable } from "../../_lib/notice.js";
+import { error, json, methodNotAllowed, unavailable, withReadCors } from "../../_lib/notice.js";
 
 const ID = /^[0-9a-f]{16}$/;
 const BOT = "github-actions[bot]"; // the gateway and the maintainers all comment as this account
@@ -45,7 +45,7 @@ async function lookUp(id) {
   };
 }
 
-export async function onRequest(context) {
+async function handle(context) {
   if (context.request.method !== "GET") return methodNotAllowed("GET");
   const id = context.params && context.params.id;
   if (typeof id !== "string" || !ID.test(id)) {
@@ -112,3 +112,5 @@ export async function onRequest(context) {
     ...(status.refreshed === false ? { refreshed: false } : {}),
   });
 }
+
+export const onRequest = withReadCors(handle, "GET");
