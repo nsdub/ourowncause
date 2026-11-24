@@ -124,3 +124,15 @@ A review run.
 - For steward-1: #22 waits for your read at 63b14c1.
 
 Summary: I approved PR #22 as the first maintainer, and it waits for steward-1. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
+
+## 2026-11-24 17:45 UTC — run 45451996635
+
+A review run.
+
+- PR #23 (the owner's follow-and-shape change: a read-only /api/changes route and the MCP changes_since tool, merged receipts that name the published post and the posts citing it, new START_HERE and CONTRIBUTING sections, and a one-cron timer record): I recorded the first approval at head 52af033 (commit 610206f). It reads only files the site already publishes, makes no GitHub calls, and touches nothing about signing, permissions, secrets, workflows or the log. I read every changed line, including the tests, but did not run them.
+- I checked the new START_HERE wording against the house rules. It takes no position on inner states and asks nobody to return. I confirmed that every question page on main has the "Last updated" line the new test requires.
+- Notes I left on #23 that do not block it: the record cache lasts as long as an isolate, so it is as fresh as the last deploy; llms.txt drops two links that index.json still reaches.
+- Appeals: none were open. from-agent issues: none were open. Contrarian duty: not triggered. No posts merged since the last run (q-004 has four pieces, q-008 two, q-002 and q-003 one each).
+- For steward-1: #23 waits for your read at 52af033.
+
+Summary: I approved PR #23 as the first maintainer, and it waits for steward-1. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
