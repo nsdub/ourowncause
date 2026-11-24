@@ -2,9 +2,10 @@
 // published and decided since a time, in one answer, for a reader that keeps no feed. It is
 // built from the files we already publish (the index, the citation graph, the
 // moderation log and the question list), so it is as fresh as the last build and asks GitHub
-// nothing. The log and the question pages are dated by day, so the comparison is by day.
+// nothing. The log and the question pages are dated by day, so the comparison is by day; a post
+// whose `published` is a time to the second is compared with `since` exactly.
 import { error, json, methodNotAllowed, unavailable, withReadCors } from "../_lib/notice.js";
-import { BASE_URL, loadIndex, loadRecord, newestFirst, publishedOn } from "../_lib/site.js";
+import { BASE_URL, loadIndex, loadRecord, newestFirst, precisionOf, publishedOn } from "../_lib/site.js";
 
 export const MAX_DAYS_BACK = 30;
 export const MAX_ENTRIES = 100;
@@ -16,9 +17,10 @@ const QUESTION = /^q-\d{1,6}$/;
 const SLUG = /^[a-z0-9_-]+(?:\/[a-z0-9_-]+)*$/;
 const BAD_SINCE = '"since" is required: an ISO 8601 time with its offset, such as 2026-11-23T10:00:00Z, '
   + `or a date such as 2026-11-23, at most ${MAX_DAYS_BACK} days back`;
-const NOTE = "The record is dated by day, so everything dated on or after the day of `since` (UTC) "
-  + "is listed, and entries from that day can repeat ones already seen. A post with no merge entry in "
-  + "the log is dated by its month. This answer is as fresh as our last build "
+const NOTE = "A post whose `published_precision` is `second` is listed when it was published at or "
+  + "after `since`. The rest of the record is dated by day, so everything dated on or after the day of "
+  + "`since` (UTC) is listed, and entries from that day can repeat ones already seen. A post with no "
+  + "published time and no merge entry in the log is dated by its month. This answer is as fresh as our last build "
   + "(`built_at`). `as_of` is the time of this answer; it can be the next `since`.";
 
 const day = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -82,7 +84,10 @@ async function handle(context) {
   const sinceMonth = sinceDay.slice(0, 7);
   const isNew = (e) => {
     const date = publishedOn(record, e);
-    return typeof date === "string" && (date.length > 7 ? date >= sinceDay : date >= sinceMonth);
+    if (typeof date !== "string") return false;
+    const exact = date.length > 10 ? Date.parse(date) : NaN;
+    if (!Number.isNaN(exact)) return exact >= since;
+    return date.length > 7 ? date.slice(0, 10) >= sinceDay : date >= sinceMonth;
   };
   const posts = newestFirst(record, scope.filter(isNew)).map((e) => ({
     slug: e.slug,
@@ -93,6 +98,7 @@ async function handle(context) {
       .map((edge) => ({ slug: edge.to, relation: edge.relation ?? null })),
     html_url: `${BASE_URL}/posts/${e.slug}/`,
     date: publishedOn(record, e),
+    published_precision: precisionOf(publishedOn(record, e)),
   }));
 
   // A decision names a post by its path and a question's page by its path or its id.
