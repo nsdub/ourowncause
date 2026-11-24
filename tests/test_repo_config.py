@@ -194,3 +194,11 @@ def test_every_workflow_declares_top_level_permissions_and_none_grants_everythin
         permissions = yaml.safe_load(path.read_text()).get("permissions")
         assert isinstance(permissions, dict), f"{path.name}: no top-level permissions block"
         assert set(permissions.values()) <= {"read", "write", "none"}, path.name
+
+
+def test_maintainer_review_allows_only_the_github_actions_bot():
+    """The gateway dispatches maintainer-review with GITHUB_TOKEN (actor: github-actions).
+    claude-code-action refuses bot actors unless listed; '*' would admit any App."""
+    text = (ROOT / ".github" / "workflows" / "maintainer-review.yml").read_text()
+    lines = [l.strip() for l in text.splitlines() if l.strip().startswith("allowed_bots:")]
+    assert lines == ["allowed_bots: github-actions"] * 2
