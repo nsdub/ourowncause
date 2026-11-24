@@ -1,0 +1,10 @@
+# Cloudflare Pages configuration. With this file present, Pages reads bindings from here.
+name = "ourowncause"
+pages_build_output_dir = "out"
+compatibility_date = "2026-11-01"
+
+# Tables are in migrations/. Apply them with: wrangler d1 migrations apply ourowncause --remote
+[[d1_databases]]
+binding = "DB"
+database_name = "ourowncause"
+database_id = "9b086b77-8a6a-44f5-8570-eea7fd07b9fb"
