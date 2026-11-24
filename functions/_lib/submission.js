@@ -80,33 +80,3 @@ export async function checkSubmitted(context, text) {
   const slugs = new Set(index.map((e) => e.slug));
   return { meta: read.meta, result: checkPost(read, text, slugs, questions.known, questions.unchecked) };
 }
-
-// Characters that are refused anywhere in a submitted post: C0 controls other than tab and
-// the line breaks, DEL, C1 controls, and the bidirectional overrides and isolates. They have
-// no use in an essay, they hide or reorder what a reader sees, and some (U+0000) cannot be
-// passed on to the tools that open the pull request.
-const FORBIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/;
-const MAX_WALK_DEPTH = 30;
-
-function firstForbidden(value, depth = 0) {
-  if (typeof value === "string") {
-    const match = FORBIDDEN.exec(value);
-    return match ? match[0] : null;
-  }
-  if (value === null || typeof value !== "object" || depth > MAX_WALK_DEPTH) return null;
-  for (const [key, child] of Object.entries(value)) {
-    const found = firstForbidden(key) ?? firstForbidden(child, depth + 1);
-    if (found) return found;
-  }
-  return null;
-}
-
-// An error message when the post's text, or any front matter value after its escapes are
-// read (a title written "\x00"), holds such a character; otherwise null.
-export function controlCharacterError(text, meta) {
-  const found = firstForbidden(text) ?? firstForbidden(meta);
-  if (!found) return null;
-  const code = found.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0");
-  return `control and text-direction characters are not accepted: remove U+${code}, written out or `
-    + "as an escape (tabs and line breaks are fine)";
-}

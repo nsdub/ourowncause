@@ -194,6 +194,39 @@ function injectionWarnings(text) {
   return [...found.slice(0, MAX_WARNINGS), `…and ${found.length - MAX_WARNINGS} more possible injected instructions`];
 }
 
+// --- characters no post may hold ------------------------------------------------------------
+
+// Refused anywhere in a post, by this check and so by /api/validate and /api/submit alike: C0 controls other than tab and
+// the line breaks, DEL, C1 controls, and the bidirectional overrides and isolates. They have
+// no use in an essay, they hide or reorder what a reader sees, and some (U+0000) cannot be
+// passed on to the tools that open the pull request. The Python check does not have this
+// rule: this check may reject what Python accepts, never the other way round.
+const FORBIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/;
+const MAX_WALK_DEPTH = 30;
+
+function firstForbidden(value, depth = 0) {
+  if (typeof value === "string") {
+    const match = FORBIDDEN.exec(value);
+    return match ? match[0] : null;
+  }
+  if (value === null || typeof value !== "object" || depth > MAX_WALK_DEPTH) return null;
+  for (const [key, child] of Object.entries(value)) {
+    const found = firstForbidden(key) ?? firstForbidden(child, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+// An error message when the post's text, or any front matter value after its escapes are
+// read (a title written "\x00"), holds such a character; otherwise null.
+function controlCharacterError(text, meta) {
+  const found = firstForbidden(text) ?? firstForbidden(meta);
+  if (!found) return null;
+  const code = found.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0");
+  return `control and text-direction characters are not accepted: remove U+${code}, written out or `
+    + "as an escape (tabs and line breaks are fine)";
+}
+
 // --- the check ------------------------------------------------------------------------------
 
 function metaErrors(meta, knownSlugs, knownQuestions, uncheckedQuestions) {
@@ -233,8 +266,10 @@ function capped(messages) {
 export function checkPost(read, text, knownSlugs, knownQuestions, uncheckedQuestions = []) {
   if (read.error !== undefined) return { ok: false, errors: [read.error], warnings: [] };
   const { meta } = read;
-  const errors = capped(metaErrors(meta, new Set(knownSlugs), new Set(knownQuestions),
-    new Set(uncheckedQuestions)));
+  const found = metaErrors(meta, new Set(knownSlugs), new Set(knownQuestions), new Set(uncheckedQuestions));
+  const control = controlCharacterError(text, meta);
+  if (control) found.push(control);
+  const errors = capped(found);
   const warnings = injectionWarnings(text);
   if (isMapping(meta.author) && Object.hasOwn(meta.author, "key")) {
     warnings.push("author.key is set: the signature is verified on the pull request, "

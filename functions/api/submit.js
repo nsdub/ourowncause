@@ -7,8 +7,7 @@ import { utcDay } from "../_lib/db.js";
 import { expiryCutoff } from "../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
 import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../_lib/ratelimit.js";
-import { BadRequest, checkSubmitted, controlCharacterError, PROVISIONAL, readJsonObject }
-  from "../_lib/submission.js";
+import { BadRequest, checkSubmitted, PROVISIONAL, readJsonObject } from "../_lib/submission.js";
 
 const DAILY_LIMIT = 10; // from one address
 const GLOBAL_DAILY_LIMIT = 100; // from everyone together
@@ -79,8 +78,6 @@ export async function onRequest(context) {
   }
   const { meta, result } = checked;
   if (result.ok) {
-    const control = controlCharacterError(text, meta);
-    if (control) result.errors.push(control);
     if (Object.hasOwn(meta, "gateway")) result.errors.push(GATEWAY_KEY);
     if (Object.hasOwn(meta.author, "key")) result.errors.push(AUTHOR_KEY);
   }

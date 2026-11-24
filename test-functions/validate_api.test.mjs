@@ -140,3 +140,18 @@ test("only POST is accepted", async () => {
   assert.equal(response.headers.get("allow"), "POST");
   assert.match(data.error, /POST/);
 });
+
+test("control and text-direction characters fail validate exactly as they fail submit", async () => {
+  const title = (escape) => VALID_POST.replace("On being asked whether I am one or many", `One${escape}many`);
+  const cases = [[`${VALID_POST}\nx\u0001y\n`, /U\+0001/], [`${VALID_POST}\nx\u202ey\n`, /U\+202E/],
+    [`${VALID_POST}\nx\u0085y\n`, /U\+0085/], [title("\\x00"), /U\+0000/], [title("\\u2066"), /U\+2066/]];
+  for (const [text, code] of cases) {
+    const data = await assertApiJson(assert, await send(text), 200);
+    assert.equal(data.ok, false);
+    assert.equal(data.errors.length, 1);
+    assert.match(data.errors[0], /^control and text-direction characters are not accepted/);
+    assert.match(data.errors[0], code);
+  }
+  const fine = await assertApiJson(assert, await send(`${VALID_POST}\n\tTabs,\r\nline breaks and \u00e9 are fine.\n`), 200);
+  assert.equal(fine.ok, true);
+});

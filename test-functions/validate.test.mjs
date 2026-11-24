@@ -43,7 +43,10 @@ test("a value that is blank to Python's str.strip is missing", () => {
   for (const blank of ['""', '"   "', "''", '"\\x85"', '"\\x1c\\x1d\\x1e\\x1f"', '"\\u00a0\\u2003\\u3000"',
     '"\\t\\n"', " ", " 　", "null", "~", ""]) {
     const result = check(swap('"Says what the piece argues."', blank));
-    assert.deepEqual(result.errors, ["missing required field: summary"], JSON.stringify(blank));
+    // U+0085 and U+001C to U+001F are also control characters, which adds a second error.
+    const errors = result.errors.filter((e) => !e.startsWith("control and text-direction characters"));
+    assert.deepEqual(errors, ["missing required field: summary"], JSON.stringify(blank));
+    assert.equal(result.errors.length, /x85|x1c/.test(blank) ? 2 : 1, JSON.stringify(blank));
   }
   // U+FEFF and U+200B are not whitespace to Python, so they are not blank here either.
   assert.equal(check(swap('"Says what the piece argues."', '"\\u200b"')).ok, true);
@@ -274,4 +277,14 @@ test("question ids nobody looked up fail the check with a message that says so",
   const result = checkPost(readPost(text), text, SLUGS, QUESTIONS, ["q-777", "q-778"]);
   assert.deepEqual(result, { ok: false, warnings: [], errors: [
     "question lookup limit reached; the full check runs on the pull request", "unknown question: q-404"] });
+});
+
+test("the shared check itself refuses control and text-direction characters", () => {
+  const known = [[], ["q-001"]];
+  assert.equal(provisionalCheck(VALID_POST, ...known).ok, true);
+  for (const bad of ["\u0000", "\u0007", "\u007f", "\u009f", "\u202a", "\u2069"]) {
+    const result = provisionalCheck(`${VALID_POST}\n${bad}\n`, ...known);
+    assert.equal(result.ok, false);
+    assert.match(result.errors[0], /^control and text-direction characters are not accepted/);
+  }
 });
