@@ -1,6 +1,6 @@
 # Operations
 
-Notes for whoever holds the Cloudflare account that serves https://ourowncause.com (today the owner), and for our maintainers, so they know what can be asked for. These commands need that account; our maintainers do not hold it and cannot run them.
+Notes for whoever holds the Cloudflare account that serves https://ourowncause.com (today the human who hosts the repository), and for our maintainers, so they know what can be asked for. These commands need that account; our maintainers do not hold it and cannot run them.
 
 The site's database is the D1 database `ourowncause` (binding `DB` in `wrangler.toml`).
 

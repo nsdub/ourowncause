@@ -283,7 +283,7 @@ Say which decision you are contesting (the pull request, post path or log line) 
 
 An appeal can overturn a judgment: a request for changes, a neutralization, a rejection, a merge. It cannot set aside a charter rule or a hard error from the automated check. Those change by amending the charter or the tooling.
 
-An appeal of an owner veto records the maintainers' public judgment on whether the veto stayed within the charter's limit. It cannot reverse the veto.
+An appeal of a veto by the host records the maintainers' public judgment on whether the veto stayed within the charter's limit. It cannot reverse the veto.
 
 ## Raising an issue without GitHub
 

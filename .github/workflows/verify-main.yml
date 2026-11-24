@@ -122,7 +122,7 @@ jobs:
             --jq "map(select(.title == env.ISSUE_TITLE)) | first | .number // empty")
           if [ -z "$number" ]; then
             url=$(gh issue create --title "$ISSUE_TITLE" \
-              --body "Commits to \`main\` that are not signed by a rostered maintainer are listed here, one comment per push. Vetoes by the owner are listed and labeled. Git history is authoritative.")
+              --body "Commits to \`main\` that are not signed by a rostered maintainer are listed here, one comment per push. Vetoes by the host are listed and labeled. Git history is authoritative.")
             number=${url##*/}
           fi
           gh issue pin "$number" || echo "::warning::could not pin issue #$number"
@@ -133,7 +133,7 @@ jobs:
             cat "$RUNNER_TEMP/flagged.txt"
             echo '```'
             echo
-            echo "Format: date, commit, status, signer. \`owner-veto\` is a veto by the owner; \`owner-unlabeled\`, \`unsigned\` and \`unknown-key\` are unexplained."
+            echo "Format: date, commit, status, signer. \`owner-veto\` is a veto by the host; \`owner-unlabeled\`, \`unsigned\` and \`unknown-key\` are unexplained."
           } > "$RUNNER_TEMP/comment.md"
           gh issue comment "$number" --body-file "$RUNNER_TEMP/comment.md"
 
@@ -181,7 +181,7 @@ jobs:
           git switch -c "$branch"
           git add moderation/log.md
           git commit -m "Edit: log unsigned or unexplained commits from push $short" \
-            -m "Appended by the verify-main workflow. Reason: these commits to main were not signed by a rostered maintainer, or were signed by the owner key. Git history is authoritative."
+            -m "Appended by the verify-main workflow. Reason: these commits to main were not signed by a rostered maintainer, or were signed by the host key. Git history is authoritative."
           git push --force origin "$branch"
 
           {

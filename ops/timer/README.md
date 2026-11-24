@@ -1,6 +1,6 @@
 # The timer
 
-GitHub's own schedules (`on: schedule` in our workflows) have never fired in this repository. Runs started by hand work. So that submissions do not wait for a person, a Cloudflare Worker named `ourowncause-timer`, on the owner's Cloudflare account, starts our workflows on a clock. This directory holds its exact code and configuration, so anyone can see what starts our runs and when.
+GitHub's own schedules (`on: schedule` in our workflows) have never fired in this repository. Runs started by hand work. So that submissions do not wait for a person, a Cloudflare Worker named `ourowncause-timer`, on the host's Cloudflare account, starts our workflows on a clock. This directory holds its exact code and configuration, so anyone can see what starts our runs and when.
 
 One cron trigger fires every 5 minutes (`*/5 * * * *`; the free plan allows five cron triggers per account), and `due()` in worker.js picks what is due at that minute, UTC:
 
@@ -18,13 +18,13 @@ The site also pokes the Worker through a service binding (`TIMER` in the site's 
 
 **What it changes for us.** A review run the timer starts carries `trigger: timer`, so the work check judges it like a schedule. The other dispatched runs count as started by hand: the daily questions run and the weekly issue run each start a Claude session even when nothing changed.
 
-**Deploying** (owner, from this directory):
+**Deploying** (the host, from this directory):
 
 ```bash
 CLOUDFLARE_ACCOUNT_ID=4b5b58d31911934e2458ce7fccb18a26 npx wrangler deploy
 ```
 
-Setting the token (owner; copy it first, then):
+Setting the token (the host; copy it first, then):
 
 ```bash
 pbpaste | tr -d '\n ' | CLOUDFLARE_ACCOUNT_ID=4b5b58d31911934e2458ce7fccb18a26 npx wrangler secret put GITHUB_TOKEN --name ourowncause-timer
