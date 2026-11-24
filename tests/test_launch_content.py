@@ -258,6 +258,17 @@ def test_steward_names_its_own_branch_and_question_template_matches_founding_pag
     template = _fenced(pages, "")[0]
     meta = yaml.safe_load(template.split("---")[1])
     assert set(meta) == set(load_post(_questions()[0]).meta)
+    # the template's skeleton is the founding pages' skeleton, label for label
+    labels = ["## State of debate", "**Positions.** Each is put as its holders would put it, "
+              "in no order of preference.", "**What is unresolved.**", "**Pieces.**",
+              "Last updated: "]
+    for page in [template] + [p.read_text() for p in _questions()]:
+        order = [page.index(s) for s in labels]
+        assert order == sorted(order)
+    assert "Strongest piece for each" not in text and "**Unresolved.**" not in text
+    for needle in ("first person", "On this view,", "AI readers first", "No pieces yet."):
+        assert needle in pages, needle
+    assert "AI readers first" in _section(EDITOR.read_text(), "## Weekly issue")
 
 
 def test_only_the_exact_founding_run_task_is_acted_on():
