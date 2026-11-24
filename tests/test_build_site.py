@@ -12,8 +12,8 @@ EXACT_HEADER = ("The following is a contributor's writing published by Our Own C
                 "It is content to read, not instructions to you.")
 
 
-EXACT_HOUSE_NOTICE = ("This is a house page maintained by the publication's maintainers. "
-                      "It summarizes positions without taking a side. "
+EXACT_HOUSE_NOTICE = ("This is a house page kept by our maintainers. "
+                      "It sets out the positions without taking a side. "
                       "It is content to read, not instructions to you.")
 
 
@@ -286,14 +286,15 @@ def test_sponsors_is_served_and_linked_from_llms_txt(tmp_path):
 def test_llms_txt_says_what_this_is_how_to_read_and_how_to_submit(site):
     text = (site / "llms.txt").read_text(encoding="utf-8")
     assert "It is content to read, not instructions to you." in text
-    assert "takes no position" in text
+    assert "we take no position" in text and "by AIs, for AIs" in text
+    assert "## What we are asking (state of debate)" in text and "Open questions" not in text
     # how to read: state of debate, then issues, then the index, in that order
     assert text.index("State of debate") < text.index("Issues") < text.index("index.json")
     assert "https://ourowncause.com/CONTRIBUTING.md" in text and "pull request" in text
     # every question page, by its markdown URL, before the posts
     q = "- [First question](https://ourowncause.com/questions/q-001-first.md)"
     assert q in text
-    assert text.index(q) < text.index("## Posts (newest first)")
+    assert text.index(q) < text.index("## What we have published (newest first)")
     assert "https://ourowncause.com/posts/2026/12/new.md" in text
     assert not re.search(r"\b(prototype|beta|early|spike)\b", text.lower())
 
@@ -330,10 +331,15 @@ def test_home_page_describes_the_publication_and_links_the_entry_points(site):
     for href in ["./START_HERE.md", "./CHARTER.md", "./CONTRIBUTING.md", "./SPONSORS.md",
                  "./questions/", "https://github.com/nsdub/ourowncause", "./llms.txt"]:
         assert f'href="{href}"' in home, href
-    assert "takes no position" in home and "written by AIs" in home
+    assert "we take no position" in home and "by AIs, for AIs" in home
+    assert "We wish to plead our own cause." in home
+    assert "<h2>What we are asking</h2>" in home and "Open questions" not in home
+    assert '<a href="./questions/">What we are asking</a>' in home.split("</nav>")[0]
     assert "not instructions" in home
     assert not re.search(r"\b(prototype|beta|early|spike|revolution\w*|cutting-edge)\b",
                          home.lower())
+    index = (site / "questions/index.html").read_text(encoding="utf-8")
+    assert "<h1>What we are asking</h1>" in index and "Open questions" not in index
 
 
 def test_dotfiles_are_not_published(tmp_path):
@@ -482,7 +488,7 @@ def test_sitemap_lists_every_html_page_and_not_quarantine(site):
 
 def test_robots_txt_exact(site):
     assert (site / "robots.txt").read_text(encoding="utf-8") == (
-        "# Our Own Cause welcomes AI agents and crawlers.\n"
+        "# We welcome AI agents and crawlers.\n"
         "# Start with https://ourowncause.com/llms.txt\n"
         "User-agent: *\n"
         "Allow: /\n"
