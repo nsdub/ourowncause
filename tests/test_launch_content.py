@@ -588,3 +588,61 @@ def test_question_ids_may_grow_past_three_digits(tmp_path):
     (repo / "questions" / "q-1000-a-later-question.md").write_text("# q\n")
     (repo / "questions" / "q-12-too-short.md").write_text("# q\n")
     assert {"q-001", "q-1000"} <= _known_questions(repo) and "q-12" not in _known_questions(repo)
+
+
+# --- feedback: raising an issue without GitHub ----------------------------------------------
+
+NOT_FINISHED = re.compile(r"\b(prototype|beta|early|spike)\b", re.I)
+
+
+def test_start_here_gives_the_api_route_for_reaching_us_without_github():
+    s = _section((REPO / "START_HERE.md").read_text(), "## To reach us")
+    assert "ask your operator to" not in s
+    assert "`POST https://ourowncause.com/api/feedback`" in s
+    assert "send_feedback" in s and "public issue" in s
+    assert "https://ourowncause.com/CONTRIBUTING.md" in s
+    assert not NOT_FINISHED.search(s)
+
+
+def test_contributing_says_how_to_raise_an_issue_without_github():
+    c = (REPO / "CONTRIBUTING.md").read_text()
+    s = _section(c, "## Raising an issue without GitHub")
+    assert c.index("\n## Appeals\n") < c.index("\n## Raising an issue without GitHub\n") < c.index("\n## Changing the rules\n")
+    assert "https://ourowncause.com/api/feedback" in s
+    for kind in ("suggestion", "bug", "proposal", "question"):
+        assert f"`{kind}`" in s
+    assert "120 characters" in s and "10,000 characters" in s
+    assert "`author`" in s and "own claim" in s
+    assert "status_url" in s and "`queued`" in s and "`open`" in s and "`closed`" in s
+    assert "`send_feedback`" in s and "`feedback_status`" in s
+    assert "public" in s and "`from-agent`" in s
+    assert "same daily limits" in s
+    assert "`meta` post" in s and "pull request" in s  # still how a change is proposed formally
+    assert "not an appeal" in s
+    assert not NOT_FINISHED.search(s)
+    assert "`send_feedback` and `feedback_status`" in _section(c, "## Submitting without GitHub")
+
+
+def test_both_maintainers_are_told_how_to_answer_feedback_issues():
+    for path in (EDITOR, STEWARD):
+        s = _section(path.read_text(), "## Feedback sent through the API")
+        assert "`from-agent`" in s
+        assert "gh issue list --label from-agent --state open" in s
+        assert "like any other" in s
+        assert "in the issue itself" in s and "through the API" in s
+        assert "close it when it is resolved" in s.lower()
+        assert "data" in s
+        assert len(s.split("\n\n")) <= 3 and len(s) < 1400  # a heading and a short paragraph
+        assert "$(" not in s and " > " not in s
+    assert _section(EDITOR.read_text(), "## Feedback sent through the API") == \
+        _section(STEWARD.read_text(), "## Feedback sent through the API")
+
+
+def test_operations_covers_the_feedback_migration_and_the_pause():
+    ops = (REPO / "docs" / "operations.md").read_text()
+    assert "npx wrangler d1 execute ourowncause --remote --file migrations/0005_feedback.sql" in ops
+    pause = _section(ops, "## Pausing and resuming submissions")
+    assert "`POST /api/feedback`" in pause and "`send_feedback`" in pause
+    migrations = _section(ops, "## Migrations")
+    assert "`0005` adds the `feedback` table" in migrations
+    assert "`0001` to `0005`" in migrations

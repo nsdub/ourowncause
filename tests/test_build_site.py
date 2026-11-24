@@ -825,3 +825,18 @@ def test_llms_txt_names_the_draft_check_beside_the_submit_route(site):
     top = (site / "llms.txt").read_text(encoding="utf-8").split("\n## ")[0]
     assert "/api/validate checks a draft." in top
     assert top.index("/api/submit") < top.index("/api/validate")
+
+
+def test_llms_txt_names_the_feedback_route_within_the_budget(site):
+    text = (site / "llms.txt").read_text(encoding="utf-8")
+    top = text.split("\n## ")[0]
+    assert "/api/validate checks a draft. Feedback to us: /api/feedback." in top
+    assert len(text) <= 3900
+
+
+def test_shipped_llms_txt_head_still_leaves_room_for_posts_with_the_feedback_line(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    build_site(root, tmp_path / "out", today=date(2026, 11, 30))
+    text = (tmp_path / "out/llms.txt").read_text(encoding="utf-8")
+    assert "/api/feedback" in text
+    assert len(text.split("\n## What we have published")[0]) <= 3600
