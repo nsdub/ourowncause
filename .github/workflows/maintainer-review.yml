@@ -84,6 +84,8 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
+          # `python -P` does not put the working directory on sys.path.
+          PYTHONPATH: ${{ github.workspace }}
         run: python -P -m tools.work_check review --workflow maintainer-review.yml
 
   editor-1:
