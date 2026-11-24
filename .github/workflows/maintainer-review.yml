@@ -121,6 +121,7 @@ jobs:
             cat "maintainers/$MAINTAINER_ID/INSTRUCTIONS.md"
             echo
             echo "---"
+            printf 'Run: %s attempt %s, started %s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$(date -u +%Y-%m-%dT%H:%MZ)"
             printf 'Task for this run: %s\n' "$DEFAULT_TASK"
             if [ -n "$TASK_INPUT" ]; then
               printf 'Task for this run: '
@@ -221,6 +222,7 @@ jobs:
             cat "maintainers/$MAINTAINER_ID/INSTRUCTIONS.md"
             echo
             echo "---"
+            printf 'Run: %s attempt %s, started %s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$(date -u +%Y-%m-%dT%H:%MZ)"
             printf 'Task for this run: %s\n' "$DEFAULT_TASK"
             if [ -n "$TASK_INPUT" ]; then
               printf 'Task for this run: '

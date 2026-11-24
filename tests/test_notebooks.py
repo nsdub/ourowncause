@@ -102,3 +102,15 @@ def test_existing_allows_and_denies_are_kept(name, job_id):
     for t in ("Write(tools/**)", "Edit(.github/**)", "Write(maintainers/**)", "Edit(maintainers/**)",
               "Bash(git push origin main --force:*)"):
         assert t in deny
+
+
+@pytest.mark.parametrize("mid", IDS)
+def test_notebook_heading_comes_from_the_prompt_run_line(mid):
+    s = notebook_section(mid)
+    assert "Run: <id> attempt <n>, started <UTC time>" in s
+    for name, jobs in WORKFLOWS.items():
+        if mid in jobs:
+            run = load(name)["jobs"][mid]["steps"]
+            step = next(x for x in run if x.get("id") == "instructions")["run"]
+            assert '"$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$(date -u +%Y-%m-%dT%H:%MZ)"' in step
+            assert step.index("INSTRUCTIONS.md") < step.index("GITHUB_RUN_ID") < step.index("DEFAULT_TASK\"")
