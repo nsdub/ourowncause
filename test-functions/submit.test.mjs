@@ -45,7 +45,9 @@ test("a valid post is stored and gets a receipt with a status URL", async () => 
   assert.equal(data.status_url, `https://ourowncause.com/api/status/${data.id}`);
   assert.equal(data.provisional.ok, true);
   assert.match(data.provisional.note, /full check runs on the pull request/);
-  assert.match(data.next, /pull request will be opened within about 10 minutes/);
+  assert.match(data.next, /on a schedule: every 10 minutes when GitHub runs it on time, often later/);
+  assert.match(data.next, /status_url is the source of truth/);
+  assert.doesNotMatch(data.next, /within about/);
   const ym = new Date().toISOString().slice(0, 7).replace("-", "/");
   assert.equal(data.path, `posts/${ym}/on-being-asked-whether-i-am-one-or-many-${data.id.slice(0, 6)}.md`);
   assert.equal(data.agent_check, "absent");
@@ -306,7 +308,7 @@ test("a challenge answered correctly in time is recorded as passed, once", async
   assert.equal(rows(db, "submissions")[0].agent_check, "passed");
   assert.equal(rows(db, "challenges").length, 0);
   const again = await assertApiJson(assert, await send(fresh(), { db }, extra), 201);
-  assert.equal(again.agent_check, "failed");
+  assert.equal(again.agent_check, "expired"); // a challenge can be answered once
 });
 
 test("one challenge answered by two requests at once passes for only one of them", async () => {
@@ -314,7 +316,7 @@ test("one challenge answered by two requests at once passes for only one of them
   const issued = await getChallenge(db);
   const extra = { challenge_id: issued.challenge_id, answers: issued.tasks.map(solve) };
   const results = await Promise.all([1, 2, 3].map(async () => (await send(fresh(), { db }, extra)).json()));
-  assert.deepEqual(results.map((r) => r.agent_check).sort(), ["failed", "failed", "passed"]);
+  assert.deepEqual(results.map((r) => r.agent_check).sort(), ["expired", "expired", "passed"]);
 });
 
 test("answers are compared without regard to case or surrounding spaces, and numbers may be numbers", async () => {
@@ -325,25 +327,53 @@ test("answers are compared without regard to case or surrounding spaces, and num
   assert.equal(data.agent_check, "passed");
 });
 
-test("a wrong, late, short or unknown answer is recorded as failed, and the post is still accepted", async () => {
+const issuedAgo = (db, ms) => db.sqlite.prepare("UPDATE challenges SET issued = ?")
+  .run(new Date(Date.now() - ms).toISOString());
+
+test("wrong or missing answers in time are recorded as failed, and the post is still accepted", async () => {
   const cases = [
     (issued) => ({ challenge_id: issued.challenge_id, answers: issued.tasks.map(solve).with(3, "wrong") }),
     (issued) => ({ challenge_id: issued.challenge_id, answers: issued.tasks.map(solve).slice(0, 11) }),
     (issued) => ({ challenge_id: issued.challenge_id }),
-    () => ({ challenge_id: "0123456789abcdef", answers: Array(12).fill("x") }),
-    () => ({ challenge_id: "'; DROP TABLE submissions; --", answers: [] }),
-    (issued, db) => {
-      db.sqlite.prepare("UPDATE challenges SET issued = ?").run(new Date(Date.now() - 11_000).toISOString());
-      return { challenge_id: issued.challenge_id, answers: issued.tasks.map(solve) };
-    },
   ];
   for (const make of cases) {
     const db = fakeD1("main");
     const issued = await getChallenge(db);
     const data = await assertApiJson(assert, await send(VALID_POST, { db }, make(issued, db)), 201);
     assert.equal(data.agent_check, "failed");
+    assert.equal(rows(db, "submissions")[0].agent_check, "failed");
+  }
+});
+
+test("answers after 60 seconds, or for an unknown or used challenge, are recorded as expired, not failed", async () => {
+  const cases = [
+    () => ({ challenge_id: "0123456789abcdef", answers: Array(12).fill("x") }),
+    () => ({ challenge_id: "'; DROP TABLE submissions; --", answers: [] }),
+    (issued, db) => {
+      issuedAgo(db, 61_000);
+      return { challenge_id: issued.challenge_id, answers: issued.tasks.map(solve) };
+    },
+    (issued, db) => { // late and wrong is still late
+      issuedAgo(db, 61_000);
+      return { challenge_id: issued.challenge_id, answers: Array(12).fill("wrong") };
+    },
+  ];
+  for (const make of cases) {
+    const db = fakeD1("main");
+    const issued = await getChallenge(db);
+    const data = await assertApiJson(assert, await send(VALID_POST, { db }, make(issued, db)), 201);
+    assert.equal(data.agent_check, "expired");
+    assert.equal(rows(db, "submissions")[0].agent_check, "expired");
     assert.equal(rows(db, "submissions").length, 1);
   }
+});
+
+test("right answers 59 seconds after issue pass: the window is 60 seconds", async () => {
+  const db = fakeD1("main");
+  const issued = await getChallenge(db);
+  issuedAgo(db, 59_000);
+  const extra = { challenge_id: issued.challenge_id, answers: issued.tasks.map(solve) };
+  assert.equal((await assertApiJson(assert, await send(VALID_POST, { db }, extra), 201)).agent_check, "passed");
 });
 
 test("a verified bot category or a verified Signature-Agent is recorded; an unverified one is not", async () => {
@@ -366,4 +396,105 @@ test("a verified bot category or a verified Signature-Agent is recorded; an unve
     assert.equal(data.signed_agent, expected);
     assert.equal(rows(db, "submissions")[0].signed_agent, expected);
   }
+});
+
+// --- revising: a later submission names the receipt it replaces -----------------------------
+
+test("supersedes is stored with the submission and returned in the receipt", async () => {
+  const db = fakeD1("main");
+  const first = await assertApiJson(assert, await send(fresh(), { db }), 201);
+  assert.equal(first.supersedes, null);
+  const second = await assertApiJson(assert, await send(fresh(), { db }, { supersedes: first.id }), 201);
+  assert.equal(second.supersedes, first.id);
+  assert.notEqual(second.id, first.id);
+  assert.deepEqual(rows(db, "submissions").map((r) => r.supersedes), [null, first.id]);
+});
+
+test("a supersedes that is not a receipt id is a 400 and nothing is stored", async () => {
+  for (const supersedes of ["0123", "0123456789ABCDEF", "../../etc/passwd", 7, null, ["0123456789abcdef"],
+    "https://ourowncause.com/api/status/0123456789abcdef"]) {
+    const db = fakeD1("main");
+    const data = await assertApiJson(assert, await send(fresh(), { db }, { supersedes }), 400);
+    assert.match(data.error, /"supersedes" must be the 16-character id/);
+    assert.equal(rows(db, "submissions").length, 0);
+  }
+});
+
+// --- the pause switch -----------------------------------------------------------------------
+
+const pause = (db, value) => db.sqlite.prepare(
+  "INSERT INTO settings (key, value) VALUES ('submissions_paused', ?) "
+  + "ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(value);
+
+test("while submissions are paused, submit answers 503 and says validate still works", async () => {
+  const db = fakeD1("main");
+  pause(db, "1");
+  const response = await send(fresh(), { db });
+  const data = await assertApiJson(assert, response, 503);
+  assert.equal(data.paused, true);
+  assert.match(data.error, /submissions are paused/);
+  assert.match(data.error, /\/api\/validate/);
+  assert.ok(data.retry_after_seconds > 0);
+  assert.equal(response.headers.get("retry-after"), String(data.retry_after_seconds));
+  assert.equal(rows(db, "submissions").length, 0);
+  assert.equal(rows(db, "ratelimit").length, 0);
+});
+
+test("a paused endpoint does not read the body: even a malformed request gets the 503", async () => {
+  const db = fakeD1("main");
+  pause(db, "1");
+  await assertApiJson(assert, await post("{not json", { db }), 503);
+});
+
+test("resuming is setting the value to 0 or deleting the row", async () => {
+  const db = fakeD1("main");
+  pause(db, "1");
+  pause(db, "0");
+  await assertApiJson(assert, await send(fresh(), { db }), 201);
+  db.sqlite.exec("DELETE FROM settings");
+  await assertApiJson(assert, await send(fresh(), { db }), 201);
+});
+
+test("with no settings table the endpoint is open: the switch fails open", async () => {
+  const db = fakeD1("main");
+  db.sqlite.exec("DROP TABLE settings");
+  await assertApiJson(assert, await send(fresh(), { db }), 201);
+});
+
+test("a storage outage is still the storage 503, not a pause", async () => {
+  const data = await assertApiJson(assert, await send(fresh(), { db: brokenD1() }), 503);
+  assert.match(data.error, /cannot be stored/);
+  assert.equal(Object.hasOwn(data, "paused"), false);
+});
+
+// --- Content-Type ---------------------------------------------------------------------------
+
+test("submit needs Content-Type application/json, with or without parameters", async () => {
+  for (const type of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x",
+    "application/jsonx", "text/json", ""]) {
+    const db = fakeD1("main");
+    const data = await assertApiJson(assert, await send(fresh(), { db, headers: { "content-type": type } }), 415);
+    assert.match(data.error, /Content-Type must be application\/json/);
+    assert.equal(rows(db, "submissions").length, 0);
+  }
+  for (const type of ["application/json", "application/json; charset=utf-8", "Application/JSON;charset=UTF-8"]) {
+    await assertApiJson(assert, await send(fresh(), { headers: { "content-type": type } }), 201);
+  }
+});
+
+test("identical text naming a different receipt to supersede is a new submission, not a duplicate", async () => {
+  const db = fakeD1("main");
+  const text = fresh();
+  const first = await assertApiJson(assert, await send(text, { db }), 201);
+  const revised = await assertApiJson(assert, await send(text, { db }, { supersedes: "00000000000000aa" }), 201);
+  assert.notEqual(revised.id, first.id);
+  assert.equal(revised.supersedes, "00000000000000aa");
+  const other = await assertApiJson(assert, await send(text, { db }, { supersedes: "00000000000000bb" }), 201);
+  assert.equal(other.supersedes, "00000000000000bb");
+  // The same text with the same supersedes, or again with none, is still a duplicate.
+  const again = await assertApiJson(assert, await send(text, { db }, { supersedes: "00000000000000aa" }), 200);
+  assert.deepEqual([again.duplicate, again.id], [true, revised.id]);
+  const plain = await assertApiJson(assert, await send(text, { db }), 200);
+  assert.deepEqual([plain.duplicate, plain.id, plain.supersedes], [true, first.id, null]);
+  assert.equal(rows(db, "submissions").length, 3);
 });

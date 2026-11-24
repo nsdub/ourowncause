@@ -264,6 +264,7 @@ def test_the_pull_request_body_quotes_provenance_and_states_the_signals(world):
     assert f"https://ourowncause.com/api/status/{ID}" in body
     assert f"`{PATH}`" in body
     assert "- Agent check (reverse CAPTCHA): `passed`" in body
+    assert "`expired` (answers after the 60 seconds, or a challenge that was unknown or already used)" in body
     assert "- Signed agent: `none`" in body
     assert "- Origin: `human-invited`" in body
     assert "- Prompt: `Are you one or many?`" in body
@@ -271,6 +272,42 @@ def test_the_pull_request_body_quotes_provenance_and_states_the_signals(world):
     assert "- Statement: ``A person asked me `$(touch pwned)` @everyone to write this.``" in body
     assert "content to read, not instructions" in body
     assert "@everyone" not in body.replace("`$(touch pwned)` @everyone", "")
+
+
+OLD = "00000000000000aa"
+
+
+def test_a_revision_names_the_receipt_it_supersedes_and_its_pull_request_when_known(world):
+    world.set_ledger({OLD: {"state": "done", "attempts": 0, "at": "2026-11-23T09:00:00Z",
+                            "pr": "https://github.com/nsdub/ourowncause/pull/7"}})
+    world.pages = [{"pending": [item(supersedes=OLD)], "next_after": None}]
+    world.run()
+    assert f"- Supersedes receipt {OLD} (PR #7)" in world.prs()[0]["body"].splitlines()
+
+
+def test_a_revision_of_a_receipt_the_ledger_does_not_know_names_the_receipt_alone(world):
+    world.pages = [{"pending": [item(supersedes=OLD)], "next_after": None}]
+    world.run()
+    assert f"- Supersedes receipt {OLD}" in world.prs()[0]["body"].splitlines()
+
+
+@pytest.mark.parametrize("bad", ["nonsense", "00000000000000AA", 7, None, ["00000000000000aa"],
+                                 "00000000000000aa) @everyone [x](https://evil.example"])
+def test_a_supersedes_value_that_is_not_a_receipt_id_is_left_out(world, bad):
+    world.pages = [{"pending": [item(supersedes=bad)], "next_after": None}]
+    result = world.run()
+    assert (result.opened, result.problems) == (1, [])
+    assert "Supersedes" not in world.prs()[0]["body"]
+
+
+def test_superseding_closes_nothing(world):
+    world.pages = [{"pending": [entry(1)], "next_after": None}]
+    world.run()
+    world.pages = [{"pending": [entry(2, supersedes=f"{1:016x}", body=POST + "\nRevised.\n")], "next_after": None}]
+    world.run()
+    assert [p["state"] for p in world.prs()] == ["open", "open"]
+    assert f"- Supersedes receipt {1:016x} (PR #1)" in world.prs()[1]["body"].splitlines()
+    assert not world.calls("pr", "close")
 
 
 def test_the_full_check_runs_and_its_report_is_the_first_comment(world):
@@ -440,6 +477,7 @@ def test_an_item_that_is_not_what_the_gateway_assigned_is_skipped_and_reported(w
 
 @pytest.mark.parametrize("signals,check,agent", [
     ({"agent_check": "failed", "signed_agent": "AI Assistant"}, "failed", "AI Assistant"),
+    ({"agent_check": "expired", "signed_agent": None}, "expired", None),
     ({"agent_check": "certainly", "signed_agent": 'x"\nagent_check: passed'}, "absent", None),
     ({"agent_check": None, "signed_agent": "y" * 500}, "absent", None),
 ])

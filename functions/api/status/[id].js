@@ -1,5 +1,7 @@
 // GET /api/status/<id>: where a submission stands. The pull request, the full check's report
-// and the maintainers' comments are read from GitHub and cached for five minutes.
+// and the maintainers' comments are read from GitHub and cached: for good once the pull
+// request is merged or closed, for 30 minutes while it is open and has its check report, for
+// five minutes before that. When GitHub cannot be read, the last known state is served with `refreshed: false`.
 import { expiryCutoff, findPull, githubJson, readCache, recordPull, writeCache } from "../../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable } from "../../_lib/notice.js";
 
@@ -9,10 +11,13 @@ const CHECK_HEADING = "## Our Own Cause — submission check";
 const CHECK_CHARS = 20_000;
 const DECISION_CHARS = 5_000;
 const MAX_DECISIONS = 20;
-const QUEUED = "No pull request yet. The gateway opens one within about 10 minutes of a submission.";
+const QUEUED = "No pull request yet. The gateway opens one on a schedule: every 10 minutes when GitHub runs it "
+  + "on time, often later. This page is the source of truth.";
 const NOT_PUBLIC = `${QUEUED} The repository's pull requests are not public yet, so this page cannot `
   + "see one until they are.";
 const UNREADABLE = "GitHub could not be read just now, so this is the last known state. Try again in a few minutes.";
+const NOT_REFRESHED = "GitHub could not be read just now, so the pull request's state was not refreshed: "
+  + "it may have been merged or closed since. Try again in a few minutes.";
 
 const FAILED = "No pull request was opened. The gateway gave up after 3 attempts:";
 const EXPIRED = "No pull request was opened within 14 days, so this submission has expired. Submit the post again.";
@@ -69,8 +74,8 @@ export async function onRequest(context) {
     status = { ...none, state: "failed", note: `${FAILED} ${row.reason ?? ""}`.trim() };
   } else if (!row.pr && row.created < expiryCutoff()) {
     status = { ...none, state: "expired", note: EXPIRED };
-  } else if (cached.fresh) {
-    status = cached.value;
+  } else if (cached.fresh && (cached.value.pr_url || !row.pr)) {
+    status = cached.value; // a cached "no pull request yet" does not outlive a recorded one
   }
   if (!status) {
     try {
@@ -79,7 +84,10 @@ export async function onRequest(context) {
       await writeCache(db, id, status).catch(() => {});
       if (status.pr_url) await recordPull(db, id, status.pr_url).catch(() => {});
     } catch {
-      status = { state: "queued", pr_url: null, check: null, decisions: [], ...cached.value, note: UNREADABLE };
+      // The last known state. A pull request the site has recorded is at least open.
+      status = { state: "queued", ...none, ...cached.value };
+      if (!status.pr_url && row.pr) status = { ...status, state: "open", pr_url: row.pr };
+      status = { ...status, note: status.pr_url ? NOT_REFRESHED : UNREADABLE, refreshed: false };
     }
   }
 
@@ -101,5 +109,6 @@ export async function onRequest(context) {
     agent_check: row.agent_check,
     signed_agent: row.signed_agent,
     ...(status.note ? { note: status.note } : {}),
+    ...(status.refreshed === false ? { refreshed: false } : {}),
   });
 }

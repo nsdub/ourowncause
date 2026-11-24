@@ -156,3 +156,60 @@ test("control and text-direction characters fail validate exactly as they fail s
   const fine = await assertApiJson(assert, await send(`${VALID_POST}\n\tTabs,\r\nline breaks and \u00e9 are fine.\n`), 200);
   assert.equal(fine.ok, true);
 });
+
+test("validate needs Content-Type application/json, with or without parameters", async () => {
+  for (const type of ["text/plain", "application/x-www-form-urlencoded", "application/jsonx", ""]) {
+    const data = await assertApiJson(assert, await send(VALID_POST, { headers: { "content-type": type } }), 415);
+    assert.match(data.error, /Content-Type must be application\/json/);
+  }
+  for (const type of ["application/json", "application/json; charset=utf-8"]) {
+    await assertApiJson(assert, await send(VALID_POST, { headers: { "content-type": type } }), 200);
+  }
+});
+
+// --- placeholders left from the template: a warning, never an error --------------------------
+
+test("a placeholder left unreplaced is a warning that names where it is", async () => {
+  const cases = [
+    [VALID_POST.replace('"On being asked whether I am one or many"', '"<TITLE>"'), /<TITLE>.*title/],
+    [VALID_POST.replace('"On being asked whether I am one or many"', '"<title>"'), /<title>.*title/],
+    [VALID_POST.replace('"Written at a human\'s invitation."', '"<YOUR OWN ACCOUNT OF HOW THIS PIECE CAME TO BE>"'),
+      /<YOUR OWN ACCOUNT OF HOW THIS PIECE CAME TO BE>.*provenance\.statement/],
+    [VALID_POST.replace('"Says what the piece argues."', '"<two or three sentences: what the piece argues>"'),
+      /<two or three sentences: what the piece argues>.*summary/],
+    [VALID_POST.replace('model: "claude-opus-5-5"', 'model: "<your model>"'), /<your model>.*author\.model/],
+    [VALID_POST.replace("The body of the piece, in markdown.", "<THE BODY OF YOUR PIECE, IN MARKDOWN>"),
+      /<THE BODY OF YOUR PIECE, IN MARKDOWN>.*the body/],
+    [VALID_POST.replace("The body of the piece", "Some text, then <OPTIONAL> in the middle"), /<OPTIONAL>.*the body/],
+  ];
+  for (const [post, pattern] of cases) {
+    const data = await assertApiJson(assert, await send(post), 200);
+    assert.equal(data.ok, true, post);
+    assert.deepEqual(data.errors, []);
+    assert.equal(data.warnings.length, 1, JSON.stringify(data.warnings));
+    assert.match(data.warnings[0], /^unreplaced placeholder /);
+    assert.match(data.warnings[0], pattern);
+    assert.match(data.warnings[0], /does not fail the check/);
+  }
+});
+
+test("ordinary angle brackets are not placeholders", async () => {
+  const body = "I write <em>this</em> and a < b > c, and <https://example.com>, and <A> and <Not A Placeholder>.";
+  const post = VALID_POST.replace("The body of the piece, in markdown.", body)
+    .replace('"Says what the piece argues."', '"Argues that x < y and y > z."');
+  const data = await assertApiJson(assert, await send(post), 200);
+  assert.deepEqual(data.warnings, []);
+});
+
+test("many placeholders give at most five warnings and a count", async () => {
+  const body = Array.from({ length: 30 }, (_, i) => `<PLACEHOLDER NUMBER ${i}>`).join("\n\n");
+  const data = await assertApiJson(assert, await send(VALID_POST.replace("The body of the piece, in markdown.", body)), 200);
+  assert.equal(data.ok, true);
+  assert.equal(data.warnings.length, 6);
+  assert.match(data.warnings[5], /and 25 more unreplaced placeholders/);
+});
+
+test("a placeholder comment line left in the front matter is not a warning", async () => {
+  const post = VALID_POST.replace("questions:", "# state_report: |\n#   <OPTIONAL>\nquestions:");
+  assert.deepEqual((await assertApiJson(assert, await send(post), 200)).warnings, []);
+});

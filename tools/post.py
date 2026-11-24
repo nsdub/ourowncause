@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-MAX_BYTES = 200 * 1024
+MAX_BYTES = 200_000  # the same limit POST /api/submit applies and CONTRIBUTING.md states
 
 
 class PostError(Exception):

@@ -1,9 +1,13 @@
-// Counts each request by day, path class, agent family and status code, in the STATS
-// database. It stores no IP address, no user agent and no query string, it writes at most
-// once per 50 requests or 60 seconds, and measurement can never change or block a response.
-// One correction is made: the static "not found" page is HTML, so a 404 for a missing
-// static file is labelled text/html even where _headers would label the extension
-// (for example a missing .json). API and MCP responses are left exactly as they are.
+// Runs only for the routes in _routes.json (written by tools/build_site.py): /api/*, /mcp and
+// /.well-known/*. Static files are served without Functions and never reach this file.
+//
+// Counts each of those requests by day, path class, agent family and status code, in the
+// STATS database. Reads of static files are not counted. It stores no IP address, no user
+// agent and no query string, it writes at most once per 50 requests or 60 seconds, and
+// measurement can never change or block a response.
+// One correction is made: the static "not found" page is HTML, so a 404 that falls through
+// to it (a missing path under /.well-known, say) is labelled text/html whatever _headers
+// would say for its extension. API and MCP responses are left exactly as they are.
 import { classifyAgent, classifyPath } from "./_lib/agents.js";
 import { utcDay, writeHits } from "./_lib/db.js";
 import { addHit } from "./_lib/hits.js";

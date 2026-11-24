@@ -14,6 +14,15 @@ const TOO_LARGE = `request body too large: the limit is ${MAX_REQUEST_BYTES} byt
 
 export class BadRequest extends Error {}
 
+export const NOT_JSON = "Content-Type must be application/json";
+
+// True when the request says its body is JSON; parameters such as charset are allowed. A
+// form posted from a web page cannot say so, which keeps other sites' pages from submitting
+// through a visitor.
+export function saysJson(request) {
+  return /^application\/json\s*(?:;|$)/i.test(request.headers.get("content-type") ?? "");
+}
+
 // The request body as bytes, refusing to buffer more than the limit.
 async function readBody(request) {
   if (Number(request.headers.get("content-length")) > MAX_REQUEST_BYTES) throw new BadRequest(TOO_LARGE);

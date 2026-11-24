@@ -1,17 +1,30 @@
-// Reads of the repository's public pull requests, without credentials. Nothing about the
-// requester is sent: the only variable in a request is a submission id.
+// Reads of the repository's public pull requests and of the gateway's ledger, without
+// credentials. Nothing about the requester is sent: the only variable in a request is a
+// submission id.
+//
+// GitHub's API allows 60 requests an hour from one address without a token, and Cloudflare's
+// addresses are shared. So the API is asked only for the state of a pull request, and each
+// answer is kept: a merged or closed pull request for good, an open one that has its check
+// report for 30 minutes, anything else for five. The ledger is read from raw.githubusercontent.com, which that
+// limit does not cover.
 
 export const REPO = "nsdub/ourowncause";
 export const CACHE_MS = 5 * 60_000;
+export const OPEN_CACHE_MS = 30 * 60_000;
 const API = `https://api.github.com/repos/${REPO}`;
+export const LEDGER_URL = `https://raw.githubusercontent.com/${REPO}/gateway-state/state.json`;
 const TIMEOUT_MS = 5_000;
 const GATEWAY_REF = /^gateway\/([0-9a-f]{16})$/;
 
 // The JSON at `path` under the repository's API, or null when GitHub answers 404 (as it
 // does for every path while the repository is not public). Throws on any other failure.
 export async function githubJson(path) {
-  const response = await fetch(`${API}${path}`, {
-    headers: { accept: "application/vnd.github+json", "user-agent": "ourowncause.com" },
+  return fetchJson(`${API}${path}`, "application/vnd.github+json");
+}
+
+async function fetchJson(url, accept) {
+  const response = await fetch(url, {
+    headers: { accept, "user-agent": "ourowncause.com" },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (response.status === 404) return null;
@@ -38,20 +51,19 @@ export async function findPull(id) {
   return pulls.find((p) => submissionOf(p) === id);
 }
 
-const LEDGER = "/contents/state.json?ref=gateway-state";
 const PULL_URL = new RegExp(`^https://github\\.com/${REPO}/pull/[0-9]{1,9}$`);
 const REASON_CHARS = 300;
 
 // What the gateway workflow has recorded about each submission, from the state.json it keeps
 // on the gateway-state branch: [{id, pr}] for those with a pull request and [{id, reason}]
 // for those it gave up on. Only people who can push to the repository can write that file.
+// A 404 (no ledger yet, or the repository is not public) is an empty ledger.
 export async function readLedger() {
-  const file = await githubJson(LEDGER);
+  const entries = await fetchJson(LEDGER_URL, "application/json");
   const done = [];
   const failed = [];
-  if (file === null) return { done, failed };
-  const entries = JSON.parse(atob(String(file.content).replace(/\s/g, "")));
-  if (entries === null || typeof entries !== "object") throw new Error("unexpected ledger");
+  if (entries === null) return { done, failed };
+  if (typeof entries !== "object" || Array.isArray(entries)) throw new Error("unexpected ledger");
   for (const [id, entry] of Object.entries(entries)) {
     if (!/^[0-9a-f]{16}$/.test(id) || entry === null || typeof entry !== "object") continue;
     if (typeof entry.pr === "string" && PULL_URL.test(entry.pr)) {
@@ -63,7 +75,17 @@ export async function readLedger() {
   return { done, failed };
 }
 
-export async function readCache(db, id, now = Date.now()) {
+// How long a cached value stands in for asking again. A merged or closed pull request does
+// not change, so it is never asked about again. An open one is asked about every five
+// minutes until the full check's report is on it: that report is what a submitter is
+// waiting for, and it arrives minutes after the pull request does.
+function keepFor(value) {
+  if (value.state === "merged" || value.state === "closed") return Infinity;
+  return value.state === "open" && typeof value.check === "string" ? OPEN_CACHE_MS : CACHE_MS;
+}
+
+// {fresh, value}. `keep` overrides how long the value counts as fresh.
+export async function readCache(db, id, now = Date.now(), keep = null) {
   const row = await db.prepare("SELECT fetched, json FROM status_cache WHERE id = ?").bind(id).first();
   if (!row) return { fresh: false, value: null };
   let value = null;
@@ -72,7 +94,7 @@ export async function readCache(db, id, now = Date.now()) {
   } catch {
     // An unreadable row is the same as no row.
   }
-  return { fresh: value !== null && now - Date.parse(row.fetched) < CACHE_MS, value };
+  return { fresh: value !== null && now - Date.parse(row.fetched) < (keep ?? keepFor(value)), value };
 }
 
 export async function writeCache(db, id, value, now = Date.now()) {

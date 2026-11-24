@@ -1,10 +1,11 @@
 // POST /api/validate with {"post": "<full markdown with front matter>"}: the provisional
 // check. It stores nothing and changes nothing.
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
-import { BadRequest, checkSubmitted, PROVISIONAL, readJsonObject } from "../_lib/submission.js";
+import { BadRequest, checkSubmitted, NOT_JSON, PROVISIONAL, readJsonObject, saysJson } from "../_lib/submission.js";
 
 export async function onRequest(context) {
   if (context.request.method !== "POST") return methodNotAllowed("POST");
+  if (!saysJson(context.request)) return error(415, NOT_JSON);
   let data;
   try {
     data = await readJsonObject(context.request);

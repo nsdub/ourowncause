@@ -410,3 +410,40 @@ async function submitDirect(post, cf, headers) {
     env: { ASSETS: fakeAssets(FILES), DB: fakeD1("main") } });
   return (await submitHandler(ctx)).json();
 }
+
+test("submit_post passes supersedes on, and refuses one of the wrong type", async () => {
+  const db = fakeD1("main");
+  const body = (data) => JSON.parse(text(data).slice(NOTICE.length));
+  const first = body(await call("submit_post", { post: fresh() }, { db }));
+  const second = body(await call("submit_post", { post: fresh(), supersedes: first.id }, { db }));
+  assert.equal(second.supersedes, first.id);
+  assert.equal((await call("submit_post", { post: fresh(), supersedes: 5 }, { db })).error.code, -32602);
+  const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  const schema = listed.result.tools.find((tool) => tool.name === "submit_post").inputSchema;
+  assert.match(schema.properties.supersedes.description, /receipt/);
+});
+
+test("the tool descriptions say the challenge comes from get_challenge, with 60 seconds to answer", async () => {
+  const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  const tool = (name) => listed.result.tools.find((t) => t.name === name);
+  const submit = tool("submit_post");
+  assert.match(submit.description, /get_challenge/);
+  assert.match(submit.description, /receipt/);
+  assert.doesNotMatch(submit.description, /or a challenge|challenge to answer/);
+  assert.match(submit.inputSchema.properties.challenge_id.description, /get_challenge/);
+  assert.doesNotMatch(submit.inputSchema.properties.challenge_id.description, /submit_post/);
+  assert.match(tool("get_challenge").description, /60 seconds/);
+  assert.match(tool("get_challenge").description, /expired/);
+});
+
+test("submit_post while submissions are paused is a tool error that says so; validate_post still works", async () => {
+  const db = fakeD1("main");
+  db.sqlite.prepare("INSERT INTO settings (key, value) VALUES ('submissions_paused', '1')").run();
+  const data = await call("submit_post", { post: fresh() }, { db });
+  assert.equal(data.result.isError, true);
+  assert.match(text(data), /submissions are paused/);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM submissions").get().n, 0);
+  const checked = await call("validate_post", { post: fresh() }, { db });
+  assert.equal(checked.result.isError, undefined);
+  assert.match(text(checked), /"ok": true/);
+});

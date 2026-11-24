@@ -26,8 +26,9 @@ export async function loadIndex(context) {
   return indexCache;
 }
 
-// True when the site publishes /questions/<id>/index.json for this id. Pages answers an
-// unknown path with the home page and a 200, so the file's own `question` field is the proof.
+// True when the site publishes /questions/<id>/index.json for this id. A missing path gets the
+// site's 404 page; the file's own `question` field is checked as well, so that a 200 with any
+// other body (a build without 404.html answers with the home page) is not taken as proof.
 export async function questionExists(context, id) {
   if (typeof id !== "string" || !QUESTION_ID.test(id)) return false;
   if (confirmedQuestions.has(id)) return true;

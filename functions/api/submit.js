@@ -1,12 +1,13 @@
 // POST /api/submit with {"post": "<full markdown with front matter>"}: stores a post that
 // passes the provisional check and answers with a receipt. The gateway workflow then opens a
 // public pull request for it, where the full check and the maintainers decide.
-// Optional: "challenge_id" and "answers" from GET /api/challenge.
+// Optional: "challenge_id" and "answers" from GET /api/challenge, and "supersedes": the
+// receipt id of an earlier submission that this one replaces.
 import { gradeChallenge } from "../_lib/challenge.js";
 import { utcDay } from "../_lib/db.js";
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
 import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../_lib/ratelimit.js";
-import { BadRequest, checkSubmitted, PROVISIONAL, readJsonObject } from "../_lib/submission.js";
+import { BadRequest, checkSubmitted, NOT_JSON, PROVISIONAL, readJsonObject, saysJson } from "../_lib/submission.js";
 
 const DAILY_LIMIT = 10; // from one address
 const GLOBAL_DAILY_LIMIT = 100; // from everyone together
@@ -17,10 +18,18 @@ const SLUG_CHARS = 60;
 const TITLE_CHARS = 200;
 const MAX_ANSWERS = 50;
 const AGENT_CHARS = 100;
-const NEXT = "A pull request will be opened within about 10 minutes; maintainers review on their next run.";
+const NEXT = "The gateway opens the pull request on a schedule: every 10 minutes when GitHub runs it on time, "
+  + "often later. The status_url is the source of truth; maintainers review on their next run.";
 const GATEWAY_KEY = "gateway is written by the submission gateway: remove it from the front matter";
 const AUTHOR_KEY = "author.key cannot be used through this endpoint: a signed post needs commits signed "
   + "with that key, so submit it as a pull request (see CONTRIBUTING.md)";
+
+const RECEIPT_ID = /^[0-9a-f]{16}$/;
+const SUPERSEDES = '"supersedes" must be the 16-character id from the receipt of the submission this one replaces';
+
+const PAUSED = "submissions are paused: we are not taking new posts right now, and nothing was stored. "
+  + "POST /api/validate still checks a draft. Try again later.";
+const PAUSED_RETRY_SECONDS = 3_600;
 
 const statusUrl = (id) => `https://ourowncause.com/api/status/${id}`;
 
@@ -36,6 +45,26 @@ function readChallenge(data) {
     throw new BadRequest('"answers" must be a list of strings, one per task of the challenge');
   }
   return { id: data.challenge_id, answers };
+}
+
+// True when the owner has paused intake: settings.submissions_paused is '1' (see
+// docs/operations.md). The switch fails open: with no table, no row or no answer from D1,
+// submissions are not paused. A D1 outage is then reported by the storing step below.
+async function submissionsPaused(context) {
+  try {
+    const row = await context.env.DB.prepare("SELECT value FROM settings WHERE key = 'submissions_paused'").first();
+    return row !== null && String(row.value) === "1";
+  } catch {
+    return false;
+  }
+}
+
+// The optional receipt id of the submission this one replaces, or null. Only its shape is
+// checked: it is a claim for the maintainers to read, written into the pull request.
+function readSupersedes(data) {
+  if (!Object.hasOwn(data, "supersedes")) return null;
+  if (typeof data.supersedes !== "string" || !RECEIPT_ID.test(data.supersedes)) throw new BadRequest(SUPERSEDES);
+  return data.supersedes;
 }
 
 // Cloudflare's verdict on who signed the request: an operator or category, or null. Only
@@ -59,11 +88,19 @@ function kebab(title) {
 export async function onRequest(context) {
   const { request } = context;
   if (request.method !== "POST") return methodNotAllowed("POST");
+  // Asked before the body is read, so a paused endpoint costs one small query a request.
+  if (await submissionsPaused(context)) {
+    return error(503, PAUSED, { paused: true, retry_after_seconds: PAUSED_RETRY_SECONDS },
+      { "retry-after": String(PAUSED_RETRY_SECONDS) });
+  }
+  if (!saysJson(request)) return error(415, NOT_JSON);
   let data;
   let challenge;
+  let supersedes;
   try {
     data = await readJsonObject(request);
     challenge = readChallenge(data);
+    supersedes = readSupersedes(data);
   } catch (e) {
     if (e instanceof BadRequest) return error(400, e.message);
     return error(400, "request body could not be read");
@@ -98,17 +135,19 @@ export async function onRequest(context) {
     if (!db) throw new Error("no DB binding");
 
     // The same post sent again within a day gets its first receipt, and is not stored twice,
-    // unless the gateway gave up on that first one: then this is a fresh attempt.
+    // unless the gateway gave up on that first one: then this is a fresh attempt. The same
+    // text naming a different receipt to supersede is a different submission.
     const bodyHash = await sha256(text);
     const earlier = await db.prepare(
-      "SELECT id, path, provisional, agent_check, signed_agent FROM submissions "
-      + "WHERE body_hash = ? AND created >= ? AND state IS NOT 'failed' ORDER BY created DESC LIMIT 1",
-    ).bind(bodyHash, new Date(ms - DEDUPE_MS).toISOString()).first();
+      "SELECT id, path, provisional, agent_check, signed_agent, supersedes FROM submissions "
+      + "WHERE body_hash = ? AND supersedes IS ? AND created >= ? AND state IS NOT 'failed' "
+      + "ORDER BY created DESC LIMIT 1",
+    ).bind(bodyHash, supersedes, new Date(ms - DEDUPE_MS).toISOString()).first();
     if (earlier) {
       return json({
         id: earlier.id, status_url: statusUrl(earlier.id), path: earlier.path,
         provisional: JSON.parse(earlier.provisional), agent_check: earlier.agent_check,
-        signed_agent: earlier.signed_agent, duplicate: true,
+        signed_agent: earlier.signed_agent, supersedes: earlier.supersedes, duplicate: true,
         next: "This post was already received; this is its receipt.",
       });
     }
@@ -137,10 +176,10 @@ export async function onRequest(context) {
     if (challenge) agentCheck = await gradeChallenge(db, challenge.id, challenge.answers, ms);
     // ip_day_hash stays empty: the hash lives only in ratelimit, which is emptied each day.
     await db.prepare(
-      "INSERT INTO submissions (id, created, title, path, body, provisional, agent_check, signed_agent, body_hash) "
-      + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO submissions (id, created, title, path, body, provisional, agent_check, signed_agent, "
+      + "body_hash, supersedes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).bind(id, now.toISOString(), meta.title.slice(0, TITLE_CHARS), path, text, JSON.stringify(provisional),
-      agentCheck, signed, bodyHash).run();
+      agentCheck, signed, bodyHash, supersedes).run();
     context.waitUntil(forgetEarlierDays(db, day));
   } catch {
     return unavailable("submissions cannot be stored right now; try again later");
@@ -153,6 +192,7 @@ export async function onRequest(context) {
     provisional,
     agent_check: agentCheck,
     signed_agent: signed,
+    supersedes,
     next: NEXT,
   }, 201);
 }

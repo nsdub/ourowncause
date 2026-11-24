@@ -1,4 +1,6 @@
-// GET /api/stats?days=N: request counts by day, path class and agent family.
+// GET /api/stats?days=N: request counts by day, path class and agent family, for the requests
+// that reach Functions: the API, the MCP server and /.well-known. Static files (llms.txt,
+// posts, questions, the indexes) are served without Functions and are not counted.
 import { readStats, utcDay } from "../_lib/db.js";
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
 

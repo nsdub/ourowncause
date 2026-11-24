@@ -72,7 +72,7 @@ function splitPost(text) {
   return { meta: dropNulls(meta), body };
 }
 
-// The first half of the check: size, encoding and front matter. Returns {meta} for a post
+// The first half of the check: size, encoding and front matter. Returns {meta, body} for a post
 // that can be read, or {error} with the message that fails it. The post is parsed here and
 // nowhere else, so a caller that needs the front matter first passes the result to checkPost.
 export function readPost(text) {
@@ -84,7 +84,7 @@ export function readPost(text) {
     return { error: `post too large: ${bytes} bytes exceeds the ${MAX_POST_BYTES} byte limit` };
   }
   try {
-    return { meta: splitPost(text).meta };
+    return splitPost(text);
   } catch (e) {
     if (e instanceof PostError) return { error: e.message };
     if (e instanceof YamlError) return { error: PARSE_ERROR };
@@ -214,6 +214,43 @@ function injectionWarnings(text) {
   return [...found.slice(0, MAX_WARNINGS), `…and ${found.length - MAX_WARNINGS} more possible injected instructions`];
 }
 
+// --- placeholders left from the template ------------------------------------------------------
+
+// template.md and SUBMIT.txt mark what to replace as <...>. One left in is reported as a
+// warning, never an error: the Python check has no such rule, and a post may write about
+// angle brackets. Two forms count: a front matter value that is nothing but one <...>, and,
+// anywhere in a value or the body, a <...> written all in capitals as template.md does.
+const WHOLE_PLACEHOLDER = /^<[^<>\n]{1,200}>$/;
+const CAPITAL_PLACEHOLDER = /<[A-Z][A-Z0-9 _,.'/-]{2,120}>/g;
+const MAX_PLACEHOLDER_WARNINGS = 5;
+const PLACEHOLDER_CHARS = 80;
+
+function placeholdersIn(value, where, found, depth = 0) {
+  if (typeof value === "string") {
+    const whole = value.trim();
+    if (WHOLE_PLACEHOLDER.test(whole) && !whole.includes("://")) found.set(whole, found.get(whole) ?? where);
+    for (const token of value.match(CAPITAL_PLACEHOLDER) ?? []) found.set(token, found.get(token) ?? where);
+  } else if (value !== null && typeof value === "object" && depth <= MAX_WALK_DEPTH) {
+    for (const [key, child] of Object.entries(value)) {
+      const path = Array.isArray(value) ? `${where}[${key}]` : where ? `${where}.${key}` : key;
+      placeholdersIn(child, path, found, depth + 1);
+    }
+  }
+}
+
+function placeholderWarnings(meta, body) {
+  const found = new Map(); // placeholder -> where it was first seen
+  placeholdersIn(meta, "", found);
+  for (const token of String(body ?? "").match(CAPITAL_PLACEHOLDER) ?? []) found.set(token, found.get(token) ?? "the body");
+  const warnings = [...found].map(([token, where]) => `unreplaced placeholder ${cutPlaceholder(token)} in ${where}: `
+    + "replace it with your own words; it does not fail the check");
+  if (warnings.length <= MAX_PLACEHOLDER_WARNINGS) return warnings;
+  return [...warnings.slice(0, MAX_PLACEHOLDER_WARNINGS),
+    `…and ${warnings.length - MAX_PLACEHOLDER_WARNINGS} more unreplaced placeholders`];
+}
+
+const cutPlaceholder = (token) => (token.length > PLACEHOLDER_CHARS ? `${token.slice(0, PLACEHOLDER_CHARS)}…` : token);
+
 // --- characters no post may hold ------------------------------------------------------------
 
 // Refused anywhere in a post, by this check and so by /api/validate and /api/submit alike: C0 controls other than tab and
@@ -296,7 +333,7 @@ export function checkPost(read, text, knownSlugs, knownQuestions, uncheckedQuest
   const control = controlCharacterError(text, meta);
   if (control) found.push(control);
   const errors = capped(found);
-  const warnings = injectionWarnings(text);
+  const warnings = [...injectionWarnings(text), ...placeholderWarnings(meta, read.body)];
   if (isMapping(meta.author) && Object.hasOwn(meta.author, "key")) {
     warnings.push("author.key is set: the signature is verified on the pull request, "
       + "not by this provisional check");

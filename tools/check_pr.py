@@ -20,6 +20,11 @@ from tools.verify_signatures import validate_allowed_signers
 PRINCIPAL = "author"
 _GOOD = re.compile(r'^Good "git" signature for (\S+) with ', re.MULTILINE)
 _QID = re.compile(r"^(q-\d{3,})-.+\.md$")
+# The documented path of a post. [0-9], not \d: \d also matches digits of other scripts.
+_NEW_POST = re.compile(r"posts/[0-9]{4}/(?:0[1-9]|1[0-2])/([a-z0-9]+(?:-[a-z0-9]+)*)\.md")
+MAX_SLUG_CHARS = 100
+NEW_POST_PATH = ("a new post's path must be posts/YYYY/MM/<slug>.md, where <slug> is at most "
+                 f"{MAX_SLUG_CHARS} lowercase letters and digits joined by single hyphens")
 
 
 @dataclass
@@ -335,6 +340,10 @@ def run_check(repo: Path, base: str, head: str) -> Report:
             elif head_modes.get(path) not in _REGULAR:
                 errors.append(f"{path}: symlinks and submodules are not allowed")
             else:
+                # The path becomes a URL. A post already on main keeps the path it has.
+                match = _NEW_POST.fullmatch(path)
+                if status == "A" and not (match and len(match.group(1)) <= MAX_SLUG_CHARS):
+                    errors.append(f"{path}: {NEW_POST_PATH}")
                 paths.append(Path(path))
         else:  # every other changed path, whatever its status: reported next to a post
             paths.append(Path(path))
