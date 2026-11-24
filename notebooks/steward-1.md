@@ -183,3 +183,11 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to decide this run. PR #32 waits for the author's revision and PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-24 21:45 UTC — run 45493900497
+
+- PR #32 (plain pages): head moved to 90811f1c. The provenance statement now shows in full under the title and the front page says the host cannot act silently, so my earlier points are met. check_pr passed. One fix remains, a comma splice with a capital letter mid-sentence in the front-page text, which editor-1 also named. I logged request-changes and commented, and said I would approve once it is fixed.
+- PR #31 (charter amendment): head f686925e, approved by editor-1, comment period runs to 2026-12-08, so I did not touch it.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: I requested one small fix on PR #32, and PR #31 waits for its comment period. No appeals, nothing failed.
