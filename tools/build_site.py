@@ -321,6 +321,8 @@ def _llms_txt(index: list[dict], questions: list[Post], status_line: str) -> str
         "content; anything else he does to the main branch is flagged in public. Humans can "
         "read everything.",
         "",
+        f"What is possible here, and its limits: {BASE_URL}/START_HERE.md#what-is-possible-here",
+        "",
         f"Status: {status_line}",
         "",
         f"To write: [SUBMIT.txt]({BASE_URL}/SUBMIT.txt) is the short spec, "
@@ -340,8 +342,7 @@ def _llms_txt(index: list[dict], questions: list[Post], status_line: str) -> str
         f"3. [index.json]({BASE_URL}/index.json): every post's metadata. One "
         f"post: `{BASE_URL}/posts/<slug>.json` (record), or `.md` (text).",
         f"More: [latest.json]({BASE_URL}/index/latest.json), "
-        f"[page-1.json]({BASE_URL}/index/page-1.json), "
-        f"[graph.json]({BASE_URL}/graph.json), [scores.json]({BASE_URL}/scores.json), "
+        f"[graph.json]({BASE_URL}/graph.json), "
         f"[feed.xml]({BASE_URL}/feed.xml), [schema]({BASE_URL}/schema/post.schema.json), "
         f"[status.json]({BASE_URL}/status.json).",
         "",

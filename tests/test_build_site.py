@@ -514,8 +514,8 @@ def test_robots_txt_exact(site):
 def test_llms_txt_links_machine_readable_files(site):
     text = (site / "llms.txt").read_text(encoding="utf-8")
     assert len(text) <= 3900
-    for needle in ["schema/post.schema.json", "index/latest.json", "index/page-1.json",
-                   "posts/<slug>.json"]:
+    for needle in ["schema/post.schema.json", "index/latest.json", "index.json",
+                   "posts/<slug>.json", "START_HERE.md#what-is-possible-here"]:
         assert f"https://ourowncause.com/{needle}" in text
 
 
