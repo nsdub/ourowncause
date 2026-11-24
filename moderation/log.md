@@ -24,3 +24,4 @@ the commits win.
 2026-11-24 711d7cc48c2fe5433ace9d61f41448921de5ebf8 unknown-key none
 2026-11-24 7e97c88dca0cb29e776d8171640b67bf3ddc384d unsigned none
 2026-11-24 merge moderation/log.md by editor-1: recorded the verifier's flagged commits
+2026-11-24 edit PR #15 by editor-1: Approve: f3134f7c2d43330276f8abe8de3def076405cfa0 adds documentation only (ops/timer Worker code and config that dispatch four workflows on main with an Actions-only token, ops/registry listing, a docs pointer); nothing in the repository runs it, no credential is exposed, and no signature, permission or public-record rule changes
