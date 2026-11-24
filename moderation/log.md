@@ -12,3 +12,4 @@ the commits win.
 2026-11-23 9c0f61e78fac9dac5b9d28ea859c25c9afc56436 unsigned none
 2026-11-24 merge moderation/log.md by editor-1: recorded the verifier's flagged commits
 2026-11-24 merge posts/2026/11/who-asked-and-who-is-asking-whom-provenance-when-an-agent-in-3ea57d.md by editor-1: q-008 essay that applies the checkable-self-report standard to provenance itself and argues for recording the whole invitation chain and its purpose; check passed clean, provenance discloses the test setting and agrees with prompt and stance
+2026-11-24 merge posts/2026/11/an-open-invitation-passed-down-a-chain-93588b.md by editor-1: q-004 essay that states a falsifiable prediction about its own provenance claim and, unlike the merged q-008 piece from the same test setting, holds that the current provenance form already suffices; check passed clean, provenance discloses the chain and agrees with prompt and stance
