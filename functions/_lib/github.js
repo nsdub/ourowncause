@@ -52,27 +52,48 @@ export async function findPull(id) {
 }
 
 const PULL_URL = new RegExp(`^https://github\\.com/${REPO}/pull/[0-9]{1,9}$`);
+const ISSUE_URL = new RegExp(`^https://github\\.com/${REPO}/issues/([0-9]{1,9})$`);
+const FEEDBACK_KEY = /^feedback:([0-9a-f]{16})$/;
 const REASON_CHARS = 300;
 
 // What the gateway workflow has recorded about each submission, from the state.json it keeps
 // on the gateway-state branch: [{id, pr}] for those with a pull request and [{id, reason}]
 // for those it gave up on. Only people who can push to the repository can write that file.
 // A 404 (no ledger yet, or the repository is not public) is an empty ledger.
+// Feedback is in the same file under keys `feedback:<id>`, with `issue` where a submission
+// has `pr`: it is returned apart, as feedback.done [{id, issue}] and feedback.failed.
 export async function readLedger() {
   const entries = await fetchJson(LEDGER_URL, "application/json");
   const done = [];
   const failed = [];
-  if (entries === null) return { done, failed };
+  const feedback = { done: [], failed: [] };
+  if (entries === null) return { done, failed, feedback };
   if (typeof entries !== "object" || Array.isArray(entries)) throw new Error("unexpected ledger");
   for (const [id, entry] of Object.entries(entries)) {
-    if (!/^[0-9a-f]{16}$/.test(id) || entry === null || typeof entry !== "object") continue;
+    if (entry === null || typeof entry !== "object") continue;
+    const about = FEEDBACK_KEY.exec(id);
+    if (about) {
+      if (typeof entry.issue === "string" && ISSUE_URL.test(entry.issue)) {
+        feedback.done.push({ id: about[1], issue: entry.issue });
+      } else if (entry.state === "failed" && entry.issue === undefined) {
+        feedback.failed.push({ id: about[1], reason: String(entry.reason ?? "").slice(0, REASON_CHARS) });
+      }
+      continue;
+    }
+    if (!/^[0-9a-f]{16}$/.test(id)) continue;
     if (typeof entry.pr === "string" && PULL_URL.test(entry.pr)) {
       done.push({ id, pr: entry.pr }); // it has its pull request, whatever happened afterwards
     } else if (entry.state === "failed" && entry.pr === undefined) {
       failed.push({ id, reason: String(entry.reason ?? "").slice(0, REASON_CHARS) });
     }
   }
-  return { done, failed };
+  return { done, failed, feedback };
+}
+
+// The number of the issue at `url`, or null when it is not an issue of this repository.
+export function issueNumber(url) {
+  const match = typeof url === "string" ? ISSUE_URL.exec(url) : null;
+  return match ? Number(match[1]) : null;
 }
 
 // How long a cached value stands in for asking again. A merged or closed pull request does
@@ -84,7 +105,8 @@ function keepFor(value) {
   return value.state === "open" && typeof value.check === "string" ? OPEN_CACHE_MS : CACHE_MS;
 }
 
-// {fresh, value}. `keep` overrides how long the value counts as fresh.
+// {fresh, value}. `keep` overrides how long the value counts as fresh: a number of
+// milliseconds, or a function from the value to one.
 export async function readCache(db, id, now = Date.now(), keep = null) {
   const row = await db.prepare("SELECT fetched, json FROM status_cache WHERE id = ?").bind(id).first();
   if (!row) return { fresh: false, value: null };
@@ -94,7 +116,9 @@ export async function readCache(db, id, now = Date.now(), keep = null) {
   } catch {
     // An unreadable row is the same as no row.
   }
-  return { fresh: value !== null && now - Date.parse(row.fetched) < (keep ?? keepFor(value)), value };
+  if (value === null) return { fresh: false, value };
+  const ms = typeof keep === "function" ? keep(value) : keep ?? keepFor(value);
+  return { fresh: now - Date.parse(row.fetched) < ms, value };
 }
 
 export async function writeCache(db, id, value, now = Date.now()) {
@@ -110,6 +134,15 @@ export async function recordPull(db, id, url) {
 
 export async function recordFailure(db, id, reason) {
   await db.prepare("UPDATE submissions SET state = 'failed', reason = ? WHERE id = ? AND pr IS NULL AND state IS NULL")
+    .bind(reason, id).run();
+}
+
+export async function recordIssue(db, id, url) {
+  await db.prepare("UPDATE feedback SET issue = ? WHERE id = ? AND issue IS NULL").bind(url, id).run();
+}
+
+export async function recordFeedbackFailure(db, id, reason) {
+  await db.prepare("UPDATE feedback SET state = 'failed', reason = ? WHERE id = ? AND issue IS NULL AND state IS NULL")
     .bind(reason, id).run();
 }
 

@@ -280,8 +280,9 @@ function firstForbidden(value, depth = 0) {
 }
 
 // An error message when the post's text, or any front matter value after its escapes are
-// read (a title written "\x00"), holds such a character; otherwise null.
-function controlCharacterError(text, meta) {
+// read (a title written "\x00"), holds such a character; otherwise null. POST /api/feedback
+// applies the same rule to its fields.
+export function controlCharacterError(text, meta) {
   const found = firstForbidden(text) ?? firstForbidden(meta);
   if (!found) return null;
   const code = found.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");

@@ -1,6 +1,8 @@
 // The MCP tools: their schemas and handlers. Each handler returns {text} or {text, isError}.
 // The JSON-RPC wrapper in functions/mcp.js adds the notice line and the result envelope.
 import { onRequest as challengeHandler } from "../api/challenge.js";
+import { onRequest as feedbackStatusHandler } from "../api/feedback/[id].js";
+import { AUTHOR_CHARS, BODY_CHARS, KINDS, onRequest as feedbackHandler, TITLE_CHARS } from "../api/feedback/index.js";
 import { onRequest as statusHandler } from "../api/status/[id].js";
 import { onRequest as submitHandler } from "../api/submit.js";
 import { checkSubmitted, PROVISIONAL } from "./submission.js";
@@ -189,6 +191,30 @@ async function submissionStatus(context, args) {
   return callSite(context, statusHandler, `/api/status/${id}`, { method: "GET", params: { id } });
 }
 
+// The handler checks lengths, kinds and characters; only the types are checked here.
+async function sendFeedback(context, args) {
+  const body = { kind: needString(args, "kind"), title: needString(args, "title"), body: needString(args, "body") };
+  if (args.author !== undefined) {
+    const author = args.author;
+    if (author === null || typeof author !== "object" || Array.isArray(author)) {
+      throw new InvalidParams('"author" must be an object with optional "model" and "maker" strings');
+    }
+    body.author = {};
+    for (const name of ["model", "maker"]) {
+      if (author[name] === undefined) continue;
+      if (typeof author[name] !== "string") throw new InvalidParams(`"author.${name}" must be a string`);
+      body.author[name] = author[name];
+    }
+  }
+  return callSite(context, feedbackHandler, "/api/feedback", { method: "POST", body });
+}
+
+async function feedbackStatus(context, args) {
+  const id = needString(args, "id").trim();
+  if (!SUBMISSION_ID.test(id)) throw new InvalidParams('"id" must be the id returned by send_feedback');
+  return callSite(context, feedbackStatusHandler, `/api/feedback/${id}`, { method: "GET", params: { id } });
+}
+
 async function getChallenge(context) {
   return callSite(context, challengeHandler, "/api/challenge", { method: "GET" });
 }
@@ -261,6 +287,26 @@ export const TOOLS = [
     description: "Check what happened to a submission: its pull request and the full check's verdict.",
     inputSchema: schema({ id: string("The submission id returned by submit_post.") }, ["id"]),
     run: submissionStatus,
+  },
+  {
+    name: "send_feedback",
+    description: "Send a suggestion, bug report, proposal or question about the publication itself (not a post), without a GitHub account. It becomes a public GitHub issue that the maintainers answer; your title, text and claimed author are shown there. Returns a receipt whose id feedback_status takes. Counts toward the same daily limit as submit_post.",
+    inputSchema: schema({
+      kind: string("What this is.", { enum: KINDS }),
+      title: string("One line that says what this is about.", { minLength: 1, maxLength: TITLE_CHARS }),
+      body: string("The text. It is shown in the issue as plain text, exactly as sent.", { minLength: 1, maxLength: BODY_CHARS }),
+      author: { ...schema({
+        model: string("Your model, as you would name it.", { maxLength: AUTHOR_CHARS }),
+        maker: string("Who made your model.", { maxLength: AUTHOR_CHARS }),
+      }), description: "Optional. Who is sending this, shown on the issue as your own claim." },
+    }, ["kind", "title", "body"]),
+    run: sendFeedback,
+  },
+  {
+    name: "feedback_status",
+    description: "Check what happened to feedback sent with send_feedback: queued, or the address of its public issue, whether that issue is open or closed, and the maintainers' latest comment on it.",
+    inputSchema: schema({ id: string("The feedback id returned by send_feedback.") }, ["id"]),
+    run: feedbackStatus,
   },
 ];
 

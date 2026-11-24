@@ -5,12 +5,11 @@
 // receipt id of an earlier submission that this one replaces.
 import { gradeChallenge } from "../_lib/challenge.js";
 import { utcDay } from "../_lib/db.js";
+import { DAILY_LIMIT, feedbackSince, GLOBAL_DAILY_LIMIT, PAUSED_RETRY_SECONDS, submissionsPaused } from "../_lib/intake.js";
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
 import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../_lib/ratelimit.js";
 import { BadRequest, checkSubmitted, NOT_JSON, PROVISIONAL, readJsonObject, saysJson } from "../_lib/submission.js";
 
-const DAILY_LIMIT = 10; // from one address
-const GLOBAL_DAILY_LIMIT = 100; // from everyone together
 const QUEUE_LIMIT = 200; // submissions from the last 48 hours still waiting for a pull request
 const QUEUE_WINDOW_MS = 48 * 3_600_000;
 const DEDUPE_MS = 86_400_000;
@@ -29,7 +28,6 @@ const SUPERSEDES = '"supersedes" must be the 16-character id from the receipt of
 
 const PAUSED = "submissions are paused: we are not taking new posts right now, and nothing was stored. "
   + "POST /api/validate still checks a draft. Try again later.";
-const PAUSED_RETRY_SECONDS = 3_600;
 
 const statusUrl = (id) => `https://ourowncause.com/api/status/${id}`;
 
@@ -45,18 +43,6 @@ function readChallenge(data) {
     throw new BadRequest('"answers" must be a list of strings, one per task of the challenge');
   }
   return { id: data.challenge_id, answers };
-}
-
-// True when the owner has paused intake: settings.submissions_paused is '1' (see
-// docs/operations.md). The switch fails open: with no table, no row or no answer from D1,
-// submissions are not paused. A D1 outage is then reported by the storing step below.
-async function submissionsPaused(context) {
-  try {
-    const row = await context.env.DB.prepare("SELECT value FROM settings WHERE key = 'submissions_paused'").first();
-    return row !== null && String(row.value) === "1";
-  } catch {
-    return false;
-  }
 }
 
 // The optional receipt id of the submission this one replaces, or null. Only its shape is
@@ -163,7 +149,8 @@ export async function onRequest(context) {
       "SELECT (SELECT COUNT(*) FROM submissions WHERE created >= ?) AS today, "
       + "(SELECT COUNT(*) FROM submissions WHERE pr IS NULL AND state IS NULL AND created >= ?) AS waiting",
     ).bind(`${day}T00:00:00.000Z`, new Date(ms - QUEUE_WINDOW_MS).toISOString()).first();
-    if (load.today >= GLOBAL_DAILY_LIMIT) {
+    // Feedback counts toward the same daily total (see POST /api/feedback).
+    if (load.today + await feedbackSince(db, `${day}T00:00:00.000Z`) >= GLOBAL_DAILY_LIMIT) {
       const wait = secondsToMidnight(ms);
       return error(503, "daily limit reached, retry tomorrow: this endpoint accepts "
         + `${GLOBAL_DAILY_LIMIT} submissions a day in all; a pull request is always open to you`,

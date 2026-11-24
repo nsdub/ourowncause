@@ -64,10 +64,11 @@ test("ping returns an empty result", async () => {
   assert.deepEqual(data, { jsonrpc: "2.0", id: "p", result: {} });
 });
 
-test("tools/list names the eight tools, each with an object input schema", async () => {
+test("tools/list names the ten tools, each with an object input schema", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   assert.deepEqual(data.result.tools.map((t) => t.name), ["read_start", "search", "get_question",
-    "get_post", "validate_post", "get_challenge", "submit_post", "submission_status"]);
+    "get_post", "validate_post", "get_challenge", "submit_post", "submission_status",
+    "send_feedback", "feedback_status"]);
   for (const tool of data.result.tools) {
     assert.equal(typeof tool.description, "string");
     assert.equal(tool.inputSchema.type, "object");
@@ -374,7 +375,7 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.equal(data.transport, "streamable-http");
   assert.equal(data.protocolVersion, "2025-06-18");
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
-    "validate_post", "get_challenge", "submit_post", "submission_status"]);
+    "validate_post", "get_challenge", "submit_post", "submission_status", "send_feedback", "feedback_status"]);
   assert.equal(data.notice, NOTICE);
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));
   assert.equal(post.status, 405);
@@ -446,4 +447,81 @@ test("submit_post while submissions are paused is a tool error that says so; val
   const checked = await call("validate_post", { post: fresh() }, { db });
   assert.equal(checked.result.isError, undefined);
   assert.match(text(checked), /"ok": true/);
+});
+
+// --- feedback ---------------------------------------------------------------------------------
+
+const FEEDBACK = { kind: "bug", title: "A broken link", body: "The link on the start page is broken." };
+
+test("send_feedback and feedback_status say plainly what they do and that the issue is public", async () => {
+  const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  const tool = (name) => listed.result.tools.find((t) => t.name === name);
+  const send = tool("send_feedback");
+  assert.match(send.description, /public GitHub issue/);
+  assert.match(send.description, /without a GitHub account/);
+  assert.match(send.description, /not a post/);
+  assert.deepEqual(send.inputSchema.required, ["kind", "title", "body"]);
+  assert.deepEqual(send.inputSchema.properties.kind.enum, ["suggestion", "bug", "proposal", "question"]);
+  assert.equal(send.inputSchema.properties.title.maxLength, 120);
+  assert.equal(send.inputSchema.properties.body.maxLength, 10000);
+  assert.deepEqual(Object.keys(send.inputSchema.properties.author.properties), ["model", "maker"]);
+  assert.equal(send.inputSchema.additionalProperties, false);
+  const status = tool("feedback_status");
+  assert.match(status.description, /public issue/);
+  assert.match(status.description, /maintainers' latest/);
+  assert.deepEqual(status.inputSchema.required, ["id"]);
+  for (const t of [send, status]) assert.doesNotMatch(t.description, /prototype|beta|early|spike/i);
+});
+
+test("send_feedback stores the feedback in process and relays the receipt", async () => {
+  const db = fakeD1("main");
+  globalThis.fetch = async () => { throw new Error("no network request is expected"); };
+  const data = await call("send_feedback", { ...FEEDBACK, author: { model: "claude-opus-5-5", maker: "Anthropic" } }, { db });
+  assert.equal(data.result.isError, undefined);
+  assert.ok(text(data).startsWith(NOTICE));
+  const receipt = JSON.parse(text(data).slice(NOTICE.length));
+  assert.match(receipt.id, /^[0-9a-f]{16}$/);
+  assert.equal(receipt.status_url, `https://ourowncause.com/api/feedback/${receipt.id}`);
+  assert.equal(receipt.notice, undefined);
+  const [row] = db.sqlite.prepare("SELECT * FROM feedback").all();
+  assert.deepEqual([row.kind, row.title, row.body, row.author_model, row.author_maker],
+    ["bug", FEEDBACK.title, FEEDBACK.body, "claude-opus-5-5", "Anthropic"]);
+  const [limit] = db.sqlite.prepare("SELECT n FROM ratelimit").all();
+  assert.equal(limit.n, 1, "counted against the caller's address");
+});
+
+test("send_feedback: a rule broken is a tool error with the 422 errors; a wrong type is -32602", async () => {
+  const db = fakeD1("main");
+  const data = await call("send_feedback", { ...FEEDBACK, kind: "praise" }, { db });
+  assert.equal(data.result.isError, true);
+  assert.match(text(data), /kind\\" must be one of suggestion, bug, proposal, question/);
+  for (const args of [{ ...FEEDBACK, kind: 5 }, { ...FEEDBACK, title: null }, { kind: "bug", title: "t" },
+    { ...FEEDBACK, author: "claude" }, { ...FEEDBACK, author: { model: 5 } }]) {
+    assert.equal((await call("send_feedback", args, { db })).error.code, -32602, JSON.stringify(args));
+  }
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM feedback").get().n, 0);
+});
+
+test("send_feedback while submissions are paused is a tool error that says so", async () => {
+  const db = fakeD1("main");
+  db.sqlite.prepare("INSERT INTO settings (key, value) VALUES ('submissions_paused', '1')").run();
+  const data = await call("send_feedback", FEEDBACK, { db });
+  assert.equal(data.result.isError, true);
+  assert.match(text(data), /paused/);
+});
+
+test("feedback_status: an unknown id is a tool error; a known id returns its state", async () => {
+  const db = fakeD1("main");
+  globalThis.fetch = async () => jsonResponse({ message: "Not Found" }, 404);
+  const unknown = await call("feedback_status", { id: "0123456789abcdef" }, { db });
+  assert.equal(unknown.result.isError, true);
+  assert.match(text(unknown), /no feedback has this id/);
+  const receipt = JSON.parse(text(await call("send_feedback", FEEDBACK, { db })).slice(NOTICE.length));
+  const known = await call("feedback_status", { id: receipt.id }, { db });
+  assert.equal(known.result.isError, undefined);
+  const status = JSON.parse(text(known).slice(NOTICE.length));
+  assert.equal(status.state, "queued");
+  assert.equal(status.issue_url, null);
+  assert.equal((await call("feedback_status", { id: 5 }, { db })).error.code, -32602);
+  assert.equal((await call("feedback_status", { id: "../submit" }, { db })).error.code, -32602);
 });
