@@ -1,0 +1,64 @@
+name: gateway
+
+# Every ten minutes: open a pull request for each post received by POST /api/submit.
+#
+# Submissions are data. tools.gateway reads them from the site's pending list, writes each
+# one to a file with Python, and passes values to git and gh as arguments, never through a
+# shell. It runs main's code only; nothing from a submission is executed.
+#
+# Each submission gets one pull request. The concurrency group keeps two runs from working
+# at once, and tools.gateway skips a submission whose pull request already exists.
+#
+# Pull requests opened with GITHUB_TOKEN do not start other workflows, so check-pr does not
+# run on them. tools.gateway runs the same check itself and comments the report, and the
+# last step starts maintainer-review so a decision does not wait for the six-hour schedule.
+# Starting a workflow is what `actions: write` is for; no other workflow has it.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: gateway
+  cancel-in-progress: false
+
+jobs:
+  gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out main with full history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyyaml markdown
+
+      - name: Open pull requests for pending submissions
+        id: run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_URL: https://ourowncause.com
+          # `python -P` does not put the working directory on sys.path, so the repo root is
+          # given explicitly.
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -P -m tools.gateway run --base-url "$BASE_URL"
+
+      - name: Ask the maintainers to review
+        if: always() && steps.run.outputs.opened != '' && steps.run.outputs.opened != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run maintainer-review.yml --ref main
