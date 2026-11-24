@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
-import { onRequest } from "../api/search.js";
-import { resetSiteCache } from "../_lib/site.js";
+import { onRequest } from "../functions/api/search.js";
+import { resetSiteCache } from "../functions/_lib/site.js";
 import { assertApiJson, fakeAssets, fakeContext, INDEX } from "./helpers.mjs";
 
 beforeEach(resetSiteCache);

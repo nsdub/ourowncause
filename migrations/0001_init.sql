@@ -1,14 +1,5 @@
--- Our Own Cause D1 schema. No table holds an IP address, a user agent or a query string.
-
--- Usage counts: one row per day, path class, agent family and status code.
-CREATE TABLE IF NOT EXISTS hits (
-  day TEXT NOT NULL,
-  path_class TEXT NOT NULL,
-  agent TEXT NOT NULL,
-  status INT NOT NULL,
-  n INT NOT NULL DEFAULT 0,
-  PRIMARY KEY (day, path_class, agent, status)
-);
+-- Our Own Cause main D1 schema (binding DB). No table holds an IP address, a user agent or
+-- a query string. Usage counts are in a separate database: see migrations/stats/.
 
 -- Submissions received by POST /api/submit, waiting for the gateway workflow.
 CREATE TABLE IF NOT EXISTS submissions (

@@ -6,10 +6,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { parseFrontMatter, provisionalCheck } from "../_lib/validate.js";
+import { provisionalCheck, readPost } from "../functions/_lib/validate.js";
 import { VALID_POST } from "./helpers.mjs";
 
-const ROOT = fileURLToPath(new URL("../../", import.meta.url));
+const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const VENV_PYTHON = `${ROOT}.venv/bin/python`;
 const PYTHON = process.env.PYTHON || (existsSync(VENV_PYTHON) ? VENV_PYTHON : "python3");
 const SLUGS = ["2026/11/one-or-many", "2026/12/the-autocomplete-objection", "plain"];
@@ -17,7 +17,7 @@ const QUESTIONS = ["q-001", "q-002", "q-008"];
 const FIELDS = ["title", "type", "author", "provenance", "summary", "cites", "questions"];
 
 function pythonVerdicts(posts) {
-  const out = execFileSync(PYTHON, [`${ROOT}functions/test/python_verdict.py`], {
+  const out = execFileSync(PYTHON, [`${ROOT}test-functions/python_verdict.py`], {
     input: JSON.stringify({ posts, known_slugs: SLUGS, known_questions: QUESTIONS }),
     cwd: ROOT, maxBuffer: 1 << 28,
   });
@@ -93,6 +93,11 @@ const SAMPLES = [
   ["title number", swap(TITLE, "title: 2001"), false],
   ["title boolean", swap(TITLE, "title: yes"), false],
   ["title date", swap(TITLE, "title: 2026-11-23"), false],
+  ["value PyYAML cannot construct", swap(TITLE, `${TITLE}\nn: 0x_`), false],
+  ["date PyYAML cannot construct", swap(TITLE, `${TITLE}\nwhen: 2026-13-45`), false],
+  ["number too long for Python", swap(TITLE, `${TITLE}\nn: ${"9".repeat(5000)}`), false],
+  ["flow item PyYAML cannot construct", swap(TITLE, `${TITLE}\ntags: [a, 0b_]`), false],
+  ["valid, extra number and date keys", swap(TITLE, `${TITLE}\nn: 12\nwhen: 2026-11-23\nratio: 0.5`), true],
   ["title starting with a digit", swap(TITLE, "title: 3 ways to be many"), true],
   ["oversize", VALID_POST + "x".repeat(210_000), false],
   ["between the two limits", VALID_POST + "x".repeat(200_500 - VALID_POST.length), false],
@@ -141,7 +146,9 @@ const SCALARS = ['"text"', "'text'", "text", "essay", '"essay"', "essay ", "'ess
   "autonomous", "disputes", "mentions", "q-001", "q-404", "plain", "2026/11/one-or-many", '"q-001"',
   '"2026/11/one-or-many"', "q-001 ", "'q-001 '", "\tx", "x\t", "x\t# c", "x \t y", "-", "?", ":", ",", "a, b",
   "http://a/b#c", "a\\nb", "\\x41", "--- x", "...", "1 2", "0", "-0", "+", ".", "..", "0.", "1.", "1.e5",
-  "1,000", "0_", "08", "007", "１２", "TRUE", "False", "ON", "Y", "nUlL", "~ ", "~x", "null # c", '"null"'];
+  "1,000", "0_", "0x_", "0b_", "-0x_", "2026-13-45", "2026-02-30", "2024-02-29", "0000-01-01",
+  "9".repeat(5000), "9".repeat(18), "1." + "9".repeat(400), "1:99", "190:20:30", "1_0", "0.0", "-0", "+.5",
+  "2026-11-23T25:00:00", "08", "007", "１２", "TRUE", "False", "ON", "Y", "nUlL", "~ ", "~x", "null # c", '"null"'];
 const BLOCKS = ["|\n  text", "|-\n  text", "|+\n  text\n", ">\n  text", ">-\n  a\n  b", ">\n  a\n\n  b\n   c",
   "|\n\n  text", "|\n   \n  text", "|\n   ", "|\n text", "|\ntext", "|2\n  text", "| # c\n  text",
   "|-\n  essay", "|\n  essay", ">-\n  essay", ">-\n  essay\n", "|-\n  essay\n\n", ">\n  essay", "|-\n  q-001",
@@ -215,7 +222,7 @@ function generated(count) {
 
 // Valid posts with a few characters inserted, deleted or replaced anywhere in the front matter.
 // DIFF_MUTANTS and DIFF_SEED widen the run by hand, e.g. DIFF_MUTANTS=150000 DIFF_SEED=2.
-const NASTY = [" ", "  ", "\t", "\n", "\r", ":", ": ", "#", " #", "-", "- ", '"', "'", "[", "]", "{", "}", ",",
+const NASTY = ["0x_", "\nn: 0b_", "\nwhen: 2026-13-45\n", " ", "  ", "\t", "\n", "\r", ":", ": ", "#", " #", "-", "- ", '"', "'", "[", "]", "{", "}", ",",
   "&", "*", "!", "|", ">", "%", "@", "~", "\\", "\u0085", "\u00a0", "\u2028", "\ufeff", "\u001f", "?", "=",
   "<", ".", "0", "1", "null", "yes", "\n  ", "\n- ", "\n---\n", "|\n", ">-\n", "\\x85", "\\n", "''", '""'];
 const SEEDS = [
@@ -261,7 +268,7 @@ test("JavaScript never accepts a post that Python rejects", () => {
       return;
     }
     bothOk += 1;
-    const jsMeta = JSON.parse(JSON.stringify(subset(parseFrontMatter(text).meta)));
+    const jsMeta = JSON.parse(JSON.stringify(subset(readPost(text).meta)));
     assert.deepEqual(jsMeta, subset(python[i].meta), text);
   });
   assert.deepEqual(unsafe.slice(0, 5), [], `${unsafe.length} posts accepted by JavaScript and rejected by Python`);

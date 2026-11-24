@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.post import PostError, load_post  # noqa: E402
 from tools.validate import validate  # noqa: E402

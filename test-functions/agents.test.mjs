@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classifyAgent, classifyPath } from "../_lib/agents.js";
+import { classifyAgent, classifyPath } from "../functions/_lib/agents.js";
 
 test("classifyAgent names the agent family from the user agent", () => {
   const cases = {

@@ -33,10 +33,28 @@ const OTHER = [
 // Stands for any number, date or other non-string scalar: callers only need "not a string".
 const NOT_A_STRING = 0;
 
+// PyYAML raises on some of what those patterns match: `0x_`, a decimal too long for Python
+// to convert, the date 2026-13-45, the lone `=`. Python then rejects the whole post, so only
+// forms that are certain to construct are read; the rest are outside the subset.
+const SAFE_NUMBER = /^[-+]?(?:0|[1-9][0-9]{0,17}|[0-9]{1,17}\.[0-9]{0,17})$/;
+const DATE = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/;
+const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+function isRealDate(text) {
+  const match = DATE.exec(text);
+  if (!match) return false;
+  const [year, month, day] = match.slice(1).map(Number);
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  return day <= MONTH_DAYS[month - 1] + (month === 2 && leap ? 1 : 0);
+}
+
 function resolvePlain(text) {
   if (NULL.test(text)) return null;
   if (BOOL.test(text)) return TRUE.test(text);
-  return OTHER.some((pattern) => pattern.test(text)) ? NOT_A_STRING : text;
+  if (!OTHER.some((pattern) => pattern.test(text))) return text;
+  if (SAFE_NUMBER.test(text) || isRealDate(text)) return NOT_A_STRING;
+  return fail("a number or date outside the subset");
 }
 
 const KEY = /^([A-Za-z_][A-Za-z0-9_.-]*) *:(?: +(.*))?$/;
@@ -47,10 +65,25 @@ const SIMPLE_ESCAPES = { "\\": "\\", '"': '"', "/": "/", n: "\n", t: "\t" };
 const isSeqStart = (content) => content === "-" || content.startsWith("- ");
 // Only the space is indentation. JavaScript's trim would also strip characters such as
 // U+00A0 that YAML reads as content.
-const leadingSpaces = (line) => /^ */.exec(line)[0].length;
-const trimSpaces = (text) => text.replace(/^ +| +$/g, "");
+function leadingSpaces(line) {
+  let n = 0;
+  while (line[n] === " ") n++;
+  return n;
+}
+// Trims by walking in from each end. A regex such as / +$/ retries at every space of a long
+// run inside the text, which takes quadratic time.
+function trimSpaces(text) {
+  let start = 0;
+  let end = text.length;
+  while (start < end && text[start] === " ") start++;
+  while (end > start && text[end - 1] === " ") end--;
+  return text.slice(start, end);
+}
 // After a closed quote or bracket, only a comment may follow.
-const onlyComment = (rest) => rest === "" || /^ +#/.test(rest) || /^ +$/.test(rest);
+function onlyComment(rest) {
+  const after = rest.slice(leadingSpaces(rest));
+  return after === "" || (after !== rest && after[0] === "#");
+}
 
 function readDouble(s, start) {
   let out = "";
@@ -133,7 +166,7 @@ function readInline(text) {
   if (first === "[") return readFlowList(text);
   if ("{}],&*!|>%@`#".includes(first)) fail("unsupported value");
   if ("-?:".includes(first) && (text.length === 1 || text[1] === " ")) fail("unsupported value");
-  const comment = text.search(/ #/);
+  const comment = text.indexOf(" #");
   const plain = trimSpaces(comment === -1 ? text : text.slice(0, comment));
   if (plain.includes(": ") || plain.endsWith(":")) fail("mapping inside a plain scalar");
   return resolvePlain(plain);
@@ -151,7 +184,7 @@ class Reader {
       const line = this.lines[this.i];
       if (line.includes("\t")) fail("tab outside a block scalar");
       const indent = leadingSpaces(line);
-      const content = line.slice(indent).replace(/ +$/, "");
+      const content = trimSpaces(line.slice(indent));
       if (content !== "" && !content.startsWith("#")) return { indent, content };
     }
     return null;
@@ -185,7 +218,7 @@ class Reader {
       // A list written flush with its key ends at the next key; the caller checks that line.
       if (!isSeqStart(line.content)) return out;
       const rest = line.content.slice(1);
-      const item = rest.replace(/^ +/, "");
+      const item = rest.slice(leadingSpaces(rest));
       if (isSeqStart(item) || KEY.test(item)) {
         // `- key: value` and `- - x` open a nested block at the column where the item starts.
         const column = indent + 1 + (rest.length - item.length);

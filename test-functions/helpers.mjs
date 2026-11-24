@@ -7,21 +7,27 @@ process.emitWarning = () => {}; // node:sqlite announces itself as experimental 
 const { DatabaseSync } = await import("node:sqlite");
 process.emitWarning = emitWarning;
 
-const MIGRATION = new URL("../../migrations/0001_init.sql", import.meta.url);
+export const MIGRATIONS = {
+  main: new URL("../migrations/0001_init.sql", import.meta.url),
+  stats: new URL("../migrations/stats/0001_init.sql", import.meta.url),
+};
 
-export function fakeD1() {
+// `which` picks the database: "main" is the DB binding, "stats" is the STATS binding.
+export function fakeD1(which) {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(readFileSync(MIGRATION, "utf8"));
+  sqlite.exec(readFileSync(MIGRATIONS[which], "utf8"));
+  let writes = 0;
   const statement = (sql, args) => ({
     bind: (...next) => statement(sql, next),
     run: async () => {
+      writes += 1;
       sqlite.prepare(sql).run(...args);
       return { success: true };
     },
     first: async () => sqlite.prepare(sql).get(...args) ?? null,
     all: async () => ({ results: sqlite.prepare(sql).all(...args), success: true }),
   });
-  return { prepare: (sql) => statement(sql, []), sqlite };
+  return { prepare: (sql) => statement(sql, []), sqlite, writes: () => writes };
 }
 
 export function brokenD1() {

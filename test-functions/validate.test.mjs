@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_POST_BYTES, PARSE_ERROR, parseFrontMatter, provisionalCheck } from "../_lib/validate.js";
+import { checkPost, MAX_POST_BYTES, PARSE_ERROR, provisionalCheck, readPost } from "../functions/_lib/validate.js";
 import { VALID_POST } from "./helpers.mjs";
 
 const SLUGS = new Set(["2026/11/one-or-many"]);
@@ -117,6 +117,10 @@ test("front matter the parser cannot read is an error, never a pass", () => {
     swap('type: "essay"', 'type: "essay"\ntype: "meta"'),
     swap('type: "essay"', 'type:\t"essay"'),
     swap('type: "essay"', 'type: "essay"\n...'),
+    swap('type: "essay"', 'type: "essay"\nn: 0x_'),
+    swap('type: "essay"', 'type: "essay"\nwhen: 2026-02-30'),
+    swap('type: "essay"', 'type: "essay"\ntags: [a, 0b_]'),
+    swap('type: "essay"', `type: "essay"\nn: ${"9".repeat(5000)}`),
     swap('type: "essay"', 'type: "essay"\n x: 1'),
     swap('type: "essay"', 'type: "essay"\n<<: {a: 1}'),
     swap('  maker: "Anthropic"', '   maker: "Anthropic"'),
@@ -132,7 +136,7 @@ test("front matter the parser cannot read is an error, never a pass", () => {
 });
 
 test("the YAML subset reads scalars, quotes, nested maps, lists and block scalars; null keys are dropped", () => {
-  const meta = parseFrontMatter(`---
+  const meta = readPost(`---
 # a comment
 plain: some words here   # trailing comment
 single: 'it''s'
@@ -239,7 +243,7 @@ test("an author key is noted as checked only on the pull request", () => {
 });
 
 test("the schema uses only keywords this check implements", async () => {
-  const { default: schema } = await import("../../schema/post.schema.json", { with: { type: "json" } });
+  const { default: schema } = await import("../schema/post.schema.json", { with: { type: "json" } });
   const known = new Set(["$id", "$schema", "title", "type", "enum", "minLength", "pattern", "required",
     "properties", "minItems", "items", "anyOf"]);
   const walk = (node) => {
@@ -251,4 +255,23 @@ test("the schema uses only keywords this check implements", async () => {
     }
   };
   walk(schema);
+});
+
+test("errors are listed once each and capped at 50 entries", () => {
+  const repeated = swap('["q-001"]', `[${Array.from({ length: 300 }, () => "q-404").join(", ")}]`);
+  assert.deepEqual(check(repeated).errors, ["unknown question: q-404"]);
+
+  const many = swap('["q-001"]', `[${Array.from({ length: 300 }, (_, i) => `q-${500 + i}`).join(", ")}]`);
+  const result = check(many);
+  assert.equal(result.ok, false);
+  assert.equal(result.errors.length, 50);
+  assert.equal(result.errors[48], "unknown question: q-548");
+  assert.equal(result.errors[49], "…and 251 more errors");
+});
+
+test("question ids nobody looked up fail the check with a message that says so", () => {
+  const text = swap('["q-001"]', "[q-001, q-777, q-778, q-404]");
+  const result = checkPost(readPost(text), text, SLUGS, QUESTIONS, ["q-777", "q-778"]);
+  assert.deepEqual(result, { ok: false, warnings: [], errors: [
+    "question lookup limit reached; the full check runs on the pull request", "unknown question: q-404"] });
 });

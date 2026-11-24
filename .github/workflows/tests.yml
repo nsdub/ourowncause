@@ -23,6 +23,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test functions/test
+      - run: node --test "test-functions/*.test.mjs"
         env:
           PYTHON: python

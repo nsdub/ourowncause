@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
-import { onRequest } from "../api/validate.js";
-import { resetSiteCache } from "../_lib/site.js";
+import { onRequest } from "../functions/api/validate.js";
+import { resetSiteCache } from "../functions/_lib/site.js";
 import { assertApiJson, brokenD1, fakeAssets, fakeContext, INDEX, VALID_POST } from "./helpers.mjs";
 
 beforeEach(resetSiteCache);
@@ -53,12 +53,32 @@ test("a question that does not exist is unknown, even when the host answers 200 
     ["unknown question: q-999", "unknown question: ../x", "unknown question: q-1/../../y"]);
 });
 
-test("question lookups are bounded", async () => {
+test("question lookups stop at 20, and the rest are reported as not looked up", async () => {
   const assets = fakeAssets(QUESTION_FILES);
   const ids = Array.from({ length: 500 }, (_, i) => `"q-${1000 + i}"`).join(", ");
   const data = await (await send(VALID_POST.replace('["q-001"]', `[${ids}]`), { assets })).json();
   assert.equal(data.ok, false);
-  assert.ok(assets.fetched.length <= 21, String(assets.fetched.length));
+  assert.equal(assets.fetched.length, 21);
+  assert.equal(data.errors.length, 21);
+  assert.deepEqual(data.errors.slice(0, 2), ["unknown question: q-1000", "unknown question: q-1001"]);
+  assert.equal(data.errors[20], "question lookup limit reached; the full check runs on the pull request");
+});
+
+test("a post that names more than 20 new questions is not passed on the strength of the first 20", async () => {
+  const files = { ...QUESTION_FILES };
+  for (let i = 100; i < 125; i++) files[`/questions/q-${i}/index.json`] = { question: `q-${i}` };
+  const ids = Array.from({ length: 25 }, (_, i) => `q-${100 + i}`).join(", ");
+  const data = await (await send(VALID_POST.replace('["q-001"]', `[${ids}]`), { assets: fakeAssets(files) })).json();
+  assert.equal(data.ok, false);
+  assert.deepEqual(data.errors, ["question lookup limit reached; the full check runs on the pull request"]);
+});
+
+test("the post is parsed once per request", async () => {
+  const text = VALID_POST.replace('title: "On being asked whether I am one or many"', `title: x${" ".repeat(190_000)}x`);
+  const start = performance.now();
+  const data = await (await send(text)).json();
+  assert.equal(data.ok, true);
+  assert.ok(performance.now() - start < 200);
 });
 
 test("hostile request bodies get a 400 with a clear message, never a 500", async () => {

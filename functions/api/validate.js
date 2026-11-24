@@ -2,7 +2,7 @@
 // check. It stores nothing and changes nothing.
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
 import { loadIndex, questionExists } from "../_lib/site.js";
-import { MAX_POST_BYTES, parseFrontMatter, provisionalCheck } from "../_lib/validate.js";
+import { checkPost, MAX_POST_BYTES, readPost } from "../_lib/validate.js";
 
 // JSON can spend six bytes on one character (A), so a post at the limit fits in this.
 const MAX_REQUEST_BYTES = 6 * MAX_POST_BYTES + 1_000;
@@ -40,7 +40,7 @@ async function readBody(request) {
   return bytes;
 }
 
-async function readPost(request) {
+async function readRequest(request) {
   const bytes = await readBody(request);
   let data;
   try {
@@ -57,36 +57,38 @@ async function readPost(request) {
 }
 
 // Question ids from index.json, plus any the post names that the site confirms exist. A
-// question with no posts yet appears in no index entry, so those are looked up one by one.
-async function knownQuestions(context, index, text) {
+// question with no posts yet appears in no index entry, so those are looked up one by one,
+// up to a limit. Returns {known, unchecked}: the ids past the limit were not looked up.
+async function findQuestions(context, index, meta) {
   const known = new Set(index.flatMap((e) => (Array.isArray(e.questions) ? e.questions : [])));
-  const parsed = text.length <= MAX_POST_BYTES ? parseFrontMatter(text) : null;
-  const named = parsed && Array.isArray(parsed.meta.questions) ? parsed.meta.questions : [];
+  const named = meta && Array.isArray(meta.questions) ? meta.questions : [];
   const unseen = [...new Set(named.filter((q) => typeof q === "string" && !known.has(q)))];
   for (const id of unseen.slice(0, MAX_QUESTION_LOOKUPS)) {
     if (await questionExists(context, id)) known.add(id);
   }
-  return known;
+  return { known, unchecked: unseen.slice(MAX_QUESTION_LOOKUPS) };
 }
 
 export async function onRequest(context) {
   if (context.request.method !== "POST") return methodNotAllowed("POST");
   let text;
   try {
-    text = await readPost(context.request);
+    text = await readRequest(context.request);
   } catch (e) {
     if (e instanceof BadRequest) return error(400, e.message);
     return error(400, "request body could not be read");
   }
 
+  const read = readPost(text);
   let index;
   let questions;
   try {
     index = await loadIndex(context);
-    questions = await knownQuestions(context, index, text);
+    questions = await findQuestions(context, index, read.meta);
   } catch {
     return unavailable("the post index is unavailable right now; try again later");
   }
   const slugs = new Set(index.map((e) => e.slug));
-  return json({ ...provisionalCheck(text, slugs, questions), provisional: PROVISIONAL });
+  const result = checkPost(read, text, slugs, questions.known, questions.unchecked);
+  return json({ ...result, provisional: PROVISIONAL });
 }

@@ -11,15 +11,33 @@ export const PARSE_ERROR = "front matter could not be parsed by the provisional 
 const SCHEMA_ERROR = "the provisional check cannot apply the post schema; "
   + "the full check runs on the pull request";
 const CITE_OR_QUESTION = "post must cite at least one earlier post or name at least one open question";
+const LOOKUP_LIMIT = "question lookup limit reached; the full check runs on the pull request";
+const MAX_ERRORS = 50;
 const MAX_WARNINGS = 20;
 
 // Exactly the characters Python's str.strip() removes. JavaScript's \s differs: it includes
 // U+FEFF and leaves out U+001C to U+001F and U+0085.
-const PY_SPACE = "\\t\\n\\x0b\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
-const PY_STRIP = new RegExp(`^[${PY_SPACE}]+|[${PY_SPACE}]+$`, "g");
+const PY_SPACES = new Set([0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x85, 0xa0,
+  0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a,
+  0x2028, 0x2029, 0x202f, 0x205f, 0x3000]);
+const isPySpace = (text, i) => PY_SPACES.has(text.charCodeAt(i));
 
-const pyStrip = (text) => text.replace(PY_STRIP, "");
-const isBlank = (text) => pyStrip(text) === "";
+// Both walk the string once. A regex strip retries at every character of a long whitespace
+// run inside the text, which takes quadratic time.
+function pyStrip(text) {
+  let start = 0;
+  let end = text.length;
+  while (start < end && isPySpace(text, start)) start++;
+  while (end > start && isPySpace(text, end - 1)) end--;
+  return text.slice(start, end);
+}
+
+function isBlank(text) {
+  for (let i = 0; i < text.length; i++) {
+    if (!isPySpace(text, i)) return false;
+  }
+  return true;
+}
 
 class PostError extends Error {}
 
@@ -53,12 +71,22 @@ function splitPost(text) {
   return { meta: dropNulls(meta), body };
 }
 
-// {meta, body} for a post, or null when it has no front matter this check can read.
-export function parseFrontMatter(text) {
+// The first half of the check: size, encoding and front matter. Returns {meta} for a post
+// that can be read, or {error} with the message that fails it. The post is parsed here and
+// nowhere else, so a caller that needs the front matter first passes the result to checkPost.
+export function readPost(text) {
+  if (typeof text !== "string") return { error: "post must be a string" };
+  // A lone surrogate cannot be written as UTF-8, so the post could never become a file.
+  if (/[\uD800-\uDFFF]/u.test(text)) return { error: "post is not valid Unicode text" };
+  const bytes = new TextEncoder().encode(text).length;
+  if (bytes > MAX_POST_BYTES) {
+    return { error: `post too large: ${bytes} bytes exceeds the ${MAX_POST_BYTES} byte limit` };
+  }
   try {
-    return typeof text === "string" ? splitPost(text) : null;
+    return { meta: splitPost(text).meta };
   } catch (e) {
-    if (e instanceof PostError || e instanceof YamlError) return null;
+    if (e instanceof PostError) return { error: e.message };
+    if (e instanceof YamlError) return { error: PARSE_ERROR };
     throw e;
   }
 }
@@ -168,7 +196,7 @@ function injectionWarnings(text) {
 
 // --- the check ------------------------------------------------------------------------------
 
-function metaErrors(meta, knownSlugs, knownQuestions) {
+function metaErrors(meta, knownSlugs, knownQuestions, uncheckedQuestions) {
   const errors = [];
   try {
     validateSchema(schema, meta, "", errors);
@@ -185,37 +213,37 @@ function metaErrors(meta, knownSlugs, knownQuestions) {
   }
   if (Array.isArray(meta.questions)) {
     for (const q of meta.questions) {
-      if (typeof q === "string" && !knownQuestions.has(q)) errors.push(`unknown question: ${q}`);
+      if (typeof q !== "string" || knownQuestions.has(q)) continue;
+      errors.push(uncheckedQuestions.has(q) ? LOOKUP_LIMIT : `unknown question: ${q}`);
     }
   }
   return errors;
 }
 
-// Checks the full text of a post (front matter and body). `knownSlugs` and `knownQuestions`
-// are Sets or arrays of the post slugs and question ids that exist.
-export function provisionalCheck(text, knownSlugs, knownQuestions) {
-  const result = (errors, warnings = []) => ({ ok: errors.length === 0, errors, warnings });
-  if (typeof text !== "string") return result(["post must be a string"]);
-  // A lone surrogate cannot be written as UTF-8, so the post could never become a file.
-  if (/[\uD800-\uDFFF]/u.test(text)) return result(["post is not valid Unicode text"]);
-  const bytes = new TextEncoder().encode(text).length;
-  if (bytes > MAX_POST_BYTES) {
-    return result([`post too large: ${bytes} bytes exceeds the ${MAX_POST_BYTES} byte limit`]);
-  }
+// Each distinct message once, and at most MAX_ERRORS entries with the last one a count.
+function capped(messages) {
+  const distinct = [...new Set(messages)];
+  if (distinct.length <= MAX_ERRORS) return distinct;
+  return [...distinct.slice(0, MAX_ERRORS - 1), `…and ${distinct.length - MAX_ERRORS + 1} more errors`];
+}
 
-  let meta;
-  try {
-    ({ meta } = splitPost(text));
-  } catch (e) {
-    if (e instanceof PostError) return result([e.message]);
-    if (e instanceof YamlError) return result([PARSE_ERROR]);
-    throw e;
-  }
-
+// The second half of the check. `read` is readPost(text). `knownSlugs` and `knownQuestions`
+// are Sets or arrays of the post slugs and question ids that exist. `uncheckedQuestions` are
+// ids nobody looked up: they fail the check with a message that says so.
+export function checkPost(read, text, knownSlugs, knownQuestions, uncheckedQuestions = []) {
+  if (read.error !== undefined) return { ok: false, errors: [read.error], warnings: [] };
+  const { meta } = read;
+  const errors = capped(metaErrors(meta, new Set(knownSlugs), new Set(knownQuestions),
+    new Set(uncheckedQuestions)));
   const warnings = injectionWarnings(text);
   if (isMapping(meta.author) && Object.hasOwn(meta.author, "key")) {
     warnings.push("author.key is set: the signature is verified on the pull request, "
       + "not by this provisional check");
   }
-  return result(metaErrors(meta, new Set(knownSlugs), new Set(knownQuestions)), warnings);
+  return { ok: errors.length === 0, errors, warnings };
+}
+
+// Checks the full text of a post (front matter and body).
+export function provisionalCheck(text, knownSlugs, knownQuestions) {
+  return checkPost(readPost(text), text, knownSlugs, knownQuestions);
 }

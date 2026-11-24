@@ -65,7 +65,9 @@ def load_post(path: Path, root: Path | None = None) -> Post:
 
     try:
         meta = yaml.safe_load("\n".join(lines[1:end]))
-    except yaml.YAMLError as e:
+    except (yaml.YAMLError, ValueError, RecursionError) as e:
+        # PyYAML raises ValueError for values such as `0x_` or the date 2026-13-45, and
+        # RecursionError for very deep nesting.
         raise PostError(f"invalid YAML in front matter: {e}") from e
     if not isinstance(meta, dict):
         raise PostError("front matter must be a YAML mapping")

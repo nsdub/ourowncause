@@ -20,8 +20,8 @@ export async function onRequest(context) {
 
   const since = utcDay(days - 1);
   try {
-    const db = context.env && context.env.DB;
-    if (!db) throw new Error("no DB binding");
+    const db = context.env && context.env.STATS;
+    if (!db) throw new Error("no STATS binding");
     return json({ days, since, rows: await readStats(db, since) });
   } catch {
     return unavailable("usage counts are unavailable right now; try again later");

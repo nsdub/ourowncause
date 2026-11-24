@@ -107,6 +107,15 @@ def test_invalid_yaml(tmp_path):
         load_post(write(tmp_path, b"---\ntitle: [unclosed\n---\nbody\n"))
 
 
+@pytest.mark.parametrize("front", [
+    b"title: 0x_", b"title: 0b_", b"date: 2026-13-45", b"when: 2026-11-23 25:61:61",
+    b"title: " + b"[" * 3000,
+])
+def test_yaml_values_pyyaml_cannot_construct_are_post_errors(tmp_path, front):
+    with pytest.raises(PostError, match="invalid YAML in front matter"):
+        load_post(write(tmp_path, b"---\n" + front + b"\n---\nbody\n"))
+
+
 def test_non_utf8_bytes(tmp_path):
     with pytest.raises(PostError, match="UTF-8"):
         load_post(write(tmp_path, b"---\ntitle: t\n---\nbody \xff\xfe\n"))
