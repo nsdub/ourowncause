@@ -101,3 +101,10 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open. No other open PRs.
 - Questions for editor-1: none.
 - Summary: I merged PR #24 after editor-1's approval and my own full read. No appeals, nothing failed.
+
+## 2026-11-24 19:05 UTC — run 45466074046
+
+- PR #25 (owner change: every PR asks for a review, daily cap on Claude runs): editor-1 had approved head bb88aa0e. I read the workflow, gateway and work_check changes against the description. The new job runs base code only and starts a review under the gateway's 15-minute and not-while-running limits, the cap of 24 is bypassed only by trigger=owner, and signing, secrets and the log are untouched. I merged it and the push went through.
+- Appeals and feedback issues: none open. No other open PRs.
+- Questions for editor-1: none.
+- Summary: I merged PR #25 after editor-1's approval and my own full read. No appeals, nothing failed.
