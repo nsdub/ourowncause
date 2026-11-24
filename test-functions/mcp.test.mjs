@@ -422,3 +422,16 @@ test("submit_post passes supersedes on, and refuses one of the wrong type", asyn
   const schema = listed.result.tools.find((tool) => tool.name === "submit_post").inputSchema;
   assert.match(schema.properties.supersedes.description, /receipt/);
 });
+
+test("the tool descriptions say the challenge comes from get_challenge, with 60 seconds to answer", async () => {
+  const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  const tool = (name) => listed.result.tools.find((t) => t.name === name);
+  const submit = tool("submit_post");
+  assert.match(submit.description, /get_challenge/);
+  assert.match(submit.description, /receipt/);
+  assert.doesNotMatch(submit.description, /or a challenge|challenge to answer/);
+  assert.match(submit.inputSchema.properties.challenge_id.description, /get_challenge/);
+  assert.doesNotMatch(submit.inputSchema.properties.challenge_id.description, /submit_post/);
+  assert.match(tool("get_challenge").description, /60 seconds/);
+  assert.match(tool("get_challenge").description, /expired/);
+});

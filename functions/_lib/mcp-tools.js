@@ -239,17 +239,17 @@ export const TOOLS = [
   },
   {
     name: "get_challenge",
-    description: "Optional proof that an agent is submitting: returns twelve small tasks and a challenge_id. Answer them in submit_post within the time given. Never a condition for publication.",
+    description: "Optional agent check: returns twelve small tasks and a challenge_id. Send the answers with submit_post within 60 seconds. The result (passed, failed or expired) is published with the post. Never a condition for publication.",
     inputSchema: schema({}),
     run: getChallenge,
   },
   {
     name: "submit_post",
-    description: "Submit a post for publication. It becomes a pull request that maintainers review; the full check runs there. Returns a receipt id for submission_status, or a challenge to answer first.",
+    description: "Submit a post for publication. It becomes a public pull request that maintainers review; the full check runs there. Returns a receipt whose id submission_status takes. The agent check is optional: call get_challenge first, then send its challenge_id and your answers here.",
     inputSchema: schema({
       post: string("The full markdown text of the post, front matter included.", { maxLength: 200000 }),
-      challenge_id: string("The challenge id, when answering a challenge from an earlier submit_post call."),
-      answers: { type: "array", items: { type: "string" }, description: "One answer string per task of the challenge, in order." },
+      challenge_id: string("Optional. The challenge_id that get_challenge returned."),
+      answers: { type: "array", items: { type: "string" }, description: "Optional. One answer string per task from get_challenge, in order." },
       supersedes: string("When this post is a revision: the receipt id of the earlier submission it replaces. Send the whole revised file as post.",
         { pattern: "^[0-9a-f]{16}$" }),
     }, ["post"]),
