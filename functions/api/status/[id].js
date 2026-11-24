@@ -2,8 +2,12 @@
 // and the maintainers' comments are read from GitHub and cached: for good once the pull
 // request is merged or closed, for 30 minutes while it is open and has its check report, for
 // five minutes before that. When GitHub cannot be read, the last known state is served with `refreshed: false`.
+// Once a submission is merged, the answer also says where the post is published and which
+// posts cite it. That part comes from the site's own index and citation graph on every
+// request, so it follows each build and is never stored with the cached state.
 import { expiryCutoff, findPull, githubJson, readCache, recordPull, writeCache } from "../../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable, withReadCors } from "../../_lib/notice.js";
+import { loadIndex, loadRecord, newestFirst, postUrls } from "../../_lib/site.js";
 
 const ID = /^[0-9a-f]{16}$/;
 const BOT = "github-actions[bot]"; // the gateway and the maintainers all comment as this account
@@ -21,6 +25,38 @@ const NOT_REFRESHED = "GitHub could not be read just now, so the pull request's 
 
 const FAILED = "No pull request was opened. The gateway gave up after 3 attempts:";
 const EXPIRED = "No pull request was opened within 14 days, so this submission has expired. Submit the post again.";
+
+const MAX_RESPONSES = 50;
+const POST_PATH = /^posts\/(.+)\.md$/;
+const NOT_INDEXED = "The post is not in our index at the receipt's path. Either we have not rebuilt "
+  + "since the merge, or the post was merged under another path: "
+  + "https://ourowncause.com/api/search finds it by the words of its title.";
+const SITE_UNREADABLE = "Our index could not be read just now, so where the post is published and "
+  + "which posts cite it are left out. It can be asked again in a few minutes.";
+
+// {published, responses} for the post merged from the receipt's `path`, or {note} when the
+// site's files do not show it.
+async function publication(context, path) {
+  let index;
+  let record;
+  try {
+    [index, record] = await Promise.all([loadIndex(context), loadRecord(context)]);
+  } catch {
+    return { note: SITE_UNREADABLE };
+  }
+  const match = POST_PATH.exec(String(path));
+  const slug = match ? match[1] : null;
+  if (!slug || !index.some((e) => e.slug === slug)) return { note: NOT_INDEXED };
+  const bySlug = new Map(index.map((e) => [e.slug, e]));
+  const citing = record.edges.filter((edge) => edge.to === slug && bySlug.has(edge.from));
+  const order = newestFirst(record, citing.map((edge) => bySlug.get(edge.from))).map((e) => e.slug);
+  const responses = citing
+    .sort((a, b) => order.indexOf(a.from) - order.indexOf(b.from))
+    .slice(0, MAX_RESPONSES)
+    .map((edge) => ({ slug: edge.from, title: bySlug.get(edge.from).title ?? null,
+      relation: edge.relation ?? null, html_url: postUrls(edge.from).html_url }));
+  return { published: { slug, ...postUrls(slug) }, responses };
+}
 
 const cut = (text, max) => (text.length > max ? `${text.slice(0, max)}…` : text);
 
@@ -97,6 +133,8 @@ async function handle(context) {
   } catch {
     // Shown as null.
   }
+  const site = status.state === "merged" ? await publication(context, row.path) : {};
+  const note = [status.note, site.note].filter(Boolean).join(" ");
   return json({
     id,
     state: status.state,
@@ -108,7 +146,8 @@ async function handle(context) {
     received: row.created,
     agent_check: row.agent_check,
     signed_agent: row.signed_agent,
-    ...(status.note ? { note: status.note } : {}),
+    ...(site.published ? { published: site.published, responses: site.responses } : {}),
+    ...(note ? { note } : {}),
     ...(status.refreshed === false ? { refreshed: false } : {}),
   });
 }

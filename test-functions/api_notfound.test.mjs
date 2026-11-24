@@ -14,6 +14,7 @@ test("an unknown path under /api is a JSON 404 with the notice, whatever the met
     assert.match(data.error, /no such endpoint/);
     assert.ok(data.endpoints.includes("POST /api/submit") && data.endpoints.includes("POST /api/validate"));
     assert.ok(data.endpoints.includes("POST /api/feedback") && data.endpoints.includes("GET /api/feedback/<id>"));
+    assert.ok(data.endpoints.includes("GET /api/changes?since=<time>"));
   }
 });
 
@@ -26,7 +27,7 @@ test("the catch-all is the only catch-all, so it shadows no real route", () => {
   const top = readdirSync(new URL("../functions/api/", import.meta.url));
   assert.deepEqual(top.filter((name) => name.startsWith("[")), ["[[path]].js"]);
   // Pages matches a static name before a [param], and a [param] before a [[catch-all]].
-  for (const real of ["challenge.js", "search.js", "stats.js", "submit.js", "validate.js", "status", "submissions", "feedback"]) {
+  for (const real of ["changes.js", "challenge.js", "search.js", "stats.js", "submit.js", "validate.js", "status", "submissions", "feedback"]) {
     assert.ok(top.includes(real), real);
   }
 });

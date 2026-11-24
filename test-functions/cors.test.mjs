@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { onRequest as changes } from "../functions/api/changes.js";
 import { onRequest as search } from "../functions/api/search.js";
 import { onRequest as stats } from "../functions/api/stats.js";
 import { onRequest as status } from "../functions/api/status/[id].js";
@@ -11,6 +12,7 @@ import { fakeContext } from "./helpers.mjs";
 const READS = [
   ["search", search, "https://ourowncause.com/api/search?q=x", {}, "GET, HEAD, OPTIONS"],
   ["stats", stats, "https://ourowncause.com/api/stats", {}, "GET, HEAD, OPTIONS"],
+  ["changes", changes, "https://ourowncause.com/api/changes?since=x", {}, "GET, OPTIONS"],
   ["status", status, "https://ourowncause.com/api/status/0123456789abcdef", { id: "0123456789abcdef" }, "GET, OPTIONS"],
 ];
 

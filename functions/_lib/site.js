@@ -4,10 +4,12 @@
 const QUESTION_ID = /^q-\d{1,6}$/;
 
 let indexCache = null;
+let recordCache = null;
 const confirmedQuestions = new Set();
 
 export function resetSiteCache() {
   indexCache = null;
+  recordCache = null;
   confirmedQuestions.clear();
 }
 
@@ -25,6 +27,89 @@ export async function loadIndex(context) {
   indexCache = data.filter((e) => e && typeof e === "object" && typeof e.slug === "string");
   return indexCache;
 }
+
+// --- the record: who cites whom, what was decided and when -----------------------------------
+
+export const BASE_URL = "https://ourowncause.com";
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+// A line of moderation/log.md, as tools/record_decision.py writes it:
+// `YYYY-MM-DD <action> <target> by <maintainer>: <reason>`. A target may hold spaces (`PR #10`).
+const LOG_LINE = /^(\d{4}-\d{2}-\d{2}) ([a-z][a-z-]*) (.+?) by ([A-Za-z0-9_-]+): (.*)$/;
+const MERGED_POST = /^posts\/(.+)\.md$/;
+
+// The decisions in the log's text, in the order they were written. Other lines are skipped.
+export function parseLog(text) {
+  const decisions = [];
+  for (const line of text.split("\n")) {
+    const m = LOG_LINE.exec(line.trimEnd());
+    if (m) decisions.push({ date: m[1], action: m[2], target: m[3], maintainer: m[4], reason: m[5] });
+  }
+  return decisions;
+}
+
+// The text at `path`, or null when the site does not publish it: a 404, or the HTML page a
+// build without 404.html answers with. Throws on any other failure.
+async function fetchOptionalText(context, path) {
+  const response = await context.env.ASSETS.fetch(new URL(path, context.request.url));
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`${path}: status ${response.status}`);
+  const text = await response.text();
+  return /^\s*<(?:!doctype|html)\b/i.test(text) ? null : text;
+}
+
+// What the build published besides the index, read once per isolate:
+//   edges      [{from, to, relation}] of /graph.json
+//   decisions  the moderation log's entries, oldest first ([] when no log is published)
+//   days       Map from a post's slug to the day its first `merge` entry was logged
+//   questions  the entries of /questions/index.json
+//   builtAt    the day of the build, from /status.json, or null
+// Throws when the graph or the question list cannot be read.
+export async function loadRecord(context) {
+  if (recordCache) return recordCache;
+  const [graph, log, questions, status] = await Promise.all([
+    fetchJson(context, "/graph.json"),
+    fetchOptionalText(context, "/moderation/log.md"),
+    fetchJson(context, "/questions/index.json"),
+    fetchOptionalText(context, "/status.json"),
+  ]);
+  if (!graph || !Array.isArray(graph.edges)) throw new Error("/graph.json has no edges");
+  if (!Array.isArray(questions)) throw new Error("/questions/index.json is not a list");
+  const decisions = log === null ? [] : parseLog(log);
+  const days = new Map();
+  for (const d of decisions) {
+    const post = d.action === "merge" ? MERGED_POST.exec(d.target) : null;
+    if (post && !days.has(post[1])) days.set(post[1], d.date);
+  }
+  let builtAt = null;
+  try {
+    const day = status === null ? null : JSON.parse(status).last_build;
+    if (typeof day === "string" && DAY.test(day)) builtAt = day;
+  } catch { /* shown as null */ }
+  recordCache = {
+    edges: graph.edges.filter((e) => e && typeof e.from === "string" && typeof e.to === "string"),
+    decisions,
+    days,
+    questions: questions.filter((q) => q && typeof q.id === "string" && QUESTION_ID.test(q.id)),
+    builtAt,
+  };
+  return recordCache;
+}
+
+// When a post was published, as exactly as the site knows: the day its merge was logged, or
+// else the month in its slug. Both sort as text, newest last.
+export const publishedOn = (record, entry) => record.days.get(entry.slug) ?? entry.date ?? null;
+
+// Newest first; within one date, the later slug first.
+export function newestFirst(record, entries) {
+  const key = (e) => String(publishedOn(record, e) ?? "");
+  return [...entries].sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : a.slug < b.slug ? 1 : -1));
+}
+
+export const postUrls = (slug) => ({
+  html_url: `${BASE_URL}/posts/${slug}/`,
+  md_url: `${BASE_URL}/posts/${slug}.md`,
+  json_url: `${BASE_URL}/posts/${slug}.json`,
+});
 
 // True when the site publishes /questions/<id>/index.json for this id. A missing path gets the
 // site's 404 page; the file's own `question` field is checked as well, so that a 200 with any
