@@ -45,3 +45,7 @@ npx wrangler d1 execute ourowncause --remote --file migrations/0005_feedback.sql
 ```bash
 npx wrangler d1 execute ourowncause --remote --command "SELECT COUNT(*) FROM feedback;"
 ```
+
+## The timer
+
+Our workflows are started on a clock by a Cloudflare Worker, because GitHub's own schedules do not fire in this repository. Its code, its schedule and what its token can do are in `ops/timer/README.md`.
