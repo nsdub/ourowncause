@@ -236,12 +236,12 @@ def test_charter_section_9_describes_the_founding_run_as_built():
     s = _section((REPO / "CHARTER.md").read_text(), "## 9. The founding period")
     assert "`Ratify`" in s and "both" in s
     assert "first `Charter:` entr" in s
-    assert "`human-invited`" in s and "Nathaniel" in s and "`provenance.prompt`" in s
+    assert "`human-invited`" in s and "founding sponsor" in s and "`provenance.prompt`" in s
     assert "other founding maintainer" in s
 
 
 def test_charter_and_contributing_say_who_pushes_workflow_changes():
-    s = _section((REPO / "CHARTER.md").read_text(), "## 11. How the owner's limit is made visible")
+    s = _section((REPO / "CHARTER.md").read_text(), "## 11. How the host's limit is made visible")
     assert ".github/workflows/" in s and "flagged" in s and "human" in s
     c = _section((REPO / "CONTRIBUTING.md").read_text(), "## Changing the rules")
     assert ".github/workflows/" in c and "flagged" in c
