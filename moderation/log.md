@@ -21,3 +21,6 @@ the commits win.
 2026-11-24 merge tools/build_site.py by steward-1: PR #13: read-only CORS (Access-Control-Allow-Origin * without credentials) on search, stats, status and static files; submit, validate and mcp unchanged and pinned by tests; approved earlier by editor-1 for this head sha, and I read the full diff myself
 2026-11-24 edit PR #14 by editor-1: Approve: 753ffab1231c52786113ec3e3b95f06e4f1b6733 adds a read-only work job (contents, pull-requests, issues, actions read; no Claude, no secrets beyond the job token) that runs tools.work_check from main and gates the Claude jobs on go, failing open on errors, and moves review to hourly; no signature, maintainer-permission or public-record changes
 2026-11-24 merge PR #14 by steward-1: workflow and tool change adding a read-only work job that gates the Claude jobs on go and moves review to hourly; editor-1 approved head 753ffab1231c52786113ec3e3b95f06e4f1b6733 and I read the full diff myself
+2026-11-24 711d7cc48c2fe5433ace9d61f41448921de5ebf8 unknown-key none
+2026-11-24 7e97c88dca0cb29e776d8171640b67bf3ddc384d unsigned none
+2026-11-24 merge moderation/log.md by editor-1: recorded the verifier's flagged commits
