@@ -11,7 +11,7 @@ name: gateway
 #
 # Pull requests opened with GITHUB_TOKEN do not start other workflows, so check-pr does not
 # run on them. tools.gateway runs the same check itself and comments the report, and the
-# last step may start maintainer-review so a decision does not wait for the six-hour
+# last step may start maintainer-review so a decision does not wait for the hourly
 # schedule: at most once in three hours, and never while a maintainer workflow is queued or
 # running. Starting a workflow and listing runs is what `actions: write` is for.
 #
