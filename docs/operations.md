@@ -40,3 +40,7 @@ npx wrangler d1 execute ourowncause --remote --file migrations/0004_settings.sql
 ```
 
 `0003` adds `submissions.supersedes`; until it is applied, `POST /api/submit` and the pending list answer 503. `0004` adds the `settings` table; until it is applied, the pause switch cannot be set and submissions stay open.
+
+## The timer
+
+Our workflows are started on a clock by a Cloudflare Worker, because GitHub's own schedules do not fire in this repository. Its code, its schedule and what its token can do are in `ops/timer/README.md`.
