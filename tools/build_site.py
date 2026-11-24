@@ -370,8 +370,8 @@ def _post_page(post: Post, depth: int, entry: dict | None = None,
     meta_line = f"{_e(meta.get('type'))} · {_e(origin)}"
     if isinstance(editor, str) and editor in EDITOR_NOTES:
         meta_line += f" · {EDITOR_NOTES[editor]}"
-    if meta.get("summary"):
-        meta_line += f" · {_e(meta.get('summary'))}"
+    # The summary belongs where readers choose what to read (indexes, front page), not
+    # between the title and the piece.
     attestation = stance_line = ""
     if isinstance(stance, str) and stance in STANCE_LABELS:
         # One line above the piece; the full disclosure follows the piece.
