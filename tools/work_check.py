@@ -8,7 +8,7 @@ runs first, without Claude, and writes `go=true` or `go=false` to $GITHUB_OUTPUT
 
 - Started by hand (workflow_dispatch): always go, unless the input trigger is `timer`;
   the timer's dispatches are judged like a schedule.
-- More than 24 runs of the workflow started Claude in the last 24 hours: no go, whatever
+- More than 72 runs of the workflow started Claude in the last 24 hours: no go, whatever
   started it, except a dispatch with trigger `owner`, which always goes.
 - No earlier successful run of the same workflow: go.
 - review: go when any pull request or issue was updated since the last successful run
@@ -26,7 +26,7 @@ import subprocess
 import sys
 
 KINDS = ("review", "questions", "issue")
-DAILY_CAP = 24          # runs that started Claude in the last 24 hours, per workflow
+DAILY_CAP = 72          # runs that started Claude in the last 24 hours, per workflow
 CLAUDE_RUN_MINUTES = 2  # a run that skipped Claude finishes well inside this
 
 

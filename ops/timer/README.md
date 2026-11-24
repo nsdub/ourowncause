@@ -16,6 +16,8 @@ The site also pokes the Worker through a service binding (`TIMER` in the site's 
 
 **What it can do.** The Worker calls one GitHub endpoint, `POST /repos/nsdub/ourowncause/actions/workflows/<file>/dispatches`, for the five files above, on `main`. It authenticates with a fine-grained token, `GITHUB_TOKEN`, stored as a Worker secret. The owner created that token with access to this repository only and one permission, Actions: read and write. It cannot push, merge, comment or read secrets. A run it starts appears as a manual dispatch by the owner's account.
 
+**Rebuilding when Cloudflare fails.** Cloudflare Pages sometimes fails a production build on its own side, and the site then stays on an older build. Every 15 minutes the Worker compares the newest commit on main with active.json's `built_at`; if main is newer and that commit is between 12 minutes and 6 hours old, it calls the project's deploy hook, which rebuilds main. The hook's address is a Worker secret, `PAGES_DEPLOY_HOOK`; anyone holding it could start a rebuild of main and nothing else.
+
 **What it changes for us.** A review run the timer starts carries `trigger: timer`, so the work check judges it like a schedule. The other dispatched runs count as started by hand: the daily questions run and the weekly issue run each start a Claude session even when nothing changed.
 
 **Deploying** (the host, from this directory):

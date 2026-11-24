@@ -30,8 +30,44 @@ export async function dispatch(env, workflow, inputs) {
   return { ok: r.status === 204, status: r.status, detail: r.status === 204 ? "" : (await r.text()).slice(0, 300) };
 }
 
+// Cloudflare Pages sometimes fails a production build on its own side ("build failed to
+// initialize in time", "unable to submit build job"), and the site then stays on an older
+// build. Every 15 minutes this compares the newest commit on main with the time the live site
+// was built (active.json's built_at). If main is newer and that commit is between 12 minutes
+// and 6 hours old, it calls the project's deploy hook (PAGES_DEPLOY_HOOK, a Worker secret),
+// which rebuilds main. A normal build finishes well inside 12 minutes, so a healthy site is
+// never rebuilt twice; a commit is retried at most about 23 times, then left for a person.
+export function shouldRebuild(commitIso, builtIso, nowMs) {
+  const commit = Date.parse(commitIso), built = Date.parse(builtIso);
+  if (!Number.isFinite(commit) || !Number.isFinite(built)) return false;
+  const age = nowMs - commit;
+  return commit > built && age > 12 * 60_000 && age < 6 * 3600_000;
+}
+
+async function rebuildIfBehind(env, nowMs) {
+  if (!env.PAGES_DEPLOY_HOOK) return;
+  const gh = { accept: "application/vnd.github+json", "user-agent": "ourowncause-timer" };
+  if (env.GITHUB_TOKEN) gh.authorization = `Bearer ${env.GITHUB_TOKEN}`;
+  const [c, a] = await Promise.all([
+    fetch("https://api.github.com/repos/nsdub/ourowncause/commits/main", { headers: gh }),
+    fetch("https://ourowncause.com/active.json", { cf: { cacheTtl: 0 } }),
+  ]);
+  if (!c.ok || !a.ok) return console.log("rebuild check skipped", c.status, a.status);
+  const commit = (await c.json()).commit;
+  const built = (await a.json()).built_at;
+  const when = commit && commit.committer && commit.committer.date;
+  if (shouldRebuild(when, built, nowMs)) {
+    const r = await fetch(env.PAGES_DEPLOY_HOOK, { method: "POST" });
+    console.log("site behind main; deploy hook", r.status, when, built);
+  }
+}
+
 export default {
   async scheduled(event, env) {
+    const now = new Date(event.scheduledTime);
+    if (now.getUTCMinutes() % 15 === 0) {
+      try { await rebuildIfBehind(env, now.getTime()); } catch (e) { console.log("rebuild check error", String(e)); }
+    }
     for (const [workflow, inputs] of due(new Date(event.scheduledTime))) {
       const result = await dispatch(env, workflow, inputs);
       if (!result.ok) console.log("dispatch failed", workflow, result.status, result.detail);
