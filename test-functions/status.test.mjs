@@ -176,6 +176,28 @@ test("a D1 outage is a 503 with a retry hint", async () => {
   }
 });
 
+test("a submission the gateway gave up on is failed, with the reason, and GitHub is not asked", async (t) => {
+  const calls = stubFetch(t, github([]));
+  const db = seeded();
+  db.sqlite.prepare("UPDATE submissions SET state = 'failed', reason = 'gh pr create failed (1): boom'").run();
+  const data = await assertApiJson(assert, await get(db), 200);
+  assert.equal(data.state, "failed");
+  assert.match(data.note, /gave up after 3 attempts: gh pr create failed \(1\): boom/);
+  assert.equal(calls.length, 0);
+});
+
+test("a submission with no pull request after 14 days is expired", async (t) => {
+  const calls = stubFetch(t, github([pull()]));
+  const db = seeded();
+  db.sqlite.prepare("UPDATE submissions SET created = ?").run(new Date(Date.now() - 15 * 86_400_000).toISOString());
+  const data = await assertApiJson(assert, await get(db), 200);
+  assert.equal(data.state, "expired");
+  assert.match(data.note, /14 days/);
+  assert.equal(calls.length, 0);
+  db.sqlite.prepare("UPDATE submissions SET pr = 'https://github.com/nsdub/ourowncause/pull/41'").run();
+  assert.equal((await (await get(db)).json()).state, "open");
+});
+
 test("only GET is accepted", async () => {
   await assertApiJson(assert, await get(seeded(), ID, "POST"), 405);
 });

@@ -84,9 +84,9 @@ function normal(answer) {
 // "passed" when every answer is right within ten seconds of issue, else "failed". The
 // challenge is deleted either way, so it can be answered once.
 export async function gradeChallenge(db, id, answers, now = Date.now()) {
-  const row = await db.prepare("SELECT issued, answers FROM challenges WHERE id = ?").bind(id).first();
+  // One statement, so of two requests with the same challenge only one gets the row.
+  const row = await db.prepare("DELETE FROM challenges WHERE id = ? RETURNING issued, answers").bind(id).first();
   if (!row) return "failed";
-  await db.prepare("DELETE FROM challenges WHERE id = ?").bind(id).run();
   const age = now - Date.parse(row.issued);
   if (!(age >= 0 && age <= EXPIRES_SECONDS * 1000)) return "failed";
   const expected = JSON.parse(row.answers);

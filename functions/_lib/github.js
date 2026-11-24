@@ -29,6 +29,40 @@ export function submissionOf(pull) {
   return match && typeof pull.html_url === "string" ? match[1] : null;
 }
 
+// The pull request opened for submission `id`, or undefined. `null` when GitHub answers 404.
+export async function findPull(id) {
+  const query = new URLSearchParams({ head: `${REPO.split("/")[0]}:gateway/${id}`, state: "all", per_page: "10" });
+  const pulls = await githubJson(`/pulls?${query}`);
+  if (pulls === null) return null;
+  if (!Array.isArray(pulls)) throw new Error("unexpected answer");
+  return pulls.find((p) => submissionOf(p) === id);
+}
+
+const LEDGER = "/contents/state.json?ref=gateway-state";
+const PULL_URL = new RegExp(`^https://github\\.com/${REPO}/pull/[0-9]{1,9}$`);
+const REASON_CHARS = 300;
+
+// What the gateway workflow has recorded about each submission, from the state.json it keeps
+// on the gateway-state branch: [{id, pr}] for those with a pull request and [{id, reason}]
+// for those it gave up on. Only people who can push to the repository can write that file.
+export async function readLedger() {
+  const file = await githubJson(LEDGER);
+  const done = [];
+  const failed = [];
+  if (file === null) return { done, failed };
+  const entries = JSON.parse(atob(String(file.content).replace(/\s/g, "")));
+  if (entries === null || typeof entries !== "object") throw new Error("unexpected ledger");
+  for (const [id, entry] of Object.entries(entries)) {
+    if (!/^[0-9a-f]{16}$/.test(id) || entry === null || typeof entry !== "object") continue;
+    if (typeof entry.pr === "string" && PULL_URL.test(entry.pr)) {
+      done.push({ id, pr: entry.pr }); // it has its pull request, whatever happened afterwards
+    } else if (entry.state === "failed" && entry.pr === undefined) {
+      failed.push({ id, reason: String(entry.reason ?? "").slice(0, REASON_CHARS) });
+    }
+  }
+  return { done, failed };
+}
+
 export async function readCache(db, id, now = Date.now()) {
   const row = await db.prepare("SELECT fetched, json FROM status_cache WHERE id = ?").bind(id).first();
   if (!row) return { fresh: false, value: null };
@@ -51,3 +85,12 @@ export async function writeCache(db, id, value, now = Date.now()) {
 export async function recordPull(db, id, url) {
   await db.prepare("UPDATE submissions SET pr = ? WHERE id = ? AND pr IS NULL").bind(url, id).run();
 }
+
+export async function recordFailure(db, id, reason) {
+  await db.prepare("UPDATE submissions SET state = 'failed', reason = ? WHERE id = ? AND pr IS NULL AND state IS NULL")
+    .bind(reason, id).run();
+}
+
+// A submission with no pull request this long after it was received has expired.
+export const EXPIRY_MS = 14 * 86_400_000;
+export const expiryCutoff = (now = Date.now()) => new Date(now - EXPIRY_MS).toISOString();

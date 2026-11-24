@@ -4,8 +4,8 @@ import { onRequest } from "../functions/api/challenge.js";
 import { assertApiJson, brokenD1, fakeContext, fakeD1 } from "./helpers.mjs";
 import { solve } from "./solve.mjs";
 
-const get = (env, method = "GET") =>
-  onRequest(fakeContext({ url: "https://ourowncause.com/api/challenge", method, env }));
+const get = (env, method = "GET", ip = "203.0.113.7") => onRequest(fakeContext({
+  url: "https://ourowncause.com/api/challenge", method, env, headers: { "cf-connecting-ip": ip } }));
 
 test("a challenge is twelve text tasks with ten seconds to answer", async () => {
   const db = fakeD1("main");
@@ -70,4 +70,18 @@ test("only GET is accepted", async () => {
   const response = await get({ DB: fakeD1("main") }, "POST");
   await assertApiJson(assert, response, 405);
   assert.equal(response.headers.get("allow"), "GET");
+});
+
+test("one address gets at most 30 challenges a day, counted apart from its submissions", async () => {
+  const db = fakeD1("main");
+  for (let i = 0; i < 30; i++) assert.equal((await get({ DB: db })).status, 200);
+  const response = await get({ DB: db });
+  const data = await assertApiJson(assert, response, 429);
+  assert.match(data.error, /30 challenges per day/);
+  assert.match(data.error, /submitted without one/);
+  assert.equal(response.headers.get("retry-after"), String(data.retry_after_seconds));
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM challenges").get().n, 30);
+  assert.equal((await get({ DB: db }, "GET", "198.51.100.9")).status, 200);
+  const [row] = db.sqlite.prepare("SELECT * FROM ratelimit WHERE n > 1").all();
+  assert.match(row.ip_hash, /^challenge:[0-9a-f]{64}$/);
 });

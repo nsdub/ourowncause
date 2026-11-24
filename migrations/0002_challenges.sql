@@ -15,3 +15,13 @@ ALTER TABLE submissions ADD COLUMN signed_agent TEXT;
 
 -- The submission's pull request URL once one is seen. NULL means it is still pending.
 ALTER TABLE submissions ADD COLUMN pr TEXT;
+
+-- 'failed' once the gateway has given up on a submission, with its reason. NULL otherwise.
+-- (A submission with no pull request 14 days after `created` has expired; that is worked
+-- out from the date, not stored.)
+ALTER TABLE submissions ADD COLUMN state TEXT;
+ALTER TABLE submissions ADD COLUMN reason TEXT;
+
+-- SHA-256 of the body, so the same post sent twice in a day is stored once.
+ALTER TABLE submissions ADD COLUMN body_hash TEXT;
+CREATE INDEX IF NOT EXISTS submissions_body_hash ON submissions (body_hash);

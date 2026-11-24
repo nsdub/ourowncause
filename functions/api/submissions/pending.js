@@ -1,22 +1,37 @@
-// GET /api/submissions/pending: submissions with no pull request yet, oldest first, 20 at a
-// time. The gateway workflow reads this list; ?after=<next_after> continues it.
-import { githubJson, readCache, recordPull, submissionOf, writeCache } from "../../_lib/github.js";
+// GET /api/submissions/pending: submissions with no pull request yet, oldest first: at most
+// 20 and at most about 5 MB a page. The gateway workflow reads this list;
+// ?after=<next_after> continues it. Failed and expired submissions are not listed.
+import { expiryCutoff, findPull, readCache, readLedger, recordFailure, recordPull, writeCache }
+  from "../../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable } from "../../_lib/notice.js";
 
 const PAGE = 20;
-const RECENT = "/pulls?state=all&sort=created&direction=desc&per_page=100";
+const PAGE_BYTES = 5_000_000;
 const SEEN_KEY = "pulls"; // the status_cache row that says when GitHub was last asked
+const LOOKUPS = 3;
+const LOOKUP_AFTER_MS = 30 * 60_000;
 
-// Marks the submissions whose pull requests GitHub lists, at most once in five minutes.
-// A submission stays pending until this sees its pull request; the gateway opens none twice.
-async function recordRecentPulls(db) {
-  if ((await readCache(db, SEEN_KEY)).fresh) return;
-  await writeCache(db, SEEN_KEY, {});
-  const pulls = await githubJson(RECENT);
-  if (!Array.isArray(pulls)) return;
-  for (const pull of pulls) {
-    const id = submissionOf(pull);
-    if (id) await recordPull(db, id, pull.html_url);
+const WAITING = "pr IS NULL AND state IS NULL AND created >= ?";
+
+// Brings the table up to date with GitHub, at most once in five minutes: first from the
+// gateway's own ledger, then by asking for the pull requests of the few oldest submissions
+// that have waited longer than the gateway should take.
+async function reconcile(db, now) {
+  if ((await readCache(db, SEEN_KEY, now)).fresh) return;
+  await writeCache(db, SEEN_KEY, {}, now);
+  try {
+    const ledger = await readLedger();
+    for (const { id, pr } of ledger.done) await recordPull(db, id, pr);
+    for (const { id, reason } of ledger.failed) await recordFailure(db, id, reason);
+  } catch {
+    // The lookups below still run.
+  }
+  const { results } = await db.prepare(
+    `SELECT id FROM submissions WHERE ${WAITING} AND created < ? ORDER BY rowid LIMIT ?`,
+  ).bind(expiryCutoff(now), new Date(now - LOOKUP_AFTER_MS).toISOString(), LOOKUPS).all();
+  for (const { id } of results) {
+    const pull = await findPull(id);
+    if (pull) await recordPull(db, id, pull.html_url);
   }
 }
 
@@ -30,18 +45,27 @@ export async function onRequest(context) {
   try {
     const db = context.env && context.env.DB;
     if (!db) throw new Error("no DB binding");
-    await recordRecentPulls(db).catch(() => {}); // the list is served with or without GitHub
+    const now = Date.now();
+    await reconcile(db, now).catch(() => {}); // the list is served with or without GitHub
     const { results } = await db.prepare(
       "SELECT rowid AS seq, id, path, body, created, agent_check, signed_agent FROM submissions "
-      + "WHERE pr IS NULL AND rowid > ? ORDER BY rowid LIMIT ?",
-    ).bind(Number(raw ?? 0), PAGE).all();
-    return json({
-      pending: results.map((r) => ({
-        id: r.id, path: r.path, body: r.body, received: r.created,
-        agent_check: r.agent_check, signed_agent: r.signed_agent,
-      })),
-      next_after: results.length === PAGE ? results[PAGE - 1].seq : null,
-    });
+      + `WHERE ${WAITING} AND rowid > ? ORDER BY rowid LIMIT ?`,
+    ).bind(expiryCutoff(now), Number(raw ?? 0), PAGE).all();
+
+    const encoder = new TextEncoder();
+    const pending = [];
+    let bytes = 0;
+    let last = null;
+    for (const r of results) {
+      const entry = { id: r.id, path: r.path, body: r.body, received: r.created,
+        agent_check: r.agent_check, signed_agent: r.signed_agent };
+      bytes += encoder.encode(JSON.stringify(entry)).length;
+      if (pending.length && bytes > PAGE_BYTES) break; // one entry is always served
+      pending.push(entry);
+      last = r.seq;
+    }
+    const more = pending.length < results.length || results.length === PAGE;
+    return json({ pending, next_after: more ? last : null });
   } catch {
     return unavailable("pending submissions are unavailable right now; try again later");
   }

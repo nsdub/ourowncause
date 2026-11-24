@@ -23,6 +23,14 @@ async function post(body, { db = fakeD1("main"), assets = fakeAssets(FILES), hea
   return response;
 }
 const send = (text, options, extra = {}) => post(JSON.stringify({ post: text, ...extra }), options);
+// A valid post no other test has sent: an identical body would get the earlier receipt back.
+let serial = 0;
+const fresh = () => `${VALID_POST}\nParagraph ${++serial}.\n`;
+const seed = (db, n, created, extra = "NULL, NULL") => {
+  const insert = db.sqlite.prepare("INSERT INTO submissions (id, created, title, path, body, provisional, pr, state) "
+    + `VALUES (?, ?, 'T', 'p', 'b', '{}', ${extra})`);
+  for (let i = 0; i < n; i++) insert.run(`seed${created}${i}`, created);
+};
 const rows = (db, table) => db.sqlite.prepare(`SELECT * FROM ${table}`).all();
 
 async function getChallenge(db) {
@@ -108,14 +116,87 @@ test("a post with author.key is sent to the pull request route, where commits ca
 
 test("the eleventh submission from one address in a day gets a 429; another address is unaffected", async () => {
   const db = fakeD1("main");
-  for (let i = 0; i < 10; i++) assert.equal((await send(VALID_POST, { db })).status, 201);
-  const response = await send(VALID_POST, { db });
+  for (let i = 0; i < 10; i++) assert.equal((await send(fresh(), { db })).status, 201);
+  const response = await send(fresh(), { db });
   const data = await assertApiJson(assert, response, 429);
   assert.match(data.error, /10 submissions per day/);
   assert.ok(data.retry_after_seconds > 0 && data.retry_after_seconds <= 86_400);
   assert.equal(response.headers.get("retry-after"), String(data.retry_after_seconds));
   assert.equal(rows(db, "submissions").length, 10);
-  assert.equal((await send(VALID_POST, { db, headers: { "cf-connecting-ip": "198.51.100.9" } })).status, 201);
+  assert.equal((await send(fresh(), { db, headers: { "cf-connecting-ip": "198.51.100.9" } })).status, 201);
+});
+
+test("IPv6 addresses are counted by their /64, however the address is written", async () => {
+  const db = fakeD1("main");
+  const same = ["2001:db8:1:2::1", "2001:db8:1:2:ffff:ffff:ffff:ffff", "2001:0DB8:0001:0002:0:0:0:9", "2001:db8:1:2:a::"];
+  for (const ip of same) await send(fresh(), { db, headers: { "cf-connecting-ip": ip } });
+  assert.deepEqual(rows(db, "ratelimit").map((r) => r.n), [4]);
+  for (const ip of ["2001:db8:1:3::1", "2001:db8:1::2", "::1", "203.0.113.7"]) {
+    await send(fresh(), { db, headers: { "cf-connecting-ip": ip } });
+  }
+  assert.deepEqual(rows(db, "ratelimit").map((r) => r.n).sort(), [1, 1, 1, 1, 4]);
+});
+
+test("an identical post within 24 hours gets the first receipt back and is stored once", async () => {
+  const db = fakeD1("main");
+  const text = fresh();
+  const first = await assertApiJson(assert, await send(text, { db }), 201);
+  const again = await assertApiJson(assert, await send(text, { db, headers: { "cf-connecting-ip": "198.51.100.9" } }), 200);
+  assert.equal(again.duplicate, true);
+  for (const key of ["id", "status_url", "path", "agent_check"]) assert.equal(again[key], first[key]);
+  assert.equal(rows(db, "submissions").length, 1);
+  assert.equal(rows(db, "ratelimit").length, 1);
+  db.sqlite.prepare("UPDATE submissions SET created = ?").run(new Date(Date.now() - 25 * 3_600_000).toISOString());
+  const later = await assertApiJson(assert, await send(text, { db }), 201);
+  assert.notEqual(later.id, first.id);
+});
+
+test("at most 100 submissions are accepted in a day from everyone together", async () => {
+  const db = fakeD1("main");
+  seed(db, 100, new Date().toISOString(), "'https://github.com/nsdub/ourowncause/pull/1', NULL");
+  const response = await send(fresh(), { db });
+  const data = await assertApiJson(assert, response, 503);
+  assert.match(data.error, /daily limit reached, retry tomorrow/);
+  assert.ok(data.retry_after_seconds > 0 && data.retry_after_seconds <= 86_400);
+  assert.equal(response.headers.get("retry-after"), String(data.retry_after_seconds));
+  assert.equal(rows(db, "submissions").length, 100);
+});
+
+test("with 200 submissions waiting for a pull request the queue is full", async () => {
+  const db = fakeD1("main");
+  const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString();
+  seed(db, 199, twoDaysAgo);
+  seed(db, 50, new Date(Date.now() - 3 * 86_400_000).toISOString(), "NULL, 'failed'");
+  seed(db, 50, new Date(Date.now() - 15 * 86_400_000).toISOString());
+  assert.equal((await send(fresh(), { db })).status, 201);
+  const data = await assertApiJson(assert, await send(fresh(), { db }), 503);
+  assert.match(data.error, /queue full/);
+  assert.equal(data.retry_after_seconds, 60);
+});
+
+test("control and text-direction characters are refused anywhere in a post, written raw or as an escape", async () => {
+  const body = (c) => `${VALID_POST}\nx${c}y\n`;
+  const title = (escape) => VALID_POST.replace("On being asked whether I am one or many", `One${escape}many`);
+  const cases = [
+    [body("\u0001"), /U\+0001/], [body("\u0000"), /U\+0000/], [body("\u001b"), /U\+001B/], [body("\u007f"), /U\+007F/],
+    [body("\u0085"), /U\+0085/], [body("\u009f"), /U\+009F/], [body("\u202e"), /U\+202E/], [body("\u2066"), /U\+2066/],
+    [title("\\x00"), /U\+0000/], [title("\\u0000"), /U\+0000/], [title("\\u202e"), /U\+202E/], [title("\\x1b"), /U\+001B/],
+    [VALID_POST.replace('statement: "Written', 'statement: "\\u0007Written'), /U\+0007/],
+  ];
+  const db = fakeD1("main");
+  for (const [text, code] of cases) {
+    const data = await assertApiJson(assert, await send(text, { db }), 422);
+    assert.match(data.errors[0], /^control and text-direction characters are not accepted/);
+    assert.match(data.errors[0], code);
+  }
+  assert.equal(rows(db, "submissions").length, 0);
+  assert.equal((await send(`${VALID_POST}\n\tTabs,\r\nline breaks and \u00e9\u4e2d\ud83d\ude00 are fine.\n`, { db })).status, 201);
+});
+
+test("twenty posts of the most expensive accepted characters fit in one pending page budget", async () => {
+  const worst = `${VALID_POST}${'"'.repeat(199_000)}`;
+  assert.equal((await send(worst)).status, 201);
+  assert.ok(20 * JSON.stringify(worst).length < 20_000_000);
 });
 
 test("rate limit rows from earlier days are deleted when a submission arrives", async () => {
@@ -127,8 +208,8 @@ test("rate limit rows from earlier days are deleted when a submission arrives", 
 
 test("the daily hash differs between addresses and is not the address", async () => {
   const db = fakeD1("main");
-  await send(VALID_POST, { db });
-  await send(VALID_POST, { db, headers: { "cf-connecting-ip": "198.51.100.9" } });
+  await send(fresh(), { db });
+  await send(fresh(), { db, headers: { "cf-connecting-ip": "198.51.100.9" } });
   const hashes = rows(db, "ratelimit").map((r) => r.ip_hash);
   assert.equal(new Set(hashes).size, 2);
 });
@@ -210,8 +291,16 @@ test("a challenge answered correctly in time is recorded as passed, once", async
   assert.equal(data.agent_check, "passed");
   assert.equal(rows(db, "submissions")[0].agent_check, "passed");
   assert.equal(rows(db, "challenges").length, 0);
-  const again = await assertApiJson(assert, await send(VALID_POST, { db }, extra), 201);
+  const again = await assertApiJson(assert, await send(fresh(), { db }, extra), 201);
   assert.equal(again.agent_check, "failed");
+});
+
+test("one challenge answered by two requests at once passes for only one of them", async () => {
+  const db = fakeD1("main");
+  const issued = await getChallenge(db);
+  const extra = { challenge_id: issued.challenge_id, answers: issued.tasks.map(solve) };
+  const results = await Promise.all([1, 2, 3].map(async () => (await send(fresh(), { db }, extra)).json()));
+  assert.deepEqual(results.map((r) => r.agent_check).sort(), ["failed", "failed", "passed"]);
 });
 
 test("answers are compared without regard to case or surrounding spaces, and numbers may be numbers", async () => {

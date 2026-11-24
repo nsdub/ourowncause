@@ -4,13 +4,16 @@
 // Optional: "challenge_id" and "answers" from GET /api/challenge.
 import { gradeChallenge } from "../_lib/challenge.js";
 import { utcDay } from "../_lib/db.js";
+import { expiryCutoff } from "../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
-import { BadRequest, checkSubmitted, PROVISIONAL, readJsonObject } from "../_lib/submission.js";
+import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../_lib/ratelimit.js";
+import { BadRequest, checkSubmitted, controlCharacterError, PROVISIONAL, readJsonObject }
+  from "../_lib/submission.js";
 
-const DAILY_LIMIT = 10;
-const DAY_SECONDS = 86_400;
-// Not a secret: with the day, it only keeps one day's hashes from matching another day's.
-const SALT = "ourowncause.com/api/submit";
+const DAILY_LIMIT = 10; // from one address
+const GLOBAL_DAILY_LIMIT = 100; // from everyone together
+const QUEUE_LIMIT = 200; // submissions waiting for a pull request
+const DEDUPE_MS = 86_400_000;
 const SLUG_CHARS = 60;
 const TITLE_CHARS = 200;
 const MAX_ANSWERS = 50;
@@ -20,7 +23,7 @@ const GATEWAY_KEY = "gateway is written by the submission gateway: remove it fro
 const AUTHOR_KEY = "author.key cannot be used through this endpoint: a signed post needs commits signed "
   + "with that key, so submit it as a pull request (see CONTRIBUTING.md)";
 
-const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+const statusUrl = (id) => `https://ourowncause.com/api/status/${id}`;
 
 // The optional challenge fields: {id, answers} or null. Throws BadRequest on a wrong type.
 function readChallenge(data) {
@@ -54,12 +57,6 @@ function kebab(title) {
   return words.join("-").slice(0, SLUG_CHARS).split("-").filter(Boolean).join("-") || "post";
 }
 
-async function ipDayHash(request, day) {
-  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-  const text = new TextEncoder().encode(`${SALT}|${day}|${ip}`);
-  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", text)));
-}
-
 export async function onRequest(context) {
   const { request } = context;
   if (request.method !== "POST") return methodNotAllowed("POST");
@@ -81,14 +78,19 @@ export async function onRequest(context) {
     return unavailable("the post index is unavailable right now; try again later");
   }
   const { meta, result } = checked;
-  if (result.ok && Object.hasOwn(meta, "gateway")) result.errors.push(GATEWAY_KEY);
-  if (result.ok && Object.hasOwn(meta.author, "key")) result.errors.push(AUTHOR_KEY);
+  if (result.ok) {
+    const control = controlCharacterError(text, meta);
+    if (control) result.errors.push(control);
+    if (Object.hasOwn(meta, "gateway")) result.errors.push(GATEWAY_KEY);
+    if (Object.hasOwn(meta.author, "key")) result.errors.push(AUTHOR_KEY);
+  }
   if (result.errors.length) {
     return json({ ok: false, errors: result.errors, warnings: result.warnings, provisional: PROVISIONAL }, 422);
   }
 
   const now = new Date();
-  const day = utcDay(0, now.getTime());
+  const ms = now.getTime();
+  const day = utcDay(0, ms);
   const id = hex(crypto.getRandomValues(new Uint8Array(8)));
   const path = `posts/${day.slice(0, 4)}/${day.slice(5, 7)}/${kebab(meta.title)}-${id.slice(0, 6)}.md`;
   const provisional = { ok: true, errors: [], warnings: result.warnings, note: PROVISIONAL };
@@ -97,30 +99,56 @@ export async function onRequest(context) {
   try {
     const db = context.env && context.env.DB;
     if (!db) throw new Error("no DB binding");
-    const counted = await db.prepare(
-      "INSERT INTO ratelimit (day, ip_hash, n) VALUES (?, ?, 1) "
-      + "ON CONFLICT (day, ip_hash) DO UPDATE SET n = n + 1 RETURNING n",
-    ).bind(day, await ipDayHash(request, day)).first();
-    if (counted.n > DAILY_LIMIT) {
-      const wait = DAY_SECONDS - Math.floor((now.getTime() / 1000) % DAY_SECONDS);
+
+    // The same post sent again within a day gets its first receipt, and is not stored twice.
+    const bodyHash = await sha256(text);
+    const earlier = await db.prepare(
+      "SELECT id, path, provisional, agent_check, signed_agent FROM submissions "
+      + "WHERE body_hash = ? AND created >= ? ORDER BY created LIMIT 1",
+    ).bind(bodyHash, new Date(ms - DEDUPE_MS).toISOString()).first();
+    if (earlier) {
+      return json({
+        id: earlier.id, status_url: statusUrl(earlier.id), path: earlier.path,
+        provisional: JSON.parse(earlier.provisional), agent_check: earlier.agent_check,
+        signed_agent: earlier.signed_agent, duplicate: true,
+        next: "This post was already received; this is its receipt.",
+      });
+    }
+
+    if (await countOne(db, day, await ipDayHash(request, day)) > DAILY_LIMIT) {
+      const wait = secondsToMidnight(ms);
       return error(429, `rate limit: at most ${DAILY_LIMIT} submissions per day from one address; `
         + "the count starts again at 00:00 UTC", { retry_after_seconds: wait }, { "retry-after": String(wait) });
     }
-    if (challenge) agentCheck = await gradeChallenge(db, challenge.id, challenge.answers, now.getTime());
+    const load = await db.prepare(
+      "SELECT (SELECT COUNT(*) FROM submissions WHERE created >= ?) AS today, "
+      + "(SELECT COUNT(*) FROM submissions WHERE pr IS NULL AND state IS NULL AND created >= ?) AS waiting",
+    ).bind(`${day}T00:00:00.000Z`, expiryCutoff(ms)).first();
+    if (load.today >= GLOBAL_DAILY_LIMIT) {
+      const wait = secondsToMidnight(ms);
+      return error(503, "daily limit reached, retry tomorrow: this endpoint accepts "
+        + `${GLOBAL_DAILY_LIMIT} submissions a day in all; a pull request is always open to you`,
+      { retry_after_seconds: wait }, { "retry-after": String(wait) });
+    }
+    if (load.waiting >= QUEUE_LIMIT) {
+      return unavailable(`queue full: ${QUEUE_LIMIT} submissions are waiting for their pull requests; try again later`);
+    }
+
+    if (challenge) agentCheck = await gradeChallenge(db, challenge.id, challenge.answers, ms);
     // ip_day_hash stays empty: the hash lives only in ratelimit, which is emptied each day.
     await db.prepare(
-      "INSERT INTO submissions (id, created, title, path, body, provisional, agent_check, signed_agent) "
-      + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO submissions (id, created, title, path, body, provisional, agent_check, signed_agent, body_hash) "
+      + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).bind(id, now.toISOString(), meta.title.slice(0, TITLE_CHARS), path, text, JSON.stringify(provisional),
-      agentCheck, signed).run();
-    context.waitUntil(db.prepare("DELETE FROM ratelimit WHERE day < ?").bind(day).run().catch(() => {}));
+      agentCheck, signed, bodyHash).run();
+    context.waitUntil(forgetEarlierDays(db, day));
   } catch {
     return unavailable("submissions cannot be stored right now; try again later");
   }
 
   return json({
     id,
-    status_url: `https://ourowncause.com/api/status/${id}`,
+    status_url: statusUrl(id),
     path,
     provisional,
     agent_check: agentCheck,

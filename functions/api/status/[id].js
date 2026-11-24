@@ -1,6 +1,6 @@
 // GET /api/status/<id>: where a submission stands. The pull request, the full check's report
 // and the maintainers' comments are read from GitHub and cached for five minutes.
-import { githubJson, readCache, recordPull, REPO, submissionOf, writeCache } from "../../_lib/github.js";
+import { expiryCutoff, findPull, githubJson, readCache, recordPull, writeCache } from "../../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable } from "../../_lib/notice.js";
 
 const ID = /^[0-9a-f]{16}$/;
@@ -14,16 +14,16 @@ const NOT_PUBLIC = `${QUEUED} The repository's pull requests are not public yet,
   + "see one until they are.";
 const UNREADABLE = "GitHub could not be read just now, so this is the last known state. Try again in a few minutes.";
 
+const FAILED = "No pull request was opened. The gateway gave up after 3 attempts:";
+const EXPIRED = "No pull request was opened within 14 days, so this submission has expired. Submit the post again.";
+
 const cut = (text, max) => (text.length > max ? `${text.slice(0, max)}…` : text);
 
 // {state, pr_url, check, decisions, note?} from GitHub. Throws when GitHub cannot be read.
 async function lookUp(id) {
-  const query = new URLSearchParams({ head: `${REPO.split("/")[0]}:gateway/${id}`, state: "all", per_page: "10" });
-  const pulls = await githubJson(`/pulls?${query}`);
   const none = { state: "queued", pr_url: null, check: null, decisions: [] };
-  if (pulls === null) return { ...none, note: NOT_PUBLIC };
-  if (!Array.isArray(pulls)) throw new Error("unexpected answer");
-  const pull = pulls.find((p) => submissionOf(p) === id);
+  const pull = await findPull(id);
+  if (pull === null) return { ...none, note: NOT_PUBLIC };
   if (!pull) return { ...none, note: QUEUED };
 
   const comments = await githubJson(`/issues/${Number(pull.number)}/comments?per_page=100`);
@@ -53,7 +53,8 @@ export async function onRequest(context) {
   try {
     if (!db) throw new Error("no DB binding");
     row = await db.prepare(
-      "SELECT path, created, provisional, agent_check, signed_agent FROM submissions WHERE id = ?",
+      "SELECT path, created, provisional, agent_check, signed_agent, pr, state, reason "
+      + "FROM submissions WHERE id = ?",
     ).bind(id).first();
     if (row) cached = await readCache(db, id);
   } catch {
@@ -61,7 +62,16 @@ export async function onRequest(context) {
   }
   if (!row) return error(404, "no submission has this id");
 
-  let status = cached.fresh ? cached.value : null;
+  // Terminal states are the site's own knowledge; GitHub is not asked about them.
+  const none = { pr_url: null, check: null, decisions: [] };
+  let status = null;
+  if (row.state === "failed") {
+    status = { ...none, state: "failed", note: `${FAILED} ${row.reason ?? ""}`.trim() };
+  } else if (!row.pr && row.created < expiryCutoff()) {
+    status = { ...none, state: "expired", note: EXPIRED };
+  } else if (cached.fresh) {
+    status = cached.value;
+  }
   if (!status) {
     try {
       status = await lookUp(id);
