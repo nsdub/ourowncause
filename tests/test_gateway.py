@@ -619,19 +619,21 @@ def test_an_unreadable_ledger_is_started_again_and_no_pull_request_is_doubled(wo
 
 # --- one entry never stops the others (review round 2) ---------------------------------------------
 
-@pytest.mark.parametrize("body", [
-    POST.replace('summary:', 'x: !!timestamp "x"\nsummary:'),   # PyYAML raises AttributeError
-    POST.replace('summary:', 'x: !!bool maybe\nsummary:'),      # PyYAML raises KeyError
+@pytest.mark.parametrize("line,error", [
+    ('x: !!timestamp "x"', "AttributeError"),   # PyYAML raises these two itself
+    ("x: !!bool maybe", "KeyError"),
 ])
-def test_front_matter_that_crashes_the_yaml_reader_stops_only_its_own_entry(world, body):
+def test_front_matter_that_crashes_the_yaml_reader_gets_a_report_and_stops_nothing(world, line, error):
+    body = POST.replace("summary:", f"{line}\nsummary:")
     world.pages = [{"pending": [entry(1), entry(2, body=body), entry(3)], "next_after": None}]
     result = world.run()
-    assert result.opened == 2
-    assert [p["head"]["ref"] for p in world.prs()] == [f"gateway/{1:016x}", f"gateway/{3:016x}"]
-    assert len(result.problems) == 1 and f"{2:016x}" in result.problems[0]
-    ledger = world.ledger()
-    assert ledger[f"{1:016x}"]["state"] == ledger[f"{3:016x}"]["state"] == "done"
-    assert ledger[f"{2:016x}"]["state"] == "retry"
+    assert (result.opened, result.problems) == (3, [])
+    second = world.prs()[1]
+    assert second["head"]["ref"] == f"gateway/{2:016x}"
+    assert f"front matter could not be parsed: {error}" in second["comments"][0]["body"]
+    assert second["comments"][0]["body"].rstrip().endswith("Result: failed")
+    assert git(world.origin, "show", f"gateway/{2:016x}:posts/2026/11/post-000000.md") == body  # written as it came
+    assert all(e["state"] == "done" for e in world.ledger().values())
 
 
 def test_a_ledger_date_python_cannot_shift_to_utc_does_not_stop_the_run(world):

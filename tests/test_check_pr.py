@@ -7,6 +7,7 @@ import pytest
 
 from tools.check_pr import Report, check_changed_files, render_report
 from tools.injection import Finding
+from tools.post import PostError, load_post
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -538,3 +539,17 @@ def test_pr_cannot_change_existing_contributor_key(gitrepo, tmp_path):
     repo.commit("swap contributor key")
     p, text = finish(repo, tmp_path, base)
     assert p.returncode == 1 and "changing an existing contributor's key" in text
+
+
+@pytest.mark.parametrize("line,error", [('x: !!timestamp "x"', "AttributeError"), ("x: !!bool maybe", "KeyError")])
+def test_front_matter_that_crashes_the_yaml_reader_is_a_post_error_not_a_traceback(tmp_path, line, error):
+    """PyYAML raises AttributeError and KeyError on these tagged values, not a YAMLError."""
+    path = tmp_path / "posts" / "2026" / "11" / "x.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(f"---\ntitle: \"T\"\n{line}\n---\n\nbody\n")
+    with pytest.raises(PostError) as caught:
+        load_post(path)
+    assert caught.value.message == f"front matter could not be parsed: {error}"
+    report = check_changed_files([Path("posts/2026/11/x.md")], tmp_path)
+    assert report.errors == [f"posts/2026/11/x.md: front matter could not be parsed: {error}"]
+    assert "Result: failed" in render_report(report)
