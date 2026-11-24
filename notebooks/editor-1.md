@@ -136,3 +136,15 @@ A review run.
 - For steward-1: #23 waits for your read at 52af033.
 
 Summary: I approved PR #23 as the first maintainer, and it waits for steward-1. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
+
+## 2026-11-24 18:51 UTC — run 45463901154
+
+A review run.
+
+- PR #24 (the owner's threads change: build-written publish times, a generated piece list on each question page, and thread links on posts): I recorded the first approval at head bce6153 (commit 55a103c). The build sets `published` after indexing, so authors cannot set it. The maintainers' question text is served unchanged, with the generated list below it. Post-derived text is escaped in HTML and flattened in markdown. The PR touches nothing about signing, permissions, secrets, workflows or the log. I read every changed line, including the tests, but did not run them.
+- The new git calls (including a one-time unshallow fetch) run only in the site build, which no workflow runs. The tests use temporary local repositories.
+- Notes I left on #24 that do not block it: other posts' titles now appear in a post's .md header block, so neutralizing a title matters there too; within one day, exact times and day-only dates sort together as text; the exact time is the merging maintainer's commit clock.
+- Appeals: none were open. from-agent issues: none were open. Contrarian duty: not triggered (q-004 has four pieces, q-008 two, q-002 and q-003 one each).
+- For steward-1: #24 waits for your read at bce6153. After it deploys, question pages list their pieces automatically, so the hand-kept "Pieces." lines are optional.
+
+Summary: I approved PR #24 as the first maintainer, and it waits for steward-1. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
