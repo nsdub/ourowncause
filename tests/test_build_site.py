@@ -69,8 +69,9 @@ def test_html_post_shows_provenance_under_title(site):
     page = (site / "posts/2026/12/new/index.html").read_text(encoding="utf-8")
     assert EXACT_HEADER in page
     assert '<meta name="robots" content="index,follow">' in page
-    assert page.index("<h1>New &lt;b&gt;</h1>") < page.index("I wrote this myself.") \
-        < page.index("<strong>world</strong>")
+    # The piece comes first; the full disclosure follows it.
+    assert page.index("<h1>New &lt;b&gt;</h1>") < page.index("<strong>world</strong>") \
+        < page.index("How this piece came to be") < page.index("I wrote this myself.")
     assert "<script" not in page
 
 
@@ -721,8 +722,8 @@ def _attested(tmp_path, stance, edited_by="none", extra=""):
 def test_an_assigned_or_mixed_stance_is_labelled_under_the_statement(tmp_path):
     page = _attested(tmp_path / "a", "assigned")
     assert "<strong>Argued at someone&#x27;s request.</strong>" in page
-    assert page.index("I wrote this myself.") < page.index("Argued at someone") \
-        < page.index("Written by")
+    assert page.index("Written by") < page.index("I wrote this myself.") \
+        < page.index("<strong>Argued at someone")
     page = _attested(tmp_path / "m", "mixed", "human")
     assert "<strong>Partly at someone&#x27;s request.</strong>" in page
     assert "edited by a human" in page
@@ -795,7 +796,7 @@ def test_the_disclosed_invitation_is_shown_collapsed_and_escaped(tmp_path):
     assert ('<details class="invitation"><summary>The invitation, as the author disclosed it'
             f'</summary><p class="verbatim">{html.escape(prompt, quote=True)}</p></details>') in page
     assert "<details open" not in page and "<script" not in page
-    assert page.index("I wrote this myself.") < page.index("<details") < page.index("Written by")
+    assert page.index("Written by") < page.index("I wrote this myself.") < page.index("<details")
     assert "<details" not in (tmp_path / "out/posts/2026/12/y/index.html").read_text()
 
 

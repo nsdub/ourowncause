@@ -192,18 +192,18 @@ def test_the_feed_gives_an_exact_time_when_one_is_known(tmp_path):
 def test_post_json_has_the_thread_oldest_first(tmp_path):
     out = built(tmp_path)
     a = load(out, f"posts/{A}.json")
-    assert a["thread"] == {"answers": [], "answered_by": [
+    assert a["thread"] == {"cites": [], "cited_by": [
         {"slug": B, "title": "B answers A", "relation": "responds-to", "published": "2026-11-22"},
         {"slug": C, "title": "C <b>disputes</b> A]\n", "relation": "disputes",
          "published": "2026-11-23"}]}
     c = load(out, f"posts/{C}.json")
-    assert [(t["slug"], t["relation"]) for t in c["thread"]["answers"]] == [
+    assert [(t["slug"], t["relation"]) for t in c["thread"]["cites"]] == [
         (A, "disputes"), (B, "builds-on")]
-    assert c["thread"]["answered_by"] == []
+    assert c["thread"]["cited_by"] == []
     # What was there before stays as it was.
     assert c["cites_out"] == [{"slug": A, "relation": "disputes"},
                               {"slug": B, "relation": "builds-on"}]
-    assert load(out, f"posts/{D}.json")["thread"] == {"answers": [], "answered_by": []}
+    assert load(out, f"posts/{D}.json")["thread"] == {"cites": [], "cited_by": []}
 
 
 def test_post_md_header_block_gives_the_time_and_the_thread_then_the_file_as_written(tmp_path):
@@ -216,13 +216,13 @@ def test_post_md_header_block_gives_the_time_and_the_thread_then_the_file_as_wri
     assert lines[0] == HEADER
     assert lines[1] == "Published: 2026-11-21"
     # One line each; a title is kept to one line and cannot close its link.
-    assert lines[2] == (f"Answered by: [B answers A]({BASE}/posts/{B}.md) (responds-to), "
+    assert lines[2] == (f"Cited by: [B answers A]({BASE}/posts/{B}.md) (responds-to), "
                         f"[C <b>disputes</b> A)]({BASE}/posts/{C}.md) (disputes)")
     assert len(lines) == 3
 
     c = (out / f"posts/{C}.md").read_text(encoding="utf-8").partition("\n\n")[0].split("\n")
     assert c[1:] == ["Published: 2026-11-23",
-                     f"This answers: [A first]({BASE}/posts/{A}.md) (disputes), "
+                     f"Cites: [A first]({BASE}/posts/{A}.md) (disputes), "
                      f"[B answers A]({BASE}/posts/{B}.md) (builds-on)"]
     d = (out / f"posts/{D}.md").read_text(encoding="utf-8").partition("\n\n")[0].split("\n")
     assert d == [HEADER, "Published: 2026-11"]
@@ -237,15 +237,15 @@ def test_a_long_thread_line_in_md_is_bounded_and_points_to_the_json(tmp_path):
     line = (out / f"posts/{D}.md").read_text(encoding="utf-8").partition("\n\n")[0].split("\n")[2]
     assert line.count("](") == 10
     assert line.endswith(f", and 20 more: {BASE}/posts/{D}.json")
-    assert len(load(out, f"posts/{D}.json")["thread"]["answered_by"]) == 30
+    assert len(load(out, f"posts/{D}.json")["thread"]["cited_by"]) == 30
 
 
-def test_post_page_shows_what_it_answers_above_the_body_and_responses_below(tmp_path):
+def test_post_page_shows_the_piece_first_then_what_it_cites_and_what_cites_it(tmp_path):
     out = built(tmp_path)
     a = (out / f"posts/{A}/index.html").read_text(encoding="utf-8")
     body = a.index("Body of 2026/11/a-first.")
-    assert "<h2>This answers</h2>" not in a
-    responses = a.index("<h2>Responses</h2>")
+    assert "<h2>Cites</h2>" not in a
+    responses = a.index("<h2>Cited by</h2>")
     assert responses > body
     # Grouped by relation, each with its date; a title is escaped.
     assert a.index("<h3>Responds to this</h3>") < a.index("<h3>Disputes this</h3>")
@@ -255,14 +255,14 @@ def test_post_page_shows_what_it_answers_above_the_body_and_responses_below(tmp_
     assert '<time datetime="2026-11-21">2026-11-21</time>' in a[:body]
 
     c = (out / f"posts/{C}/index.html").read_text(encoding="utf-8")
-    answers = c.index("<h2>This answers</h2>")
-    assert answers < c.index("Body of 2026/11/c-disputes-a.")
+    answers = c.index("<h2>Cites</h2>")
+    assert answers > c.index("Body of 2026/11/c-disputes-a.")  # the piece first
     assert f'<a href="../../../../posts/{A}/">A first</a>' in c[answers:]
     assert "disputes" in c[answers:] and "builds on" in c[answers:]
-    assert "<h2>Responses</h2>" not in c
+    assert "<h2>Cited by</h2>" not in c
 
 
-def test_front_page_is_newest_first_with_date_questions_answers_and_responses(tmp_path):
+def test_front_page_is_newest_first_with_date_questions_cites_and_cited_by(tmp_path):
     out = built(tmp_path)
     home = (out / "index.html").read_text(encoding="utf-8")
     start = home.index("<h2>What we have published</h2>")
@@ -272,12 +272,12 @@ def test_front_page_is_newest_first_with_date_questions_answers_and_responses(tm
         "C &lt;b&gt;disputes&lt;/b&gt; A]", "B answers A", "A first", "D alone"]
     c, b, a, d = entries
     assert "2026-11-23" in c and '<a href="questions/q-001-first/">q-001</a>' in c
-    assert f'answers <a href="posts/{A}/">A first</a> (disputes)' in c
+    assert f'cites <a href="posts/{A}/">A first</a> (disputes)' in c
     assert f'<a href="posts/{B}/">B answers A</a> (builds on)' in c
     assert "response" not in c.split("</a>", 1)[1].replace("responds", "")
-    assert "1 response" in b and "1 responses" not in b
-    assert "2 responses" in a and "answers <a" not in a
-    assert "2026-11" in d and "q-0" not in d and "answers" not in d and "response" not in d
+    assert "cited by 1" in b and "1 responses" not in b
+    assert "cited by 2" in a and "cites <a" not in a
+    assert "2026-11" in d and "q-0" not in d and "cites" not in d and "cited by" not in d
 
 
 def test_llms_txt_says_we_are_a_graph_within_the_budgets(tmp_path):

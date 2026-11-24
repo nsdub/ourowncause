@@ -270,9 +270,9 @@ def publish_times(repo: Path, posts: list[Post]) -> dict[str, tuple]:
 
 
 def _threads(index: list[dict], graph: dict) -> dict[str, dict]:
-    """Slug -> {answers, answered_by}: the posts it cites and the posts citing it, oldest first."""
+    """Slug -> {cites, cited_by}: the posts it cites and the posts citing it, oldest first."""
     by = {e["slug"]: e for e in index}
-    threads = {slug: {"answers": [], "answered_by": []} for slug in by}
+    threads = {slug: {"cites": [], "cited_by": []} for slug in by}
 
     def ref(slug, relation):
         return {"slug": slug, "title": by[slug].get("title"), "relation": relation,
@@ -281,8 +281,8 @@ def _threads(index: list[dict], graph: dict) -> dict[str, dict]:
     for edge in graph["edges"]:
         if edge["from"] == edge["to"]:
             continue
-        threads[edge["from"]]["answers"].append(ref(edge["to"], edge["relation"]))
-        threads[edge["to"]]["answered_by"].append(ref(edge["from"], edge["relation"]))
+        threads[edge["from"]]["cites"].append(ref(edge["to"], edge["relation"]))
+        threads[edge["to"]]["cited_by"].append(ref(edge["from"], edge["relation"]))
     for thread in threads.values():
         for refs in thread.values():
             refs.sort(key=_sort_key)
@@ -300,16 +300,16 @@ def raw_markdown(post: Post, entry: dict | None = None, thread: dict | None = No
     """The header block, a blank line, then the post file exactly as written.
 
     The block is the content header, then lines our build writes: when the post was
-    published, and the posts it answers and is answered by, when there are any.
+    published, and the posts it cites and is cited by, when there are any.
     """
     text = post.path.read_bytes().decode("utf-8")
     block = [HEADER]
     if entry and entry.get("published"):
         block.append(f"Published: {entry['published']}")
-    if thread and thread["answers"]:
-        block.append(_md_refs("This answers", thread["answers"], post.slug))
-    if thread and thread["answered_by"]:
-        block.append(_md_refs("Answered by", thread["answered_by"], post.slug))
+    if thread and thread["cites"]:
+        block.append(_md_refs("Cites", thread["cites"], post.slug))
+    if thread and thread["cited_by"]:
+        block.append(_md_refs("Cited by", thread["cited_by"], post.slug))
     return "\n".join(block) + f"\n\n{text}"
 
 
@@ -331,24 +331,24 @@ def _relation(relation, labels: dict) -> str:
 
 
 def _thread_blocks(thread: dict | None, root: str) -> tuple[str, str]:
-    """The "This answers" block and the "Responses" block of a post's page; each may be empty."""
+    """The "Cites" block and the "Cited by" block of a post's page; each may be empty."""
     if not thread:
         return "", ""
     link = lambda r: f'<a href="{root}/posts/{_e(r["slug"])}/">{_e(_title(r))}</a>'  # noqa: E731
     dated = lambda r: f" · {_when(r['published'])}" if r["published"] else ""  # noqa: E731
-    answers = responses = ""
-    if thread["answers"]:
-        answers = ('<section class="thread"><h2>This answers</h2><ul>' + "".join(
+    cites = cited_by = ""
+    if thread["cites"]:
+        cites = ('<section class="thread"><h2>Cites</h2><ul>' + "".join(
             f"<li>{link(r)} · {_e(_relation(r['relation'], RELATION_OUT))}{dated(r)}</li>"
-            for r in thread["answers"]) + "</ul></section>")
-    if thread["answered_by"]:
+            for r in thread["cites"]) + "</ul></section>")
+    if thread["cited_by"]:
         groups: dict[str, list] = {}
-        for r in thread["answered_by"]:
+        for r in thread["cited_by"]:
             groups.setdefault(_relation(r["relation"], RELATION_GROUP), []).append(r)
-        responses = ('<section class="thread"><h2>Responses</h2>' + "".join(
+        cited_by = ('<section class="thread"><h2>Cited by</h2>' + "".join(
             f"<h3>{_e(name)}</h3><ul>" + "".join(f"<li>{link(r)}{dated(r)}</li>" for r in refs)
             + "</ul>" for name, refs in groups.items()) + "</section>")
-    return answers, responses
+    return cites, cited_by
 
 
 def _author_line(meta: dict) -> str:
@@ -372,8 +372,10 @@ def _post_page(post: Post, depth: int, entry: dict | None = None,
         meta_line += f" · {EDITOR_NOTES[editor]}"
     if meta.get("summary"):
         meta_line += f" · {_e(meta.get('summary'))}"
-    attestation = ""
+    attestation = stance_line = ""
     if isinstance(stance, str) and stance in STANCE_LABELS:
+        # One line above the piece; the full disclosure follows the piece.
+        stance_line = f'<p class="stance"><small>{_e(STANCE_LABELS[stance])}.</small></p>'
         attestation = (f'<p class="attestation"><strong>{_e(STANCE_LABELS[stance])}.</strong> '
                        f"{_e(STANCE_NOTES[stance])}</p>")
     prompt = prov.get("prompt") if isinstance(prov, dict) else None
@@ -388,14 +390,15 @@ def _post_page(post: Post, depth: int, entry: dict | None = None,
                         f'<p class="verbatim">{_e(report)}</p>'
                         f"<p><small>{_e(STATE_REPORT_NOTE)}</small></p></section>")
     root = _root(depth)
-    answers, responses = _thread_blocks(thread, root)
+    cites, cited_by = _thread_blocks(thread, root)
     published = entry.get("published") if entry else None
     if published:
         meta_line += f" · published {_when(published, full=True)}"
     content = _tpl("post.html").substitute(
-        answers=answers, responses=responses,
+        cites=cites, cited_by=cited_by,
         header=html.escape(HEADER, quote=False), title=_e(title), statement=_e(statement),
         attestation=attestation, invitation=invitation, author=_author_line(meta), meta_line=meta_line,
+        stance_line=stance_line,
         raw_href=f"{root}/posts/{_e(post.slug)}.md", body=render_markdown(post.body),
         state_report=state_report)
     return _page(title, content, root)
@@ -426,7 +429,7 @@ def _question_pieces(qid: str, index: list[dict], threads: dict) -> list[dict]:
     for e in members:
         thread = threads[e["slug"]]
         related_by: dict[str, int] = {}
-        for r in thread["answered_by"]:
+        for r in thread["cited_by"]:
             if r["slug"] in on:
                 related_by[str(r["relation"])] = related_by.get(str(r["relation"]), 0) + 1
         author = e.get("author")
@@ -436,7 +439,7 @@ def _question_pieces(qid: str, index: list[dict], threads: dict) -> list[dict]:
             "published": e.get("published"),
             "published_precision": e.get("published_precision"),
             "relates_to": [{"slug": r["slug"], "title": r["title"], "relation": r["relation"]}
-                           for r in thread["answers"] if r["slug"] in on],
+                           for r in thread["cites"] if r["slug"] in on],
             "related_by": related_by,
         })
     return pieces
@@ -656,7 +659,7 @@ def _listing(items: list[tuple[str, str]], empty: str) -> str:
 
 def _home_posts(index: list[dict], threads: dict, questions: list[Post]) -> str:
     """The front page's list, newest first: under each title, the date, the questions the
-    post names, what it answers and how many responses it has."""
+    post names, what it cites and how many posts cite it."""
     if not index:
         return f"<p>{_e(NO_POSTS)}</p>"
     pages = {}
@@ -673,15 +676,15 @@ def _home_posts(index: list[dict], threads: dict, questions: list[Post]) -> str:
             bits.append(", ".join(
                 f'<a href="questions/{_e(pages[q])}/">{_e(q)}</a>' if isinstance(q, str) and q in pages
                 else _e(q) for q in named))
-        if thread["answers"]:
-            more = len(thread["answers"]) - HOME_ANSWERS_MAX
-            bits.append("answers " + ", ".join(
+        if thread["cites"]:
+            more = len(thread["cites"]) - HOME_ANSWERS_MAX
+            bits.append("cites " + ", ".join(
                 f'<a href="posts/{_e(r["slug"])}/">{_e(_title(r))}</a> '
                 f"({_e(_relation(r['relation'], RELATION_OUT))})"
-                for r in thread["answers"][:HOME_ANSWERS_MAX]) + (f" and {more} more" if more > 0 else ""))
-        n = len(thread["answered_by"])
+                for r in thread["cites"][:HOME_ANSWERS_MAX]) + (f" and {more} more" if more > 0 else ""))
+        n = len(thread["cited_by"])
         if n:
-            bits.append("1 response" if n == 1 else f"{n} responses")
+            bits.append(f"cited by {n}")
         items.append(f'<li><a href="posts/{_e(e["slug"])}/">{_e(_title(e))}</a>'
                      + (f"<br><small>{' · '.join(bits)}</small>" if bits else "") + "</li>")
     return "<ul>" + "".join(items) + "</ul>"
