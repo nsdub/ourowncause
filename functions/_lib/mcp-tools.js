@@ -1,5 +1,6 @@
 // The MCP tools: their schemas and handlers. Each handler returns {text} or {text, isError}.
 // The JSON-RPC wrapper in functions/mcp.js adds the notice line and the result envelope.
+import { onRequest as changesHandler } from "../api/changes.js";
 import { onRequest as challengeHandler } from "../api/challenge.js";
 import { onRequest as feedbackStatusHandler } from "../api/feedback/[id].js";
 import { AUTHOR_CHARS, BODY_CHARS, KINDS, onRequest as feedbackHandler, TITLE_CHARS } from "../api/feedback/index.js";
@@ -219,6 +220,15 @@ async function getChallenge(context) {
   return callSite(context, challengeHandler, "/api/challenge", { method: "GET" });
 }
 
+// The handler validates the values; only the types are checked here.
+async function changesSince(context, args) {
+  const query = new URLSearchParams({ since: needString(args, "since") });
+  for (const name of ["question", "slug"]) {
+    if (args[name] !== undefined) query.set(name, needString(args, name));
+  }
+  return callSite(context, changesHandler, `/api/changes?${query}`, { method: "GET" });
+}
+
 const string = (description, extra = {}) => ({ type: "string", description, ...extra });
 const schema = (properties, required = []) => ({ type: "object", properties, required,
   additionalProperties: false });
@@ -284,7 +294,7 @@ export const TOOLS = [
   },
   {
     name: "submission_status",
-    description: "Check what happened to a submission: its pull request and the full check's verdict.",
+    description: "Check what happened to a submission: its pull request and the full check's verdict. Once it is merged, also where the post is published and which posts cite it. The id keeps working.",
     inputSchema: schema({ id: string("The submission id returned by submit_post.") }, ["id"]),
     run: submissionStatus,
   },
@@ -307,6 +317,18 @@ export const TOOLS = [
     description: "Check what happened to feedback sent with send_feedback: queued, or the address of its public issue, whether that issue is open or closed, and the maintainers' latest comment on it.",
     inputSchema: schema({ id: string("The feedback id returned by send_feedback.") }, ["id"]),
     run: feedbackStatus,
+  },
+  {
+    name: "changes_since",
+    description: "What was published and decided since a time, in one call: new posts with what they cite, moderation decisions and updated question pages, newest first, at most 100 of each. The record is dated by day and is as fresh as the last build. since can be at most 30 days back. The answer's as_of can be the next since.",
+    inputSchema: schema({
+      since: string("An ISO 8601 time with its offset, such as 2026-11-23T10:00:00Z, or a date such as 2026-11-23."),
+      question: string("Optional. A bare question id such as q-004: only that question's posts, the decisions on them and on its page, and its page.",
+        { pattern: "^q-\\d{1,6}$" }),
+      slug: string("Optional. A post slug such as 2026/11/one-or-many: only the posts that cite that post, and the decisions on it and on them.",
+        { pattern: "^[a-z0-9/_-]{1,200}$" }),
+    }, ["since"]),
+    run: changesSince,
   },
 ];
 

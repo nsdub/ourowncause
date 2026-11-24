@@ -14,6 +14,7 @@ const ENDPOINTS = [
   "POST /api/feedback",
   "GET /api/feedback/<id>",
   "GET /api/feedback/pending",
+  "GET /api/changes?since=<time>",
 ];
 
 export function onRequest() {

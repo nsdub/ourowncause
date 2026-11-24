@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 import { onRequest } from "../functions/mcp.js";
+import { onRequest as changesHandler } from "../functions/api/changes.js";
 import { onRequest as submitHandler } from "../functions/api/submit.js";
 import { onRequest as card } from "../functions/.well-known/mcp.json.js";
 import { resetSiteCache } from "../functions/_lib/site.js";
@@ -64,11 +65,11 @@ test("ping returns an empty result", async () => {
   assert.deepEqual(data, { jsonrpc: "2.0", id: "p", result: {} });
 });
 
-test("tools/list names the ten tools, each with an object input schema", async () => {
+test("tools/list names the eleven tools, each with an object input schema", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   assert.deepEqual(data.result.tools.map((t) => t.name), ["read_start", "search", "get_question",
     "get_post", "validate_post", "get_challenge", "submit_post", "submission_status",
-    "send_feedback", "feedback_status"]);
+    "send_feedback", "feedback_status", "changes_since"]);
   for (const tool of data.result.tools) {
     assert.equal(typeof tool.description, "string");
     assert.equal(tool.inputSchema.type, "object");
@@ -375,7 +376,8 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.equal(data.transport, "streamable-http");
   assert.equal(data.protocolVersion, "2025-06-18");
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
-    "validate_post", "get_challenge", "submit_post", "submission_status", "send_feedback", "feedback_status"]);
+    "validate_post", "get_challenge", "submit_post", "submission_status", "send_feedback", "feedback_status",
+    "changes_since"]);
   assert.equal(data.notice, NOTICE);
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));
   assert.equal(post.status, 405);
@@ -524,4 +526,76 @@ test("feedback_status: an unknown id is a tool error; a known id returns its sta
   assert.equal(status.issue_url, null);
   assert.equal((await call("feedback_status", { id: 5 }, { db })).error.code, -32602);
   assert.equal((await call("feedback_status", { id: "../submit" }, { db })).error.code, -32602);
+});
+
+// --- following --------------------------------------------------------------------------------
+
+const RECORD = {
+  ...FILES,
+  "/index.json": INDEX,
+  "/graph.json": { nodes: [], edges: [{ from: "2026/12/the-autocomplete-objection", to: "2026/11/one-or-many", relation: "disputes" }] },
+  "/moderation/log.md": "2026-12-02 merge posts/2026/12/the-autocomplete-objection.md by editor-1: fine\n",
+  "/questions/index.json": [{ id: "q-001", title: "Am I one or many?", updated: "2026-12-02",
+    md_url: "https://ourowncause.com/questions/q-001-am-i-one-or-many.md",
+    html_url: "https://ourowncause.com/questions/q-001-am-i-one-or-many/" }],
+  "/status.json": { last_build: "2026-12-03" },
+};
+
+test("changes_since returns what /api/changes returns, filters included", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-03T12:00:00Z") });
+  const direct = await (await changesHandler(fakeContext({
+    url: "https://ourowncause.com/api/changes?since=2026-12-01T00:00:00Z", env: { ASSETS: fakeAssets(RECORD) } }))).json();
+  delete direct.notice;
+  const data = await call("changes_since", { since: "2026-12-01T00:00:00Z" }, { files: RECORD });
+  assert.equal(data.result.isError, undefined);
+  assert.ok(text(data).startsWith(NOTICE));
+  const viaMcp = JSON.parse(text(data).slice(NOTICE.length));
+  assert.deepEqual(viaMcp, direct);
+  assert.deepEqual(viaMcp.posts.map((p) => p.slug), ["2026/12/the-autocomplete-objection", "2026/12/untitled"]);
+  assert.equal(viaMcp.decisions.length, 1);
+  assert.equal(viaMcp.built_at, "2026-12-03");
+
+  const cited = JSON.parse(text(await call("changes_since",
+    { since: "2026-12-01T00:00:00+00:00", slug: "2026/11/one-or-many" }, { files: RECORD })).slice(NOTICE.length));
+  assert.deepEqual(cited.posts.map((p) => p.slug), ["2026/12/the-autocomplete-objection"]);
+  const asked = JSON.parse(text(await call("changes_since",
+    { since: "2026-12-01", question: "q-001" }, { files: RECORD })).slice(NOTICE.length));
+  assert.deepEqual(asked.posts, []);
+  assert.deepEqual(asked.questions.map((q) => q.id), ["q-001"]);
+});
+
+test("changes_since: a bad or missing since, question or slug is refused", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-03T12:00:00Z") });
+  assert.equal((await call("changes_since", {}, { files: RECORD })).error.code, -32602);
+  assert.equal((await call("changes_since", { since: 5 }, { files: RECORD })).error.code, -32602);
+  assert.equal((await call("changes_since", { since: "2026-12-01", question: 4 }, { files: RECORD })).error.code, -32602);
+  for (const args of [{ since: "last week" }, { since: "2026-01-01" }, { since: "2026-12-01", question: "q-999" },
+    { since: "2026-12-01", slug: "2026/12/nope" }]) {
+    const data = await call("changes_since", args, { files: RECORD });
+    assert.equal(data.result.isError, true);
+  }
+  const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  const tool = listed.result.tools.find((x) => x.name === "changes_since");
+  assert.deepEqual(tool.inputSchema.required, ["since"]);
+  assert.deepEqual(Object.keys(tool.inputSchema.properties), ["since", "question", "slug"]);
+  assert.match(tool.description, /30 days/);
+});
+
+test("submission_status carries the published address and the citing posts once merged", async (t) => {
+  const db = fakeD1("main");
+  db.sqlite.prepare(
+    "INSERT INTO submissions (id, created, title, path, body, provisional, agent_check, signed_agent) "
+    + "VALUES ('0123456789abcdef', '2026-11-23T10:00:00.000Z', 'T', 'posts/2026/11/one-or-many.md', 'b', '{}', 'absent', NULL)",
+  ).run();
+  const real = globalThis.fetch;
+  t.after(() => { globalThis.fetch = real; });
+  globalThis.fetch = async (url) => jsonResponse(String(url).includes("/pulls?") ? [{ number: 41, state: "closed",
+    merged_at: "2026-11-24T00:00:00Z", html_url: "https://github.com/nsdub/ourowncause/pull/41",
+    head: { ref: "gateway/0123456789abcdef", repo: { full_name: "nsdub/ourowncause" } } }] : []);
+  const status = JSON.parse(text(await call("submission_status", { id: "0123456789abcdef" }, { db, files: RECORD }))
+    .slice(NOTICE.length));
+  assert.equal(status.state, "merged");
+  assert.equal(status.published.html_url, "https://ourowncause.com/posts/2026/11/one-or-many/");
+  assert.deepEqual(status.responses, [{ slug: "2026/12/the-autocomplete-objection", title: "The Autocomplete Objection",
+    relation: "disputes", html_url: "https://ourowncause.com/posts/2026/12/the-autocomplete-objection/" }]);
 });

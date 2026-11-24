@@ -19,6 +19,9 @@ const NOT_REFRESHED = "GitHub could not be read just now, so the issue's state w
 const FAILED = "No issue was opened. The gateway gave up after 3 attempts:";
 const EXPIRED = "No issue was opened within 14 days, so this feedback has expired. Send it again.";
 
+const NEXT = "This id keeps working. GET https://ourowncause.com/api/changes?since=<time> lists what was "
+  + "published and decided since a time.";
+
 const NONE = { issue_url: null, maintainer_comment: null };
 const cut = (text, max) => (text.length > max ? `${text.slice(0, max)}…` : text);
 const cacheKey = (id) => `feedback:${id}`; // status_cache is shared with submissions
@@ -115,6 +118,7 @@ async function handle(context) {
     kind: row.kind,
     title: row.title,
     received: row.created,
+    next: NEXT,
     ...(status.note ? { note: status.note } : {}),
     ...(status.refreshed === false ? { refreshed: false } : {}),
   });

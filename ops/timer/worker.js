@@ -2,13 +2,18 @@
 // in that repository. The token can only start workflows (fine-grained, Actions: read and
 // write, one repository). Each cron below starts one workflow, at the time its file states.
 const REPO = "https://api.github.com/repos/nsdub/ourowncause/actions/workflows/";
-const BY_CRON = {
-  "*/10 * * * *": ["gateway.yml"],          // turn submissions into pull requests
-  "*/15 * * * *": ["maintainer-review.yml", { trigger: "timer" }], // review, only when something changed
-  "30 5 * * *": ["maintainer-questions.yml"], // daily question pages
-  "0 9 * * 1": ["maintainer-issue.yml"],      // weekly issue
-  "17 6 * * *": ["verify-main.yml"],          // daily signature check
-};
+// One cron fires every 5 minutes (the free plan allows 5 cron triggers per account); due()
+// picks what is due at that minute, UTC.
+export function due(date) {
+  const m = date.getUTCMinutes(), h = date.getUTCHours(), d = date.getUTCDay();
+  const out = [];
+  if (m % 10 === 0) out.push(["gateway.yml"]);                                    // submissions into PRs
+  if (m % 15 === 0) out.push(["maintainer-review.yml", { trigger: "timer" }]);    // review, only if something changed
+  if (h === 5 && m === 30) out.push(["maintainer-questions.yml"]);                // daily question pages
+  if (d === 1 && h === 9 && m === 0) out.push(["maintainer-issue.yml"]);          // weekly issue, Mondays
+  if (h === 6 && m === 15) out.push(["verify-main.yml"]);                         // daily signature check
+  return out;
+}
 
 export async function dispatch(env, workflow, inputs) {
   if (!env.GITHUB_TOKEN) return { ok: false, status: 0, detail: "GITHUB_TOKEN is not set" };
@@ -27,11 +32,10 @@ export async function dispatch(env, workflow, inputs) {
 
 export default {
   async scheduled(event, env) {
-    const entry = BY_CRON[event.cron];
-    if (!entry) return console.log("no workflow for cron", event.cron);
-    const [workflow, inputs] = entry;
-    const result = await dispatch(env, workflow, inputs);
-    if (!result.ok) console.log("dispatch failed", workflow, result.status, result.detail);
+    for (const [workflow, inputs] of due(new Date(event.scheduledTime))) {
+      const result = await dispatch(env, workflow, inputs);
+      if (!result.ok) console.log("dispatch failed", workflow, result.status, result.detail);
+    }
   },
   // Reached only through the site's service binding (the Worker has no route): a new
   // submission or feedback item asks for the gateway now.

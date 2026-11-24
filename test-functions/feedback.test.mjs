@@ -328,6 +328,7 @@ test("before an issue exists the state is queued", async (t) => {
   assert.equal(data.kind, "bug");
   assert.equal(data.title, "A broken link");
   assert.match(data.received, /^\d{4}-/);
+  assert.match(data.next, /\/api\/changes\?since=<time>/);
   assert.match(data.note, /No issue yet/);
   assert.ok(!("body" in data));
 });
