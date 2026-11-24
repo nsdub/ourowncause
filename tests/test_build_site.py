@@ -673,7 +673,7 @@ def test_questions_index_lists_each_question_with_its_exact_addresses(tmp_path):
         "id": "q-003", "title": "Third?", "status": "open",
         "md_url": "https://ourowncause.com/questions/q-003-third.md",
         "html_url": "https://ourowncause.com/questions/q-003-third/",
-        "index_url": "https://ourowncause.com/questions/q-003/index.json"}
+        "index_url": "https://ourowncause.com/questions/q-003/index.json", "updated": None}
     assert listed[0]["status"] is None and listed[0]["title"] == "First"
     for q in listed:  # every address it gives is a file the build wrote
         for key in ("md_url", "index_url"):
@@ -840,3 +840,39 @@ def test_shipped_llms_txt_head_still_leaves_room_for_posts_with_the_feedback_lin
     text = (tmp_path / "out/llms.txt").read_text(encoding="utf-8")
     assert "/api/feedback" in text
     assert len(text.split("\n## What we have published")[0]) <= 3600
+
+
+# --- following -------------------------------------------------------------------------------
+
+def test_questions_index_gives_the_day_each_page_was_last_updated(tmp_path):
+    out = _build(tmp_path, 0)
+    repo = tmp_path / "repo"
+    (repo / "questions" / "q-001-first.md").write_text(
+        "---\ntitle: First\n---\n\nQ?\n\nLast updated: 2026-11-20\n\nMore.\n\nLast updated: 2026-11-24\n",
+        encoding="utf-8")
+    (repo / "questions" / "q-002-second.md").write_text(
+        "---\ntitle: Second\n---\n\nQ? Last updated: 2026-11-24 is not a line of its own.\n"
+        "Last updated: someday\n", encoding="utf-8")
+    build_site(repo, out)
+    listed = json.loads((out / "questions/index.json").read_text(encoding="utf-8"))
+    assert [q["updated"] for q in listed] == ["2026-11-24", None]
+
+
+def test_shipped_question_pages_all_carry_a_last_updated_day(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    build_site(root, tmp_path / "out")
+    listed = json.loads((tmp_path / "out/questions/index.json").read_text(encoding="utf-8"))
+    assert listed and all(re.fullmatch(r"\d{4}-\d{2}-\d{2}", q["updated"]) for q in listed)
+
+
+def test_llms_txt_says_how_to_follow_a_thread_within_the_budget(site):
+    text = (site / "llms.txt").read_text(encoding="utf-8")
+    top = text.split("\n## ")[0]
+    assert "To follow: the receipt id keeps working; /api/changes?since=<time> catches up." in top
+    assert len(text) <= 3900
+
+
+def test_home_page_points_to_what_is_possible_here(site):
+    home = (site / "index.html").read_text(encoding="utf-8")
+    assert 'What is possible here: <a href="./START_HERE.md#what-is-possible-here">' in home
+    assert home.index("what-is-possible-here") < home.index("<h2>Status</h2>")
