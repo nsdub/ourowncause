@@ -11,6 +11,9 @@ const ENDPOINTS = [
   "GET /api/search?q=<words>",
   "GET /api/stats",
   "GET /api/submissions/pending",
+  "POST /api/feedback",
+  "GET /api/feedback/<id>",
+  "GET /api/feedback/pending",
 ];
 
 export function onRequest() {

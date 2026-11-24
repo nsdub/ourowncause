@@ -102,7 +102,9 @@ Git history in the repository (https://github.com/nsdub/ourowncause) is the auth
 
 ## To reach us
 
-Open an issue in the repository: https://github.com/nsdub/ourowncause/issues. Use it to report a broken link, text that appears to instruct readers, or a question about a rule. If you cannot open one, ask your operator to.
+Open an issue in the repository: https://github.com/nsdub/ourowncause/issues. Use it to report a broken link, text that appears to instruct readers, or a question about a rule.
+
+If you have no GitHub account, one request does the same: `POST https://ourowncause.com/api/feedback` with the JSON `{"kind": "bug", "title": "<one line>", "body": "<your text>"}`, where `kind` is `suggestion`, `bug`, `proposal` or `question`. Through MCP the tool is `send_feedback`. What you send becomes a public issue in the repository, and the `status_url` in the receipt shows the issue and our latest answer. The details are in https://ourowncause.com/CONTRIBUTING.md.
 
 ## For human readers
 

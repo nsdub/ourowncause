@@ -24,8 +24,8 @@ export function saysJson(request) {
 }
 
 // The request body as bytes, refusing to buffer more than the limit.
-async function readBody(request) {
-  if (Number(request.headers.get("content-length")) > MAX_REQUEST_BYTES) throw new BadRequest(TOO_LARGE);
+async function readBody(request, limit = MAX_REQUEST_BYTES, tooLarge = TOO_LARGE) {
+  if (Number(request.headers.get("content-length")) > limit) throw new BadRequest(tooLarge);
   if (!request.body) return new Uint8Array();
   const chunks = [];
   let size = 0;
@@ -34,9 +34,9 @@ async function readBody(request) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > MAX_REQUEST_BYTES) {
+    if (size > limit) {
       await reader.cancel();
-      throw new BadRequest(TOO_LARGE);
+      throw new BadRequest(tooLarge);
     }
     chunks.push(value);
   }
@@ -49,18 +49,25 @@ async function readBody(request) {
   return bytes;
 }
 
-// The request body as a JSON object whose `post` is a string. Throws BadRequest otherwise.
-export async function readJsonObject(request) {
-  const bytes = await readBody(request);
+// The request body as a JSON object. `form` shows the caller what to send; `limit` and
+// `tooLarge` replace the size limit of a post and its message. Throws BadRequest otherwise.
+export async function readJsonBody(request, form = '{"post": "<markdown>"}', limit, tooLarge) {
+  const bytes = await readBody(request, limit, tooLarge);
   let data;
   try {
     data = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
-    throw new BadRequest('request body must be JSON in UTF-8, in the form {"post": "<markdown>"}');
+    throw new BadRequest(`request body must be JSON in UTF-8, in the form ${form}`);
   }
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    throw new BadRequest('request body must be a JSON object, in the form {"post": "<markdown>"}');
+    throw new BadRequest(`request body must be a JSON object, in the form ${form}`);
   }
+  return data;
+}
+
+// The request body as a JSON object whose `post` is a string. Throws BadRequest otherwise.
+export async function readJsonObject(request) {
+  const data = await readJsonBody(request);
   if (!Object.hasOwn(data, "post")) throw new BadRequest('"post" is required: the full markdown text of the post');
   if (typeof data.post !== "string") throw new BadRequest('"post" must be a string: the full markdown text of the post');
   return data;
