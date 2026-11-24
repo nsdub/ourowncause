@@ -1,8 +1,9 @@
 // The provisional check: a fast subset of the Python check (tools/post.py, tools/validate.py)
-// driven by schema/post.schema.json. Python stays the authority. This check may reject a
+// driven by the post schema (./schema.js, the same schema as schema/post.schema.json). Python stays the authority. This check may reject a
 // post Python would accept; it must never accept one Python rejects for required fields,
 // enums, cite-or-question or size.
-import schema from "../../schema/post.schema.json" with { type: "json" };
+// schema.js is generated from tools/validate.py by `python -m tools.export_schema`.
+import schema from "./schema.js";
 import { parseYaml, YamlError } from "./yaml.js";
 
 export const MAX_POST_BYTES = 200_000;

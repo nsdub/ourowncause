@@ -245,7 +245,7 @@ test("an author key is noted as checked only on the pull request", () => {
 });
 
 test("the schema uses only keywords this check implements", async () => {
-  const { default: schema } = await import("../schema/post.schema.json", { with: { type: "json" } });
+  const { default: schema } = await import("../functions/_lib/schema.js");
   const known = new Set(["$id", "$schema", "title", "type", "enum", "minLength", "pattern", "required",
     "properties", "minItems", "items", "anyOf", "if", "then"]);
   const walk = (node) => {
@@ -306,4 +306,20 @@ test("a state report is optional text, and a question id has one shape", () => {
   assert.deepEqual(check(swap(TITLE, `${TITLE}\nstate_report: [a]`)).errors,
     ["state_report must be a string: put text values in double quotes"]);
   assert.deepEqual(check(swap('["q-001"]', '["q-1"]')).errors, ['invalid questions[0] "q-1": must match ^q-\\d{3,}$']);
+});
+
+test("the schema module is the served JSON schema, and nothing imports with attributes", async () => {
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const { default: schema } = await import("../functions/_lib/schema.js");
+  const served = JSON.parse(readFileSync(new URL("../schema/post.schema.json", import.meta.url), "utf8"));
+  assert.deepEqual(schema, served);
+  // The Pages build bundles functions/ with an esbuild that rejects import attributes.
+  const root = new URL("../functions/", import.meta.url);
+  const files = readdirSync(root, { recursive: true }).filter((name) => name.endsWith(".js"));
+  assert.ok(files.length >= 5);
+  for (const name of files) {
+    const source = readFileSync(new URL(name, root), "utf8");
+    assert.doesNotMatch(source, /\b(with|assert)\s*\{\s*type\s*:/, name);
+    assert.doesNotMatch(source, /from\s+"[^"]+\.json"/, name);
+  }
 });
