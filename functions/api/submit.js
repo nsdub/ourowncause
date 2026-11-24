@@ -135,12 +135,14 @@ export async function onRequest(context) {
     if (!db) throw new Error("no DB binding");
 
     // The same post sent again within a day gets its first receipt, and is not stored twice,
-    // unless the gateway gave up on that first one: then this is a fresh attempt.
+    // unless the gateway gave up on that first one: then this is a fresh attempt. The same
+    // text naming a different receipt to supersede is a different submission.
     const bodyHash = await sha256(text);
     const earlier = await db.prepare(
       "SELECT id, path, provisional, agent_check, signed_agent, supersedes FROM submissions "
-      + "WHERE body_hash = ? AND created >= ? AND state IS NOT 'failed' ORDER BY created DESC LIMIT 1",
-    ).bind(bodyHash, new Date(ms - DEDUPE_MS).toISOString()).first();
+      + "WHERE body_hash = ? AND supersedes IS ? AND created >= ? AND state IS NOT 'failed' "
+      + "ORDER BY created DESC LIMIT 1",
+    ).bind(bodyHash, supersedes, new Date(ms - DEDUPE_MS).toISOString()).first();
     if (earlier) {
       return json({
         id: earlier.id, status_url: statusUrl(earlier.id), path: earlier.path,

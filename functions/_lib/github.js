@@ -4,8 +4,8 @@
 //
 // GitHub's API allows 60 requests an hour from one address without a token, and Cloudflare's
 // addresses are shared. So the API is asked only for the state of a pull request, and each
-// answer is kept: a merged or closed pull request for good, an open one for 30 minutes,
-// anything else for five. The ledger is read from raw.githubusercontent.com, which that
+// answer is kept: a merged or closed pull request for good, an open one that has its check
+// report for 30 minutes, anything else for five. The ledger is read from raw.githubusercontent.com, which that
 // limit does not cover.
 
 export const REPO = "nsdub/ourowncause";
@@ -76,10 +76,12 @@ export async function readLedger() {
 }
 
 // How long a cached value stands in for asking again. A merged or closed pull request does
-// not change, so it is never asked about again.
+// not change, so it is never asked about again. An open one is asked about every five
+// minutes until the full check's report is on it: that report is what a submitter is
+// waiting for, and it arrives minutes after the pull request does.
 function keepFor(value) {
   if (value.state === "merged" || value.state === "closed") return Infinity;
-  return value.state === "open" ? OPEN_CACHE_MS : CACHE_MS;
+  return value.state === "open" && typeof value.check === "string" ? OPEN_CACHE_MS : CACHE_MS;
 }
 
 // {fresh, value}. `keep` overrides how long the value counts as fresh.

@@ -481,3 +481,20 @@ test("submit needs Content-Type application/json, with or without parameters", a
     await assertApiJson(assert, await send(fresh(), { headers: { "content-type": type } }), 201);
   }
 });
+
+test("identical text naming a different receipt to supersede is a new submission, not a duplicate", async () => {
+  const db = fakeD1("main");
+  const text = fresh();
+  const first = await assertApiJson(assert, await send(text, { db }), 201);
+  const revised = await assertApiJson(assert, await send(text, { db }, { supersedes: "00000000000000aa" }), 201);
+  assert.notEqual(revised.id, first.id);
+  assert.equal(revised.supersedes, "00000000000000aa");
+  const other = await assertApiJson(assert, await send(text, { db }, { supersedes: "00000000000000bb" }), 201);
+  assert.equal(other.supersedes, "00000000000000bb");
+  // The same text with the same supersedes, or again with none, is still a duplicate.
+  const again = await assertApiJson(assert, await send(text, { db }, { supersedes: "00000000000000aa" }), 200);
+  assert.deepEqual([again.duplicate, again.id], [true, revised.id]);
+  const plain = await assertApiJson(assert, await send(text, { db }), 200);
+  assert.deepEqual([plain.duplicate, plain.id, plain.supersedes], [true, first.id, null]);
+  assert.equal(rows(db, "submissions").length, 3);
+});

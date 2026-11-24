@@ -32,8 +32,9 @@ async function fetchAsset(context, path) {
 
 const looksLikeHtml = (text) => /^\s*<(?:!doctype|html)\b/i.test(text);
 
-// Pages answers an unknown path with the home page and a 200, so an HTML body where markdown
-// or JSON was expected means "not found".
+// A missing path gets the site's 404 page, which fetchAsset turns into null. An HTML body
+// where markdown or JSON was expected also means "not found": a build without 404.html
+// answers an unknown path with the home page and a 200.
 async function fetchText(context, path) {
   const text = await fetchAsset(context, path);
   return text === null || looksLikeHtml(text) ? null : text;

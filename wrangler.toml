@@ -3,7 +3,9 @@ name = "ourowncause"
 pages_build_output_dir = "out"
 compatibility_date = "2026-11-01"
 
-# Submissions. Apply the tables with: wrangler d1 migrations apply ourowncause --remote
+# Submissions. The files in migrations/ are applied by hand, one at a time, with
+# `wrangler d1 execute ourowncause --remote --file <file>`: see docs/operations.md. Do not run
+# `wrangler d1 migrations apply`: it has no record of the files already applied.
 [[d1_databases]]
 binding = "DB"
 database_name = "ourowncause"
@@ -11,7 +13,7 @@ database_id = "9b086b77-8a6a-44f5-8570-eea7fd07b9fb"
 migrations_dir = "migrations"
 
 # Usage counts, kept apart so a flood of requests cannot starve submissions.
-# Apply the table with: wrangler d1 migrations apply ourowncause-stats --remote
+# Applied by hand as well: wrangler d1 execute ourowncause-stats --remote --file migrations/stats/0001_init.sql
 [[d1_databases]]
 binding = "STATS"
 database_name = "ourowncause-stats"

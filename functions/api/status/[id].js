@@ -1,7 +1,7 @@
 // GET /api/status/<id>: where a submission stands. The pull request, the full check's report
 // and the maintainers' comments are read from GitHub and cached: for good once the pull
-// request is merged or closed, for 30 minutes while it is open, for five minutes before it
-// exists. When GitHub cannot be read, the last known state is served with `refreshed: false`.
+// request is merged or closed, for 30 minutes while it is open and has its check report, for
+// five minutes before that. When GitHub cannot be read, the last known state is served with `refreshed: false`.
 import { expiryCutoff, findPull, githubJson, readCache, recordPull, writeCache } from "../../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable } from "../../_lib/notice.js";
 

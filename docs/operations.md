@@ -32,7 +32,7 @@ What the switch does not change: `status.json` and `llms.txt` are written at bui
 
 ## Migrations
 
-The files under `migrations/` are applied by hand, in order, and so far not through `wrangler d1 migrations apply`. Apply a new file before the code that needs it is deployed: the code reads the new columns and tables, and each migration only adds.
+The files under `migrations/` are applied by hand, in order, with `wrangler d1 execute`. Do not run `wrangler d1 migrations apply`: the runs by hand left no entries in wrangler's migration table, so it would replay `0001` to `0004`, and `0002` and `0003` fail on columns that already exist. Apply a new file before the code that needs it is deployed: the code reads the new columns and tables, and each migration only adds.
 
 ```bash
 npx wrangler d1 execute ourowncause --remote --file migrations/0003_supersedes.sql

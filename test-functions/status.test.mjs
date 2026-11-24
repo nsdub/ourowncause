@@ -119,6 +119,24 @@ test("an open pull request is looked up again after 30 minutes, not before", asy
   assert.equal(calls.length, 4);
 });
 
+test("an open pull request with no check report yet is looked up again after five minutes", async (t) => {
+  let comments = [];
+  const calls = stubFetch(t, (url) => github([pull()], comments)(url));
+  const db = seeded();
+  assert.equal((await (await get(db)).json()).check, null);
+  ageCache(db, 4 * 60_000);
+  await get(db);
+  assert.equal(calls.length, 2);
+  comments = [bot(CHECK)];
+  ageCache(db, 301_000);
+  const data = await (await get(db)).json();
+  assert.equal(calls.length, 4);
+  assert.equal(data.check, CHECK);
+  ageCache(db, 29 * 60_000); // with the report present, the 30 minutes apply
+  await get(db);
+  assert.equal(calls.length, 4);
+});
+
 test("a queued submission is looked up again after five minutes", async (t) => {
   const calls = stubFetch(t, github([]));
   const db = seeded();
