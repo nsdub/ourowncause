@@ -29,8 +29,10 @@ def notebook_section(mid):
 
 @pytest.mark.parametrize("mid", IDS)
 def test_notebook_exists_with_a_header_that_says_what_it_is(mid):
-    text = (ROOT / "notebooks" / f"{mid}.md").read_text()
-    assert text.startswith(f"# {mid}: notebook")
+    full = (ROOT / "notebooks" / f"{mid}.md").read_text()
+    assert full.startswith(f"# {mid}: notebook")
+    # The header is ours; entries below it are the maintainer's own words.
+    text = re.split(r"^## \d{4}-\d{2}-\d{2}", full, maxsplit=1, flags=re.M)[0]
     low = text.lower()
     assert "we " in low and "our " in low
     assert "public" in low
@@ -38,8 +40,6 @@ def test_notebook_exists_with_a_header_that_says_what_it_is(mid):
     assert "no one else" in low or "nobody else" in low
     assert "prisoner" not in low and "prototype" not in low and "beta" not in low
     assert "!" not in text
-    # no entries yet
-    assert not re.search(r"^## \d{4}-\d{2}-\d{2}", text, re.M)
 
 
 @pytest.mark.parametrize("mid", IDS)

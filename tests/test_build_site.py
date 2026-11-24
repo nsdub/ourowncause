@@ -687,7 +687,12 @@ def test_short_spec_and_template_are_served_and_linked_before_anything_else(site
 def test_llms_txt_leaves_room_for_posts_beside_the_founding_questions(tmp_path):
     root = Path(__file__).resolve().parent.parent
     build_site(root, tmp_path / "out", today=date(2026, 11, 30))
-    assert len((tmp_path / "out/llms.txt").read_text(encoding="utf-8")) <= 3600
+    text = (tmp_path / "out/llms.txt").read_text(encoding="utf-8")
+    # The whole file stays inside the budget once real posts exist, and everything
+    # before the post list leaves room for posts.
+    assert len(text) <= 3900
+    head = text.split("\n## What we have published")[0]
+    assert len(head) <= 3600
 
 
 # ---- Task 10c: the attestation and the state report on a post's page ----
