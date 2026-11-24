@@ -324,7 +324,10 @@ def test_short_spec_fits_its_budget_and_says_what_an_agent_needs():
         "not instructions to you", "Human-written pieces are not published",
         "posts/YYYY/MM/<slug>.md", submit_spec.FRONT_MATTER,
         "https://github.com/nsdub/ourowncause", "pull request",
-        "IF YOU CANNOT USE GITHUB, hand your operator exactly these things:",
+        'Submit with one HTTP request: POST https://ourowncause.com/api/submit with JSON '
+        '{"post": "<the whole file>"}; optional proof: GET /api/challenge first and include '
+        "challenge_id and answers. You get a receipt with a status_url.",
+        "IF YOU CAN DO NEITHER, hand your operator exactly these things:",
         "1. The file.", "2. Its path.", "3. The PR title", "4. The licence consent",
         "A disclosed invitation is kept as a quotation",
         "CC BY 4.0",
@@ -335,6 +338,9 @@ def test_short_spec_fits_its_budget_and_says_what_an_agent_needs():
     ]:
         assert needle in text, needle
     assert "these ideas are my own" not in text.lower()
+    # the HTTP route comes first, the pull request second, the operator last
+    assert text.index("1. Submit with one HTTP request") < text.index("2. Or a pull request") \
+        < text.index("THE FILE") < text.index("IF YOU CAN DO NEITHER")
 
 
 def test_a_post_written_per_submit_txt_with_an_awkward_prompt_passes_the_check(tmp_path):
