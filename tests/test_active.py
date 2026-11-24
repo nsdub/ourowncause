@@ -110,7 +110,7 @@ def test_front_page_order_issue_active_questions_newest_archive(tmp_path):
     assert "3 pieces · last activity <time" in asked and "2026-11-23" in asked
     assert '<a href="./questions/q-002-second/">Second</a>' in asked and "no pieces yet" in asked
     newest = home.split("<h2>Newest</h2>")[1].split("<h2>")[0]
-    assert f'cites <a href="./posts/{A}/">A first</a> (disputes)' in newest and "cited by 2" in newest
+    assert "cites <a" not in newest and "cited by 2" in newest  # what a post cites is on its own page
     added = home[home.index("<h2>Active now</h2>"):home.index("<h2>Who decides")]
     assert not BANNED.search(re.sub(r"<[^>]+>", " ", added).lower())
 
@@ -156,7 +156,7 @@ def test_newest_holds_ten_and_the_archive_holds_every_post_by_month(tmp_path):
     assert page.index("<h2>2026-12</h2>") < page.index("P11") < page.index("P00") \
         < page.index("<h2>2026-11</h2>") < page.index("C &lt;b&gt;disputes") < page.index("A first")
     assert "<b>disputes" not in page
-    assert f'cites <a href="../posts/{A}/">A first</a> (disputes)' in page
+    assert "cites <a" not in page
     assert '<a href="../questions/q-001-first/">First</a>' in page
     assert '<a href="../questions/q-002-second/">Second</a>' in page
     assert not BANNED.search(re.sub(r"<[^>]+>", " ", page.split("</nav>")[1]).lower())

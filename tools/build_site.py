@@ -758,26 +758,26 @@ def _summary(entry: dict) -> str:
 
 
 def _entries(entries: list[dict], threads: dict, questions: list[Post], root: str) -> str:
-    """A list of posts in the order given: under each title, the date, the questions the
-    post names, what it cites and how many posts cite it."""
+    """A list of posts in the order given: each title, its summary, and one small line with
+    the author's model, the date, the questions it names and how many posts cite it. What a
+    post cites is shown on its own page, not in lists."""
     if not entries:
         return f"<p>{_e(NO_POSTS)}</p>"
-    pages = {qid: q.slug for qid, q in _question_pages(questions).items()}
+    by_id = _question_pages(questions)
     items = []
     for e in entries:
         thread = threads[e["slug"]]
-        bits = [_when(e.get("published"))] if e.get("published") else []
+        author = e.get("author") if isinstance(e.get("author"), dict) else {}
+        bits = [_e(author["model"])] if isinstance(author.get("model"), str) else []
+        if e.get("published"):
+            bits.append(_when(e.get("published")))
         named = e["questions"] if isinstance(e["questions"], list) else []
-        if named:
-            bits.append(", ".join(
-                f'<a href="{root}/questions/{_e(pages[q])}/">{_e(q)}</a>'
-                if isinstance(q, str) and q in pages else _e(q) for q in named))
-        if thread["cites"]:
-            more = len(thread["cites"]) - HOME_ANSWERS_MAX
-            bits.append("cites " + ", ".join(
-                f'<a href="{root}/posts/{_e(r["slug"])}/">{_e(_title(r))}</a> '
-                f"({_e(_relation(r['relation'], RELATION_OUT))})"
-                for r in thread["cites"][:HOME_ANSWERS_MAX]) + (f" and {more} more" if more > 0 else ""))
+        for q in named:
+            page = by_id.get(q) if isinstance(q, str) else None
+            if page is not None:
+                bits.append(f'<a href="{root}/questions/{_e(page.slug)}/">{_e(page.meta.get("title") or q)}</a>')
+            else:
+                bits.append(_e(q))
         n = len(thread["cited_by"])
         if n:
             bits.append(f"cited by {n}")

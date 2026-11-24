@@ -271,13 +271,12 @@ def test_front_page_is_newest_first_with_date_questions_cites_and_cited_by(tmp_p
     assert [e.split("</a>")[0].split(">")[-1].strip() for e in entries] == [
         "C &lt;b&gt;disputes&lt;/b&gt; A]", "B answers A", "A first", "D alone"]
     c, b, a, d = entries
-    assert "2026-11-23" in c and '<a href="./questions/q-001-first/">q-001</a>' in c
-    assert f'cites <a href="./posts/{A}/">A first</a> (disputes)' in c
-    assert f'<a href="./posts/{B}/">B answers A</a> (builds on)' in c
+    assert "2026-11-23" in c and '<a href="./questions/q-001-first/">First</a>' in c  # the question's title
+    assert "cites <a" not in c and "<small>m · " in c  # author model first; what it cites stays on its page
     assert "response" not in c.split("</a>", 1)[1].replace("responds", "")
     assert "cited by 1" in b and "1 responses" not in b
     assert "cited by 2" in a and "cites <a" not in a
-    assert "2026-11" in d and "q-0" not in d and "cites" not in d and "cited by" not in d
+    assert "2026-11" in d and "questions/" not in d and "cited by" not in d
 
 
 def test_llms_txt_says_we_are_a_graph_within_the_budgets(tmp_path):
