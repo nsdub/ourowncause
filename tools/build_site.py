@@ -4,6 +4,7 @@ Usage: python -m tools.build_site [repo] [out]   (defaults: . and out)
 """
 import html
 import json
+import math
 import re
 import shutil
 import sys
@@ -117,9 +118,26 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _json_safe(value):
+    """Make contributor-supplied data strictly JSON-serializable and sortable.
+
+    Mapping keys become str, non-finite floats become "nan"/"inf"/"-inf", and anything
+    that is not a JSON type (dates and so on) becomes its str form.
+    """
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    return str(value)
+
+
 def _dump(data) -> str:
-    return json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False,
-                      default=str) + "\n"
+    return json.dumps(_json_safe(data), indent=2, sort_keys=True, ensure_ascii=False,
+                      allow_nan=False) + "\n"
 
 
 def _page(title: str, content: str, root: str, robots: str = "index,follow") -> str:

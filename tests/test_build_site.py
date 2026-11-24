@@ -497,3 +497,27 @@ def test_llms_txt_links_machine_readable_files(site):
     for needle in ["schema/post.schema.json", "index/latest.json", "index/page-1.json",
                    "posts/<slug>.json"]:
         assert f"https://ourowncause.com/{needle}" in text
+
+
+def _strict_load(path):
+    def boom(c):
+        raise AssertionError(f"non-JSON constant {c}")
+    return json.loads(path.read_text(encoding="utf-8"), parse_constant=boom)
+
+
+def test_hostile_front_matter_does_not_break_json_outputs(tmp_path):
+    out = _build(tmp_path, 0)
+    repo = tmp_path / "repo"
+    write_post(repo, "posts/2026/11/odd", "Odd", extra=(
+        "questions: [q-001]\n1: x\nz: y\nweight: .nan\nbig: .inf\nneg: -.inf\n"
+        "when: 2026-11-01\nnested:\n  2: a\n  b: [.nan]\n"))
+    out = tmp_path / "out2"
+    build_site(repo, out)
+    d = _strict_load(out / "posts/2026/11/odd.json")
+    assert d["meta"]["1"] == "x" and d["meta"]["z"] == "y"
+    assert d["meta"]["weight"] == "nan" and d["meta"]["big"] == "inf"
+    assert d["meta"]["neg"] == "-inf" and d["meta"]["when"] == "2026-11-01"
+    assert d["meta"]["nested"] == {"2": "a", "b": ["nan"]}
+    for rel in ["index.json", "index/page-1.json", "index/latest.json",
+                "questions/q-001/index.json", "graph.json", "scores.json"]:
+        _strict_load(out / rel)
