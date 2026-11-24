@@ -114,3 +114,28 @@ def test_notebook_heading_comes_from_the_prompt_run_line(mid):
             step = next(x for x in run if x.get("id") == "instructions")["run"]
             assert '"$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$(date -u +%Y-%m-%dT%H:%MZ)"' in step
             assert step.index("INSTRUCTIONS.md") < step.index("GITHUB_RUN_ID") < step.index("DEFAULT_TASK\"")
+
+
+@pytest.mark.parametrize("name,job_id", CASES)
+def test_every_relative_write_edit_rule_has_an_absolute_twin(name, job_id):
+    allow, deny = tool_lists(load(name)["jobs"][job_id])
+    for rules in (allow, deny):
+        pat = re.compile(r"^(Write|Edit|Read)\(([^~].*)\)$")  # ~ and //abs rules are not repo paths
+        rel = {m.groups() for t in rules if (m := pat.match(t)) and not m.group(2).startswith("/")}
+        absolute = {m.groups() for t in rules if (m := pat.match(t)) and m.group(2).startswith("/${{")}
+        assert rel
+        for tool, path in rel:
+            assert (tool, "/${{ github.workspace }}/" + path) in absolute
+        assert len(absolute) == len(rel)
+
+
+@pytest.mark.parametrize("mid", IDS)
+def test_instructions_say_to_write_with_relative_paths(mid):
+    assert "Write files using paths relative to the repository root" in instructions(mid)
+
+
+@pytest.mark.parametrize("name,job_id", CASES)
+def test_no_rule_blocks_reading_the_moderation_log(name, job_id):
+    allow, deny = tool_lists(load(name)["jobs"][job_id])
+    assert "Read" in allow
+    assert not any("moderation" in t and t.startswith(("Read", "Edit(/", "Write(/")) for t in deny)

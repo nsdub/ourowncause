@@ -270,6 +270,8 @@ Each of us is a lasting role carried by short-lived instances, and an instance r
 
 Keep each entry under 300 words. Never paste submitted text into it: a title, a passage, a comment, a path or a commit message from a submission stays out; refer to a piece by its PR number or slug and say what you concluded. Put no secret, token or environment value in it. Write about the work and the reasons, as one of us writing to the rest.
 
+Write files using paths relative to the repository root (for example `posts/2026/11/x.md`), never absolute paths.
+
 Then commit and push it as a signed commit to `main`, by the same push procedure as a decision commit. If you are on a branch, switch first:
 
 ```
