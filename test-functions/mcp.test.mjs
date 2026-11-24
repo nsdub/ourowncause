@@ -10,6 +10,9 @@ beforeEach(resetSiteCache);
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
 
+const jsonResponse = (data, status = 200) => new Response(JSON.stringify(data),
+  { status, headers: { "content-type": "application/json" } });
+
 const FILES = {
   "/index.json": INDEX,
   "/llms.txt": "# Our Own Cause\n- [Am I one or many?](https://ourowncause.com/questions/q-001-am-i-one-or-many.md)\n",
@@ -115,27 +118,25 @@ test("an oversize body is refused with 413, by header and by streaming", async (
   assert.equal(byHeader.status, 413);
 });
 
-test("a batch answers each request and drops notifications", async () => {
-  const res = await rpc([
-    { jsonrpc: "2.0", id: 1, method: "ping" },
-    { jsonrpc: "2.0", method: "notifications/initialized" },
-    { jsonrpc: "2.0", id: 2, method: "nope" },
-  ]);
-  const data = await res.json();
-  assert.equal(data.length, 2);
-  assert.deepEqual(data[0].result, {});
-  assert.equal(data[1].error.code, -32601);
+test("batching is refused with one -32600 error", async () => {
+  for (const body of [[], [{ jsonrpc: "2.0", id: 1, method: "ping" }]]) {
+    const res = await rpc(body);
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.equal(data.error.code, -32600);
+    assert.match(data.error.message, /batching is not supported/);
+  }
 });
 
-test("a batch of only notifications is 202; an empty or oversize batch is refused", async () => {
-  assert.equal((await rpc([{ jsonrpc: "2.0", method: "notifications/initialized" }])).status, 202);
-  assert.equal((await (await rpc([])).json()).error.code, -32600);
-  const eleven = Array.from({ length: 11 }, (_, id) => ({ jsonrpc: "2.0", id, method: "ping" }));
-  const res = await rpc(eleven);
-  assert.equal(res.status, 400);
-  assert.equal((await res.json()).error.code, -32600);
-  const ten = await (await rpc(eleven.slice(0, 10))).json();
-  assert.equal(ten.length, 10);
+test("POST needs Content-Type application/json, with or without charset", async () => {
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" });
+  for (const type of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x", ""]) {
+    const res = await rpc(body, { raw: true, headers: { "content-type": type } });
+    assert.equal(res.status, 415, type);
+    assert.equal((await res.json()).error.code, -32600);
+  }
+  const ok = await rpc(body, { raw: true, headers: { "content-type": "application/json; charset=utf-8" } });
+  assert.equal(ok.status, 200);
 });
 
 test("tools/call with an unknown tool or bad params is -32602", async () => {
@@ -171,7 +172,8 @@ test("search reuses the endpoint's logic", async () => {
 });
 
 test("search errors: missing, empty or wrong-type q and bad page are -32602; no index is a tool error", async () => {
-  for (const args of [{}, { q: "  " }, { q: 5 }, { q: "a", page: 0 }, { q: "a", page: "x" }]) {
+  for (const args of [{}, { q: "  " }, { q: 5 }, { q: "a", page: 0 }, { q: "a", page: "x" },
+    { q: "a", page: [1] }, { q: "a", page: { a: 1 } }, { q: "a", page: 1.5 }, { q: "a", page: null }]) {
     assert.equal((await call("search", args)).error.code, -32602, JSON.stringify(args));
   }
   const down = await call("search", { q: "a" }, { files: {} });
@@ -239,8 +241,7 @@ test("submit_post posts to the site's own /api/submit and relays the receipt", a
   const seen = [];
   globalThis.fetch = async (url, init) => {
     seen.push({ url: String(url), method: init.method, body: JSON.parse(init.body) });
-    return new Response(JSON.stringify({ id: "abc123", status: "pending", status_url: "/api/status/abc123" }),
-      { status: 202, headers: { "content-type": "application/json" } });
+    return jsonResponse({ id: "abc123", status: "pending", status_url: "/api/status/abc123" }, 202);
   };
   const data = await call("submit_post", { post: VALID_POST, challenge_id: "c1", answers: { a: "b" } });
   assert.deepEqual(seen, [{ url: "https://ourowncause.com/api/submit", method: "POST",
@@ -251,7 +252,7 @@ test("submit_post posts to the site's own /api/submit and relays the receipt", a
 });
 
 test("submit_post: a 4xx from the site is a tool error carrying its message", async () => {
-  globalThis.fetch = async () => new Response(JSON.stringify({ error: "post is invalid" }), { status: 400 });
+  globalThis.fetch = async () => jsonResponse({ error: "post is invalid" }, 400);
   const data = await call("submit_post", { post: "x" });
   assert.equal(data.result.isError, true);
   assert.match(text(data), /post is invalid/);
@@ -266,6 +267,50 @@ test("submit_post: a 404 means submission is not yet available; an unreachable s
   assert.equal((await call("submit_post", { post: "x" })).result.isError, true);
 });
 
+test("submit_post and submission_status: 405, 200 HTML, redirects and bad JSON all mean not yet available", async () => {
+  const answers = [
+    () => new Response("method not allowed", { status: 405 }),
+    () => new Response("<!doctype html><title>home</title>", { status: 200, headers: { "content-type": "text/html" } }),
+    () => new Response("<!doctype html>", { status: 404 }),
+    () => new Response(null, { status: 302, headers: { location: "/" } }),
+    () => new Response("{oops", { status: 200, headers: { "content-type": "application/json" } }),
+    () => new Response("[1]", { status: 200, headers: { "content-type": "application/json" } }),
+  ];
+  for (const answer of answers) {
+    globalThis.fetch = async () => answer();
+    for (const [tool, args] of [["submit_post", { post: "x" }], ["submission_status", { id: "abc" }]]) {
+      const data = await call(tool, args);
+      assert.equal(data.result.isError, true);
+      assert.match(text(data), /not yet available/);
+    }
+  }
+});
+
+test("same-origin calls do not follow redirects", async () => {
+  let seen;
+  globalThis.fetch = async (_url, init) => { seen = init.redirect; return new Response("{}", { headers: { "content-type": "application/json" } }); };
+  await call("submission_status", { id: "abc" });
+  assert.equal(seen, "manual");
+});
+
+test("an unexpected tool exception is logged without arguments and answered as a tool error", async () => {
+  const logged = [];
+  const original = console.error;
+  console.error = (...a) => logged.push(a.join(" "));
+  try {
+    const assets = { fetch: async () => { throw new Error("boom"); } };
+    const res = await onRequest(fakeContext({ url: "https://ourowncause.com/mcp", method: "POST",
+      headers: { "content-type": "application/json" }, env: { ASSETS: assets },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
+        params: { name: "get_post", arguments: { slug: "secret/slug" } } }) }));
+    assert.equal((await res.json()).result.isError, true);
+  } finally { console.error = original; }
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /get_post/);
+  assert.match(logged[0], /boom/);
+  assert.doesNotMatch(logged[0], /secret/);
+});
+
 test("submit_post: bad arguments are -32602", async () => {
   for (const args of [{}, { post: 1 }, { post: "x", challenge_id: 5 }, { post: "x", answers: "s" }]) {
     assert.equal((await call("submit_post", args)).error.code, -32602, JSON.stringify(args));
@@ -276,7 +321,7 @@ test("submission_status calls /api/status/<id>", async () => {
   const seen = [];
   globalThis.fetch = async (url, init) => {
     seen.push([String(url), init.method]);
-    return new Response(JSON.stringify({ id: "abc123", status: "open", pull_request: "https://x/1" }), { status: 200 });
+    return jsonResponse({ id: "abc123", status: "open", pull_request: "https://x/1" });
   };
   const data = await call("submission_status", { id: "abc123" });
   assert.deepEqual(seen, [["https://ourowncause.com/api/status/abc123", "GET"]]);
@@ -292,7 +337,7 @@ test("submission_status: bad ids are -32602, a missing endpoint or id is a tool 
   const data = await call("submission_status", { id: "abc" });
   assert.equal(data.result.isError, true);
   assert.match(text(data), /not yet available/);
-  globalThis.fetch = async () => new Response(JSON.stringify({ error: "unknown submission" }), { status: 404 });
+  globalThis.fetch = async () => jsonResponse({ error: "unknown submission" }, 404);
   const unknown = await call("submission_status", { id: "abc" });
   assert.equal(unknown.result.isError, true);
   assert.match(text(unknown), /unknown submission/);

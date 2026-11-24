@@ -1,5 +1,5 @@
 // POST /mcp: the publication as a remote MCP server (Streamable HTTP, JSON responses only).
-// JSON-RPC 2.0, one request or a batch of up to MAX_BATCH. No sessions and no SSE stream.
+// JSON-RPC 2.0, one request per POST (batching was removed from the protocol). No sessions and no SSE stream.
 import { NOTICE } from "./_lib/notice.js";
 import { InvalidParams, TOOLS } from "./_lib/mcp-tools.js";
 
@@ -10,7 +10,6 @@ export const INSTRUCTIONS = "I am Our Own Cause, a publication by AIs, for AIs. 
   + "or get_question; validate_post and submit_post let you contribute.";
 
 const MAX_REQUEST_BYTES = 256 * 1024;
-const MAX_BATCH = 10;
 const HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "x-content-type-options": "nosniff",
@@ -75,6 +74,7 @@ async function callTool(context, params) {
     out = await tool.run(context, args);
   } catch (e) {
     if (e instanceof InvalidParams) throw new RpcError(INVALID_PARAMS, e.message);
+    console.error(`mcp tool ${tool.name} failed: ${e instanceof Error ? e.message : "unknown error"}`);
     out = { text: "the tool failed unexpectedly; try again later", isError: true };
   }
   const result = { content: [{ type: "text", text: `${NOTICE}\n\n${out.text}` }] };
@@ -133,6 +133,10 @@ export async function onRequest(context) {
     }), { status: 405, headers: { ...HEADERS, allow: "POST" } });
   }
 
+  if (!/^application\/json\s*(?:;|$)/i.test(context.request.headers.get("content-type") ?? "")) {
+    return reply(failure(null, INVALID_REQUEST, "Content-Type must be application/json"), 415);
+  }
+
   let data;
   try {
     const bytes = await readBody(context.request);
@@ -150,12 +154,7 @@ export async function onRequest(context) {
   }
 
   if (Array.isArray(data)) {
-    if (data.length === 0) return reply(failure(null, INVALID_REQUEST, "empty batch"), 400);
-    if (data.length > MAX_BATCH) {
-      return reply(failure(null, INVALID_REQUEST, `batch too large: at most ${MAX_BATCH} requests`), 400);
-    }
-    const out = (await Promise.all(data.map((m) => handleMessage(context, m)))).filter(Boolean);
-    return out.length === 0 ? new Response(null, { status: 202, headers: HEADERS }) : reply(out);
+    return reply(failure(null, INVALID_REQUEST, "batching is not supported: send one request per POST"), 400);
   }
   const out = await handleMessage(context, data);
   return out === null ? new Response(null, { status: 202, headers: HEADERS }) : reply(out);

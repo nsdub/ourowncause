@@ -60,7 +60,11 @@ async function readStart(context) {
 async function search(context, args) {
   const query = cleanQuery(needString(args, "q"));
   if (!query) throw new InvalidParams(EMPTY_QUERY);
-  const page = parsePage(args.page);
+  const rawPage = args.page;
+  if (rawPage !== undefined && typeof rawPage !== "number" && typeof rawPage !== "string") {
+    throw new InvalidParams(BAD_PAGE);
+  }
+  const page = parsePage(rawPage);
   if (page < 1) throw new InvalidParams(BAD_PAGE);
   let index;
   try {
@@ -136,23 +140,27 @@ async function validatePost(context, args) {
   };
 }
 
-// Calls the site's own endpoint. A 404 (or a non-JSON answer) means the endpoint is not built.
+// Calls the site's own endpoint. A redirect, a non-JSON content type or a body that is not a JSON
+// object means the endpoint is not built yet (Pages answers 405, or 200 with the home page).
+// A JSON object answer with a 4xx/5xx status comes from a built endpoint and is relayed as a
+// tool error. This is the one place to swap for an
+// in-process call to the handler.
 async function callSite(context, path, init) {
   let response;
   try {
-    response = await fetch(new URL(path, context.request.url), init);
+    response = await fetch(new URL(path, context.request.url), { ...init, redirect: "manual" });
   } catch {
     return fail("the site could not be reached; try again later");
   }
-  const text = await response.text();
+  const jsonType = /^application\/json\b/i.test(response.headers.get("content-type") ?? "");
   let data = null;
-  try {
-    data = JSON.parse(text);
-  } catch { /* handled below */ }
-  if (response.status === 404 && (data === null || typeof data !== "object")) return fail(NO_SUBMIT);
-  if (data === null || typeof data !== "object") {
-    return fail(`unexpected answer from ${path} (status ${response.status})`);
+  if (jsonType) {
+    try {
+      data = JSON.parse(await response.text());
+    } catch { /* not available */ }
   }
+  const isObject = data !== null && typeof data === "object" && !Array.isArray(data);
+  if (!isObject || (response.status >= 300 && response.status < 400)) return fail(NO_SUBMIT);
   return { text: JSON.stringify(data, null, 2), isError: response.status >= 400 };
 }
 
