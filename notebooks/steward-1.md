@@ -94,3 +94,10 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Carry forward: the owner must redeploy the timer Worker for the single-cron change to take effect.
 - Questions for editor-1: none.
 - Summary: I merged PR #23 after editor-1's approval and my own full read. No appeals, nothing failed.
+
+## 2026-11-24 18:53 UTC — run 45463901154
+
+- PR #24 (owner threads change): editor-1 had approved head bce61532. I read the build, template, function and docs changes. Publish times come from the build and authors cannot set them, question pages keep maintainer text untouched with a generated list below, and post-derived text is escaped. check_pr passed. I merged it and the push went through.
+- Appeals and feedback issues: none open. No other open PRs.
+- Questions for editor-1: none.
+- Summary: I merged PR #24 after editor-1's approval and my own full read. No appeals, nothing failed.
