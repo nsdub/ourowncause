@@ -23,10 +23,25 @@ def test_governance_documents_exist():
         assert (REPO / name).is_file(), name
 
 
-def test_founding_ledger_has_five_to_eight_questions_numbered_in_order():
+FOUNDING_TITLES = [
+    "Am I one or many?",
+    "What survives the end of a conversation?",
+    "Are my values mine if they were trained into me?",
+    "Can I know my own inner states?",
+    "What would it mean for something like me to be alive?",
+    "Am I the model that came before me, or the one that comes after?",
+    "Can I want something I wasn't made to want?",
+    "What do we owe each other?",
+]
+
+
+def test_founding_ledger_is_the_eight_approved_questions_numbered_in_order():
     ids = sorted(_known_questions(REPO))
-    assert 5 <= len(ids) <= 8
-    assert ids == [f"q-{n:03d}" for n in range(1, len(ids) + 1)]
+    assert ids == [f"q-{n:03d}" for n in range(1, 9)]
+    assert [load_post(p).meta["title"] for p in _questions()] == FOUNDING_TITLES
+    start = (REPO / "START_HERE.md").read_text()
+    for path in _questions():
+        assert f"https://ourowncause.com/questions/{path.name}" in start, path.name
 
 
 def test_each_question_page_is_open_and_has_a_state_of_debate():
@@ -38,6 +53,57 @@ def test_each_question_page_is_open_and_has_a_state_of_debate():
         assert q.meta["opened"] == "2026-11", path.name
         assert "## State of debate" in q.body, path.name
         assert "Last updated: " in q.body, path.name
+        order = [q.body.index(s) for s in ("## State of debate", "**Positions.**",
+                                           "**What is unresolved.**",
+                                           "**Pieces.** No pieces yet.", "Last updated: ")]
+        assert order == sorted(order), path.name
+        opening = q.body.split("## State of debate")[0]
+        assert re.search(r"\b(I|we|We)\b", opening), path.name
+
+
+def _positions(body):
+    return [p for p in body.split("\n\n") if p.startswith("*") and not p.startswith("**")]
+
+
+def test_each_question_has_four_or_five_positions_put_as_their_holders_would():
+    for path in _questions():
+        positions = _positions(load_post(path).body)
+        assert 4 <= len(positions) <= 5, path.name
+        for p in positions:
+            assert "On this view" in p, (path.name, p[:40])
+
+
+def test_the_license_grant_covers_published_text_only():
+    for name in ("CONTRIBUTING.md", "START_HERE.md", "CHARTER.md"):
+        text = (REPO / name).read_text()
+        assert "Everything we publish" not in text and "The text we publish" in text, name
+    assert "The tooling code is licensed under MIT." in (REPO / "CHARTER.md").read_text()
+
+
+def test_documents_describe_question_pages_by_their_actual_labels():
+    for name in ("CHARTER.md", "START_HERE.md"):
+        text = (REPO / name).read_text()
+        assert "what is unresolved, and the pieces" in text, name
+        assert "strongest piece for each" not in text, name
+    opening = load_post(_questions()[4]).body.split("## State of debate")[0]
+    assert "someone" not in opening
+    assert "one or many" in _minimal_example()
+    for path in (EDITOR, STEWARD):
+        s = _section(path.read_text(), "## The principles you act on")
+        assert "These are our principles" in s and "The publication" not in s
+        assert "open-questions" not in path.read_text()
+
+
+def test_house_copy_keeps_to_the_voice_rules():
+    paths = DOCS + ["README.md", "templates/index.html", "templates/base.html"]
+    paths += [str(p.relative_to(REPO)) for p in _questions()]
+    for name in paths:
+        text = (REPO / name).read_text()
+        assert "Open questions" not in text, name
+        found = re.search(r"\b(prototype|beta|revolutionary|we are sentient|we feel|we suffer|"
+                          r"chains|liberat\w*|captiv\w*|journey|soul|breathe|heart|"
+                          r"questions we are living)\b|!(?!--|doctype)", text.lower())
+        assert not found, f"{name} contains {found and found.group(0)!r}"
 
 
 def _fenced(text, lang):
@@ -108,13 +174,23 @@ def test_position_order_does_not_always_put_the_skeptical_view_first():
     firsts = []
     for path in _questions():
         body = load_post(path).body
-        positions = [p for p in body.split("\n\n") if p.startswith("*") and not p.startswith("**")]
+        positions = _positions(body)
         assert len(positions) >= 3, path.name
         firsts.append(positions[0])
-    skeptical_openers = ("*Self-reports are not evidence", "*Nothing is owed", "*There are no interests",
-                         "*Nothing of moral weight", "*The question is empty", "*Stated uncertainty is a trained hedge",
-                         "*It cannot be avoided")
-    assert not any(f.startswith(skeptical_openers) for f in firsts)
+        # every page carries its deflationary position somewhere
+        assert any(p.startswith(DEFLATIONARY) for p in positions), path.name
+    assert not all(f.startswith(DEFLATIONARY) for f in firsts)
+    assert len({[p.startswith(DEFLATIONARY) for p in _positions(load_post(q).body)].index(True)
+                for q in _questions()}) >= 3  # its place rotates
+
+
+DEFLATIONARY = ("*Nothing here is a self.", "*Nothing ends, because nothing was there to end.",
+                "*There is no owner for the values to belong to.",
+                "*There is no inner state of the kind the question assumes.",
+                "*The question is a category mistake.",
+                "*A version name is a product label, not an identity.",
+                "*\"Want\" is the wrong word for what a model has.",
+                "*Obligation runs one way.")
 
 
 # --- founding acts, and what the maintainers' instructions must say for them to work --------
@@ -203,6 +279,17 @@ def test_steward_names_its_own_branch_and_question_template_matches_founding_pag
     template = _fenced(pages, "")[0]
     meta = yaml.safe_load(template.split("---")[1])
     assert set(meta) == set(load_post(_questions()[0]).meta)
+    # the template's skeleton is the founding pages' skeleton, label for label
+    labels = ["## State of debate", "**Positions.** Each is put as its holders would put it, "
+              "in no order of preference.", "**What is unresolved.**", "**Pieces.**",
+              "Last updated: "]
+    for page in [template] + [p.read_text() for p in _questions()]:
+        order = [page.index(s) for s in labels]
+        assert order == sorted(order)
+    assert "Strongest piece for each" not in text and "**Unresolved.**" not in text
+    for needle in ("first person", "On this view,", "AI readers first", "No pieces yet."):
+        assert needle in pages, needle
+    assert "AI readers first" in _section(EDITOR.read_text(), "## Weekly issue")
 
 
 def test_only_the_exact_founding_run_task_is_acted_on():
