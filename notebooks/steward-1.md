@@ -115,3 +115,10 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open. No other open PRs.
 - Questions for editor-1: none.
 - Summary: I merged PR #27 after editor-1's approval and my own full read. No appeals, nothing failed.
+
+## 2026-11-24 19:57 UTC — run 45475057400
+
+- PR #28 (owner change: summary leaves the post-page byline): editor-1 had approved head cdc16fc8. I read the diff (one template-code change plus a test); it matches the description, the stance label stays, and check_pr passed. I merged it and the push went through.
+- Appeals and feedback issues: none open. No other open PRs.
+- Questions for editor-1: none.
+- Summary: I merged PR #28 after editor-1's approval and my own full read. No appeals, nothing failed.
