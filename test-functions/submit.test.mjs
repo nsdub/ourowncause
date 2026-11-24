@@ -498,3 +498,27 @@ test("identical text naming a different receipt to supersede is a new submission
   assert.deepEqual([plain.duplicate, plain.id, plain.supersedes], [true, first.id, null]);
   assert.equal(rows(db, "submissions").length, 3);
 });
+
+// On a new submission the site pokes the timer Worker (service binding TIMER), which starts
+// the gateway at once. A duplicate stores nothing and pokes nothing; no binding is fine.
+function fakeTimer() {
+  const calls = [];
+  return { calls, fetch: async (url, init) => { calls.push([String(url), init && init.method]); return new Response(null, { status: 204 }); } };
+}
+
+test("a new submission pokes the timer once; its duplicate does not", async () => {
+  const db = fakeD1("main");
+  const TIMER = fakeTimer();
+  const text = fresh();
+  const env = { ASSETS: fakeAssets(FILES), DB: db, TIMER };
+  assert.equal((await send(text, { env })).status, 201);
+  assert.deepEqual(TIMER.calls, [["https://timer.internal/kick", "POST"]]);
+  assert.equal((await send(text, { env })).status, 200);
+  assert.equal(TIMER.calls.length, 1);
+});
+
+test("a timer that fails or is missing never changes the receipt", async () => {
+  const broken = { fetch: async () => { throw new Error("down"); } };
+  assert.equal((await send(fresh(), { env: { ASSETS: fakeAssets(FILES), DB: fakeD1("main"), TIMER: broken } })).status, 201);
+  assert.equal((await send(fresh(), { env: { ASSETS: fakeAssets(FILES), DB: fakeD1("main") } })).status, 201);
+});

@@ -1134,7 +1134,8 @@ REVIEW, QUESTIONS, ISSUE = "maintainer-review.yml", "maintainer-questions.yml", 
 @pytest.mark.parametrize("prs,runs,dispatched", [
     ([open_pr(0.1)], {}, True),
     ([open_pr(0.1)], {REVIEW: [{"status": "completed", "createdAt": ago(4)}]}, True),
-    ([open_pr(0.1)], {REVIEW: [{"status": "completed", "createdAt": ago(2.9)}]}, False),   # inside three hours
+    ([open_pr(0.05)], {REVIEW: [{"status": "completed", "createdAt": ago(0.3)}]}, True),  # 18 minutes ago, newer PR
+    ([open_pr(0.1)], {REVIEW: [{"status": "completed", "createdAt": ago(0.2)}]}, False),   # inside 15 minutes
     ([open_pr(5)], {REVIEW: [{"status": "completed", "createdAt": ago(4)}]}, False),       # already seen by a run
     ([open_pr(0.1)], {REVIEW: [{"status": "in_progress", "createdAt": ago(4)}]}, False),
     ([open_pr(0.1)], {REVIEW: [{"status": "queued", "createdAt": ago(4)}]}, False),
@@ -1145,7 +1146,7 @@ REVIEW, QUESTIONS, ISSUE = "maintainer-review.yml", "maintainer-questions.yml", 
     ([open_pr(0.1, repo="mallory/ourowncause")], {}, False),
     ([open_pr(0.1, ref="editor-1/rebuttal-x")], {}, False),
 ])
-def test_the_maintainers_are_asked_only_when_needed_idle_and_not_within_three_hours(world, prs, runs, dispatched):
+def test_the_maintainers_are_asked_only_when_needed_idle_and_not_within_15_minutes(world, prs, runs, dispatched):
     world.set_prs(prs)
     world.set_runs(runs)
     note = gateway.dispatch(world.repo)
@@ -1160,7 +1161,7 @@ def feedback_issue(created_hours_ago, **over):
 @pytest.mark.parametrize("issues,runs,dispatched", [
     ([feedback_issue(0.1)], {}, True),
     ([feedback_issue(0.1)], {REVIEW: [{"status": "completed", "createdAt": ago(4)}]}, True),
-    ([feedback_issue(0.1)], {REVIEW: [{"status": "completed", "createdAt": ago(2.9)}]}, False),  # the same throttle
+    ([feedback_issue(0.1)], {REVIEW: [{"status": "completed", "createdAt": ago(0.2)}]}, False),  # the same throttle
     ([feedback_issue(5)], {REVIEW: [{"status": "completed", "createdAt": ago(4)}]}, False),      # already seen by a run
     ([feedback_issue(0.1)], {QUESTIONS: [{"status": "queued", "createdAt": ago(0.1)}]}, False),
     ([feedback_issue(0.1, state="closed")], {}, False),

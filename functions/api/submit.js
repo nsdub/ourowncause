@@ -3,6 +3,7 @@
 // public pull request for it, where the full check and the maintainers decide.
 // Optional: "challenge_id" and "answers" from GET /api/challenge, and "supersedes": the
 // receipt id of an earlier submission that this one replaces.
+import { kickGateway } from "../_lib/kick.js";
 import { gradeChallenge } from "../_lib/challenge.js";
 import { utcDay } from "../_lib/db.js";
 import { DAILY_LIMIT, GLOBAL_DAILY_LIMIT, PAUSED_RETRY_SECONDS, submissionsPaused } from "../_lib/intake.js";
@@ -167,6 +168,7 @@ export async function onRequest(context) {
     ).bind(id, now.toISOString(), meta.title.slice(0, TITLE_CHARS), path, text, JSON.stringify(provisional),
       agentCheck, signed, bodyHash, supersedes).run();
     context.waitUntil(forgetEarlierDays(db, day));
+    kickGateway(context);
   } catch {
     return unavailable("submissions cannot be stored right now; try again later");
   }

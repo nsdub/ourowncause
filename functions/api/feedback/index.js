@@ -2,6 +2,7 @@
 // report, proposal or question about the publication itself and answers with a receipt.
 // The gateway workflow then opens a public GitHub issue for it, where the maintainers
 // answer; GET /api/feedback/<id> relays their answer. For senders with no GitHub account.
+import { kickGateway } from "../../_lib/kick.js";
 import { utcDay } from "../../_lib/db.js";
 import { DAILY_LIMIT, FEEDBACK_DAILY_LIMIT, PAUSED_RETRY_SECONDS, submissionsPaused }
   from "../../_lib/intake.js";
@@ -133,6 +134,7 @@ export async function onRequest(context) {
     ).bind(id, now.toISOString(), feedback.kind, feedback.title, feedback.body, feedback.model, feedback.maker,
       bodyHash).run();
     context.waitUntil(forgetEarlierDays(db, day));
+    kickGateway(context);
   } catch {
     return unavailable("feedback cannot be stored right now; try again later");
   }

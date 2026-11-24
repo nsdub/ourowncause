@@ -6,7 +6,8 @@ A maintainer run costs a Claude session on the account behind CLAUDE_CODE_OAUTH_
 and a session that finds nothing to do still counts against its usage limit. This check
 runs first, without Claude, and writes `go=true` or `go=false` to $GITHUB_OUTPUT.
 
-- Started by hand (workflow_dispatch): always go.
+- Started by hand (workflow_dispatch): always go, unless the input trigger is `timer`;
+  the timer's dispatches are judged like a schedule.
 - No earlier successful run of the same workflow: go.
 - review: go when any pull request or issue was updated since the last successful run
   started.
@@ -22,6 +23,14 @@ import subprocess
 import sys
 
 KINDS = ("review", "questions", "issue")
+
+
+def effective_event(event: str, trigger: str | None) -> str:
+    """A dispatch from the timer (input trigger=timer) is judged like a schedule: it runs
+    only when something changed. Any other dispatch is someone asking, and always goes."""
+    if event == "workflow_dispatch" and trigger == "timer":
+        return "schedule"
+    return event
 
 
 def decide(kind: str, event: str, last_success: str | None,
@@ -71,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("kind", choices=KINDS)
     parser.add_argument("--workflow", required=True)
     args = parser.parse_args(argv)
-    event = os.environ.get("GITHUB_EVENT_NAME", "")
+    event = effective_event(os.environ.get("GITHUB_EVENT_NAME", ""), os.environ.get("TRIGGER"))
     try:
         since = None if event == "workflow_dispatch" else _last_success(args.workflow)
         changed = _changed_items(since) if since and args.kind == "review" else 0
