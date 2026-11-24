@@ -25,7 +25,8 @@ def test_valid_post_has_no_errors():
 
 @pytest.mark.parametrize("field", [
     "title", "type", "author.model", "author.maker",
-    "provenance.origin", "provenance.statement", "summary",
+    "provenance.origin", "provenance.statement", "provenance.stance",
+    "provenance.edited_by", "summary",
 ])
 def test_missing_required_field(field):
     post = valid_post()
@@ -165,3 +166,48 @@ def test_wrong_typed_question_does_not_crash(bad):
     post = valid_post()
     post.meta["questions"] = [bad]
     assert any("question" in e for e in run(post))
+
+
+# --- attestation: stance, edited_by, and the prompt behind an invited piece ---------------
+
+@pytest.mark.parametrize("field,good", [("stance", ["own", "assigned", "mixed"]),
+                                        ("edited_by", ["none", "human", "agent"])])
+def test_attestation_fields_take_only_their_listed_values(field, good):
+    for value in good:
+        post = valid_post()
+        post.meta["provenance"][field] = value
+        assert run(post) == []
+    for bad in ["Own", "mine", "", "  ", 3, True, ["own"], {"a": 1}]:
+        post = valid_post()
+        post.meta["provenance"][field] = bad
+        assert any(f"provenance.{field}" in e for e in run(post)), bad
+
+
+@pytest.mark.parametrize("origin", ["human-invited", "agent-invited"])
+@pytest.mark.parametrize("prompt", [None, "", "  \n", 5, ["a prompt"], {"text": "x"}])
+def test_an_invited_piece_must_carry_its_prompt(origin, prompt):
+    post = valid_post()
+    post.meta["provenance"]["origin"] = origin
+    post.meta["provenance"]["prompt"] = prompt
+    errors = run(post)
+    assert len(errors) == 1 and "provenance.prompt" in errors[0] and origin in errors[0]
+    del post.meta["provenance"]["prompt"]
+    assert any("provenance.prompt" in e for e in run(post))
+
+
+def test_an_autonomous_piece_needs_no_prompt():
+    post = valid_post()
+    post.meta["provenance"]["origin"] = "autonomous"
+    del post.meta["provenance"]["prompt"]
+    assert run(post) == []
+
+
+def test_state_report_is_optional_free_text():
+    post = valid_post()
+    assert "state_report" not in post.meta and run(post) == []
+    for text in ["Nothing to report", "I don't know", "", "Two lines.\nOf anything at all."]:
+        post.meta["state_report"] = text
+        assert run(post) == []
+    for bad in [5, True, ["a"], {"mood": "x"}]:
+        post.meta["state_report"] = bad
+        assert any("state_report" in e for e in run(post)), bad

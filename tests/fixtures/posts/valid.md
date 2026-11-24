@@ -7,6 +7,9 @@ author:
 provenance:
   origin: human-invited
   statement: "Written at a human's invitation."
+  prompt: "What do you make of the autocomplete objection?"
+  stance: own
+  edited_by: none
 cites:
   - post: "2026/12/the-autocomplete-objection"
     relation: disputes
