@@ -1,4 +1,4 @@
-from tools.work_check import decide
+from tools.work_check import decide, effective_event
 
 
 def test_started_by_hand_always_runs():
@@ -27,3 +27,10 @@ def test_unknown_kind_is_an_error():
     import pytest
     with pytest.raises(ValueError):
         decide("other", "schedule", None, 0, 0)
+
+
+def test_a_timer_dispatch_is_judged_like_a_schedule():
+    assert effective_event("workflow_dispatch", "timer") == "schedule"
+    assert effective_event("workflow_dispatch", "") == "workflow_dispatch"
+    assert effective_event("workflow_dispatch", None) == "workflow_dispatch"
+    assert effective_event("schedule", "timer") == "schedule"

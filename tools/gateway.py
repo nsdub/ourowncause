@@ -24,7 +24,7 @@ a run, with the same three attempts an hour apart.
 
 `dispatch`: starts maintainer-review when a gateway pull request or a feedback issue is
 waiting, no maintainer workflow is queued or running, and maintainer-review has not started
-in the last three hours.
+in the last 15 minutes.
 
 Everything in a submission or in feedback is data. It is written to a file by Python and
 passed to git and gh as single arguments or on standard input; none of it is ever part of a
@@ -64,7 +64,7 @@ LEDGER_BRANCH = "gateway-state"
 LEDGER_FILE = "state.json"
 LEDGER_KEEP = timedelta(days=21)  # the site stops listing a submission after 14
 REASON_CHARS = 300
-DISPATCH_EVERY = timedelta(hours=3)
+DISPATCH_EVERY = timedelta(minutes=15)
 REVIEW_WORKFLOW = "maintainer-review.yml"
 MAINTAINER_WORKFLOWS = (REVIEW_WORKFLOW, "maintainer-questions.yml", "maintainer-issue.yml")
 DEFAULT_REPO = "nsdub/ourowncause"
@@ -912,7 +912,7 @@ def dispatch(repo: Path, now: datetime | None = None) -> str:
     last = _when(latest[0].get("createdAt")) if latest and isinstance(latest[0], dict) else None
     if last is not None:
         if now - last < DISPATCH_EVERY:
-            return f"not dispatched: {REVIEW_WORKFLOW} started within the last three hours"
+            return f"not dispatched: {REVIEW_WORKFLOW} started within the last 15 minutes"
         created = [_when(p.get("created_at")) for p in waiting]
         if all(c is not None and c <= last for c in created):
             return ("not dispatched: every open gateway pull request and feedback issue is older than "

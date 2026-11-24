@@ -578,3 +578,16 @@ test("feedback entries in the ledger do not disturb the submissions list", async
   const data = await assertApiJson(assert, response, 200);
   assert.deepEqual(data.pending.map((p) => p.id), [fid(1)]);
 });
+
+test("new feedback pokes the timer once; a duplicate does not; a broken timer is harmless", async () => {
+  const calls = [];
+  const TIMER = { fetch: async (url, init) => { calls.push([String(url), init && init.method]); return new Response(null, { status: 204 }); } };
+  const db = fakeD1("main");
+  const body = item();
+  assert.equal((await post(body, { env: { DB: db, TIMER } })).status, 201);
+  assert.deepEqual(calls, [["https://timer.internal/kick", "POST"]]);
+  assert.equal((await post(body, { env: { DB: db, TIMER } })).status, 200);
+  assert.equal(calls.length, 1);
+  const broken = { fetch: async () => { throw new Error("down"); } };
+  assert.equal((await post(item(), { env: { DB: fakeD1("main"), TIMER: broken } })).status, 201);
+});

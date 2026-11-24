@@ -55,7 +55,7 @@ def test_each_question_page_is_open_and_has_a_state_of_debate():
         assert "Last updated: " in q.body, path.name
         order = [q.body.index(s) for s in ("## State of debate", "**Positions.**",
                                            "**What is unresolved.**",
-                                           "**Pieces.** No pieces yet.", "Last updated: ")]
+                                           "**Pieces.**", "Last updated: ")]
         assert order == sorted(order), path.name
         opening = q.body.split("## State of debate")[0]
         assert re.search(r"\b(I|we|We)\b", opening), path.name

@@ -14,7 +14,7 @@ name: gateway
 # Pull requests opened with GITHUB_TOKEN do not start other workflows, so check-pr does not
 # run on them. tools.gateway runs the same check itself and comments the report, and the
 # last step may start maintainer-review so a decision does not wait for the hourly
-# schedule: at most once in three hours, and never while a maintainer workflow is queued or
+# schedule: at most once in 15 minutes, and never while a maintainer workflow is queued or
 # running. Starting a workflow and listing runs is what `actions: write` is for. Issues
 # opened with GITHUB_TOKEN start no workflow either, so the same step also asks for a review
 # when a feedback issue is waiting. Opening issues and creating their labels is what
@@ -68,7 +68,7 @@ jobs:
         run: python -P -m tools.gateway run --base-url "$BASE_URL"
 
       # Decides for itself: only when a gateway pull request or feedback issue is waiting, no maintainer workflow
-      # is queued or running, and maintainer-review has not started in the last three hours.
+      # is queued or running, and maintainer-review has not started in the last 15 minutes.
       - name: Ask the maintainers to review
         if: always()
         env:

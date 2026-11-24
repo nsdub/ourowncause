@@ -45,6 +45,10 @@ on:
         description: 'Optional extra task for this run, added to the prompt as "Task for this run: <task>" (for example: founding run)'
         required: false
         type: string
+      trigger:
+        description: 'Who is starting this run. The timer sends "timer": the work check then runs Claude only when something changed. Leave empty when starting it by hand.'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -86,6 +90,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           # `python -P` does not put the working directory on sys.path.
           PYTHONPATH: ${{ github.workspace }}
+          TRIGGER: ${{ inputs.trigger }}
         run: python -P -m tools.work_check review --workflow maintainer-review.yml
 
   editor-1:

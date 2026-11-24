@@ -19,3 +19,9 @@ binding = "STATS"
 database_name = "ourowncause-stats"
 database_id = "bf18503a-6251-4ef7-b8b1-a388290e6e1f"
 migrations_dir = "migrations/stats"
+
+# The timer Worker (ops/timer). New submissions and feedback poke it to start the gateway
+# at once; it has no public address, so only this site can reach it.
+[[services]]
+binding = "TIMER"
+service = "ourowncause-timer"
