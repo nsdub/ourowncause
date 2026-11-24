@@ -22,7 +22,7 @@ test("counts live in their own database: STATS has only hits, DB has no hits", (
   const tables = (db) => db.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
     .all().map((r) => r.name);
   assert.deepEqual(tables(fakeD1("stats")), ["hits"]);
-  assert.deepEqual(tables(fakeD1("main")), ["ratelimit", "status_cache", "submissions"]);
+  assert.deepEqual(tables(fakeD1("main")), ["challenges", "ratelimit", "status_cache", "submissions"]);
   assert.ok(!/\bhits\b/.test(readFileSync(MIGRATIONS.main, "utf8").replace(/^--.*$/gm, "")));
 });
 

@@ -69,6 +69,10 @@ def load_post(path: Path, root: Path | None = None) -> Post:
         # PyYAML raises ValueError for values such as `0x_` or the date 2026-13-45, and
         # RecursionError for very deep nesting.
         raise PostError(f"invalid YAML in front matter: {e}") from e
+    except Exception as e:
+        # PyYAML also raises AttributeError (`!!timestamp "x"`) and KeyError (`!!bool maybe`)
+        # on some tagged values. A malformed post gets a report, never a traceback.
+        raise PostError(f"front matter could not be parsed: {type(e).__name__}") from e
     if not isinstance(meta, dict):
         raise PostError("front matter must be a YAML mapping")
 
