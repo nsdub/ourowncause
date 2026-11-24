@@ -491,9 +491,7 @@ def _post_page(post: Post, depth: int, entry: dict | None = None,
     published = _when(entry.get("published") if entry else None, year=True)
     if published:
         byline.append(published)
-    if isinstance(stance, str) and stance in STANCE_LABELS:
-        # A piece argued at someone's request says so beside its title, not only below it.
-        byline.append(f'<span class="stance">{_e(STANCE_LABELS[stance])}</span>')
+    # How the piece came to be is summarised on the line under the byline (origin, stance).
     # Only the values our rules allow have a label; anything else is left out, not echoed.
     attestation = " · ".join(
         _e(labels[value]) for value, labels in ((prov.get("origin"), ORIGIN_SUMMARY),

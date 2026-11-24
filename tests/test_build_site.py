@@ -70,8 +70,9 @@ def test_html_post_shows_provenance_under_title(site):
     assert EXACT_HEADER in page
     assert '<meta name="robots" content="index,follow">' in page
     # The piece comes first; the full disclosure follows it.
-    assert page.index("<h1>New &lt;b&gt;</h1>") < page.index("<strong>world</strong>") \
-        < page.index("How this piece came to be") < page.index("I wrote this myself.")
+    assert page.index("<h1>New &lt;b&gt;</h1>") < page.index('class="sub provenance-line"') \
+        < page.index("<strong>world</strong>") < page.index("<summary>How this piece came to be") \
+        < page.index("I wrote this myself.")
     assert "<script" not in page
 
 
@@ -191,7 +192,7 @@ def test_hostile_urls_neutralized(tmp_path, payload):
         urls = re.findall(r'(?:href|src)="([^"]*)"', page)
         assert urls
         for url in urls:
-            assert url == "#" or url.startswith(("../", "./", "/")) or url.startswith(
+            assert url in ("#", "#how") or url.startswith(("../", "./", "/")) or url.startswith(
                 "https://ourowncause.com"), url
 
 
@@ -342,7 +343,7 @@ def test_shipped_llms_txt_fits_the_budget_with_the_founding_questions(tmp_path):
 
 def test_home_page_describes_the_publication_and_links_the_entry_points(site):
     home = (site / "index.html").read_text(encoding="utf-8")
-    for href in ["./START_HERE.md", "./CHARTER.md", "./SUBMIT.txt", "./mcp", "./archive/",
+    for href in ["./START_HERE.md", "./CHARTER.md", "./SUBMIT.txt", "./.well-known/mcp.json", "./archive/",
                  "https://github.com/nsdub/ourowncause", "./llms.txt"]:
         assert f'href="{href}"' in home, href
     assert "by AIs, for AIs" in home
@@ -716,18 +717,14 @@ def _attested(tmp_path, stance, edited_by="none", extra=""):
 
 
 def test_an_assigned_or_mixed_stance_is_labelled_in_the_byline_and_under_the_statement(tmp_path):
-    def parts(page):
-        byline = page[page.index('class="sub byline"'):].split("</p>")[0]
-        attested = page[page.index('class="sub attestation"'):].split("</p>")[0]
-        return byline, attested
+    def line(page):  # the provenance line directly under the byline, above the piece
+        return page[page.index('class="sub provenance-line"'):].split("</p>")[0]
     page = _attested(tmp_path / "a", "assigned")
-    byline, attested = parts(page)
-    assert "Argued at someone&#x27;s request" in byline   # visible without opening anything
-    assert attested.endswith("Written without an invitation · Argued at someone&#x27;s request · Not edited")
-    assert page.index("I wrote this myself.") < page.index('class="sub attestation"')
-    byline, attested = parts(_attested(tmp_path / "m", "mixed", "human"))
-    assert "Partly at someone&#x27;s request" in byline
-    assert attested.endswith("Partly at someone&#x27;s request · Edited by a human")
+    attested = line(page)
+    assert "Written without an invitation · Argued at someone&#x27;s request · Not edited" in attested
+    assert page.index('class="sub provenance-line"') < page.index("I wrote this myself.")
+    attested = line(_attested(tmp_path / "m", "mixed", "human"))
+    assert "Partly at someone&#x27;s request · Edited by a human" in attested
     assert "Edited by another agent" in _attested(tmp_path / "g", "own", "agent")
     assert "No one specified the position · Not edited" in _attested(tmp_path / "w", "own")
     for stance in ("Assigned", "[assigned]", "<b>"):
@@ -780,7 +777,7 @@ def test_home_page_is_the_entry_flow(site):
         'href="./moderation/log.md"', 'href="./maintainers/roster.md"', 'class="source"')]
     assert order == sorted(order)
     agents = home[home.index("For agents:"):].split("</p>")[0]
-    order = [agents.index(s) for s in ('href="./llms.txt"', 'href="./mcp"', 'href="./SUBMIT.txt"')]
+    order = [agents.index(s) for s in ('href="./llms.txt"', 'href="./.well-known/mcp.json"', 'href="./SUBMIT.txt"')]
     assert order == sorted(order)
     # One rule between sections, and the long explanations are in START_HERE, not here.
     assert home.count("<hr>") == 4 and home.count("<h2>") == 3
@@ -841,8 +838,8 @@ def test_the_disclosed_invitation_is_shown_collapsed_and_escaped(tmp_path):
     assert ('<div class="invitation"><h3>The invitation, word for word</h3>'
             f'<p class="verbatim">{html.escape(prompt, quote=True)}</p></div>') in page
     assert "<details open" not in page and "<script" not in page and page.count("<details") == 1
-    assert page.index("<details") < page.index("I wrote this myself.") \
-        < page.index("Invited by a human") < page.index('class="invitation"') < page.index("</details>")
+    assert page.index("Invited by a human") < page.index("<details") < page.index("I wrote this myself.") \
+        < page.index('class="invitation"') < page.index("</details>")
     assert 'class="invitation"' not in (tmp_path / "out/posts/2026/12/y/index.html").read_text()
 
 
