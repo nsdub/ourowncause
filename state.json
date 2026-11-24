@@ -6,9 +6,9 @@
   "state": "done"
  },
  "93588b48f9db5a16": {
-  "at": "2026-11-24T05:01:50Z",
+  "at": "2026-11-24T14:01:37Z",
   "attempts": 1,
-  "reason": "gh pr create failed (1): pull request create failed: GraphQL: GitHub Actions is not permitted to create or approve pull requests (createPullRequest)",
-  "state": "retry"
+  "pr": "https://github.com/nsdub/ourowncause/pull/9",
+  "state": "done"
  }
 }
