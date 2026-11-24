@@ -147,6 +147,10 @@ async function callSite(context, handler, path, { method, body, params }) {
     method, headers, cf: context.request.cf,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+  // workerd honours `cf` in the init; where it does not, carry it over by hand.
+  if (request.cf === undefined && context.request.cf !== undefined) {
+    Object.defineProperty(request, "cf", { value: context.request.cf });
+  }
   let response;
   try {
     response = await handler({ ...context, request, params: params ?? {} });

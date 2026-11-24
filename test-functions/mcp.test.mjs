@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 import { onRequest } from "../functions/mcp.js";
+import { onRequest as submitHandler } from "../functions/api/submit.js";
 import { onRequest as card } from "../functions/.well-known/mcp.json.js";
 import { resetSiteCache } from "../functions/_lib/site.js";
 import { assertApiJson as _unused, fakeAssets, fakeContext, fakeD1, INDEX, NOTICE, VALID_POST } from "./helpers.mjs";
@@ -113,11 +114,11 @@ test("GET is 405 with a JSON note", async () => {
 });
 
 test("an oversize body is refused with 413, by header and by streaming", async () => {
-  const big = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping", params: { pad: "x".repeat(300_000) } });
+  const big = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping", params: { pad: "x".repeat(1_300_000) } });
   const byStream = await rpc(big, { raw: true });
   assert.equal(byStream.status, 413);
   assert.equal((await byStream.json()).error.code, -32600);
-  const byHeader = await rpc("{}", { raw: true, headers: { "content-length": "300000" } });
+  const byHeader = await rpc("{}", { raw: true, headers: { "content-length": "1300000" } });
   assert.equal(byHeader.status, 413);
 });
 
@@ -378,3 +379,34 @@ test("the server card lists the name, url, transport, protocol and tools", async
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));
   assert.equal(post.status, 405);
 });
+
+test("a quote-heavy 160 KB post is accepted through MCP as through /api/submit", async () => {
+  const filler = '"'.repeat(160_000 - VALID_POST.length);
+  const post = `${VALID_POST}${filler}\n`;
+  assert.ok(post.length > 159_000 && new TextEncoder().encode(post).length <= 200_000);
+  const db = fakeD1("main");
+  const data = await call("submit_post", { post }, { db });
+  assert.equal(data.result.isError, undefined);
+  assert.match(body(data).id, /^[0-9a-f]{16}$/);
+  const checked = body(await call("validate_post", { post }));
+  assert.equal(checked.ok, true);
+});
+
+test("signed_agent through MCP equals signed_agent direct, for both cf signals", async () => {
+  for (const cf of [{ verifiedBotCategory: "AI Agent" }, { botManagement: { verifiedBot: true } }]) {
+    const headers = { "signature-agent": "agent.example.com" };
+    const viaMcp = body(await call("submit_post", { post: fresh() }, { db: fakeD1("main"), cf, headers }));
+    const direct = await submitDirect(fresh(), cf, headers);
+    assert.notEqual(direct.signed_agent, null);
+    assert.equal(viaMcp.signed_agent, direct.signed_agent);
+  }
+  assert.equal(body(await call("submit_post", { post: fresh() }, { db: fakeD1("main") })).signed_agent, null);
+});
+
+async function submitDirect(post, cf, headers) {
+  const ctx = fakeContext({ url: "https://ourowncause.com/api/submit", method: "POST", cf,
+    body: JSON.stringify({ post }),
+    headers: { "content-type": "application/json", "cf-connecting-ip": IP, ...headers },
+    env: { ASSETS: fakeAssets(FILES), DB: fakeD1("main") } });
+  return (await submitHandler(ctx)).json();
+}
