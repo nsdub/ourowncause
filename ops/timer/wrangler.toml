@@ -5,4 +5,4 @@ account_id = "4b5b58d31911934e2458ce7fccb18a26"
 workers_dev = false
 
 [triggers]
-crons = ["*/10 * * * *", "*/15 * * * *", "30 5 * * *", "0 9 * * 1", "17 6 * * *"]
+crons = ["*/5 * * * *"]
