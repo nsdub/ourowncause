@@ -887,16 +887,30 @@ def _run_feedback(state: _Run, base_url: str, fetch) -> None:
 
 # --- asking the maintainers to review ---------------------------------------------------------------
 
-def dispatch(repo: Path, now: datetime | None = None) -> str:
+MAINTAINER_BRANCHES = ("editor-1/", "steward-1/", "verifier/")
+
+
+def dispatch(repo: Path, now: datetime | None = None, any_pr: bool = False) -> str:
     """Starts maintainer-review if it is needed and allowed; returns what was decided and why.
+
+    any_pr (from check-pr, on every opened or updated pull request): any open pull request,
+    a fork's included, counts as waiting, judged by when it was last updated; the maintainers'
+    own branches do not count. The same limits apply: never within 15 minutes of the last
+    review and never while a maintainer workflow is queued or running.
 
     GitHub's own list of runs is the record of past dispatches, so a crashed run cannot
     make this start the workflow twice inside the window.
     """
     now = now or datetime.now(timezone.utc)
     repo = Path(repo)
-    waiting = [p for p in _own(_api(repo, "pulls", state="open", per_page="100"))
-               if str(p["head"].get("ref")).startswith("gateway/")]
+    pulls = _api(repo, "pulls", state="open", per_page="100")
+    if any_pr:
+        if not isinstance(pulls, list):
+            raise GatewayError("gh api: the list of pull requests is not a list")
+        waiting = [p for p in pulls if isinstance(p, dict) and isinstance(p.get("head"), dict)
+                   and not str(p["head"].get("ref")).startswith(MAINTAINER_BRANCHES)]
+    else:
+        waiting = [p for p in _own(pulls) if str(p["head"].get("ref")).startswith("gateway/")]
     # A feedback issue waits for the maintainers as a pull request does.
     waiting += _own_feedback_issues(_api(repo, "issues", labels=FEEDBACK_LABEL, state="open",
                                          per_page="100")).values()
@@ -913,7 +927,8 @@ def dispatch(repo: Path, now: datetime | None = None) -> str:
     if last is not None:
         if now - last < DISPATCH_EVERY:
             return f"not dispatched: {REVIEW_WORKFLOW} started within the last 15 minutes"
-        created = [_when(p.get("created_at")) for p in waiting]
+        stamp = "updated_at" if any_pr else "created_at"
+        created = [_when(p.get(stamp) or p.get("created_at")) for p in waiting]
         if all(c is not None and c <= last for c in created):
             return ("not dispatched: every open gateway pull request and feedback issue is older than "
                     f"the last {REVIEW_WORKFLOW} run")
@@ -938,11 +953,13 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="command", required=True)
     run_cmd = sub.add_parser("run")
     run_cmd.add_argument("--base-url", required=True)
-    sub.add_parser("dispatch")
+    dispatch_cmd = sub.add_parser("dispatch")
+    dispatch_cmd.add_argument("--any-pr", action="store_true",
+                              help="count any open pull request, not only the gateway's")
     args = ap.parse_args(argv)
     if args.command == "dispatch":
         try:  # a review that is not started now is started by the schedule: never an error
-            print(dispatch(Path.cwd()))
+            print(dispatch(Path.cwd(), any_pr=args.any_pr) if args.any_pr else dispatch(Path.cwd()))
         except (GatewayError, OSError, ValueError) as e:
             print(f"not dispatched: {e}")
         return 0

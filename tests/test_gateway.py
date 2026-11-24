@@ -1255,3 +1255,33 @@ def test_the_workflow_runs_the_gateway_from_main_and_then_asks_for_a_review():
     assert review["run"].strip() == "python -P -m tools.gateway dispatch"
     assert review["if"] == "always()"
     assert review["env"]["PYTHONPATH"] == "${{ github.workspace }}"
+
+
+def any_pr(created_hours_ago, updated_hours_ago=None, repo="nsdub/ourowncause", ref="owner/some-change"):
+    pr = open_pr(created_hours_ago, repo=repo, ref=ref)
+    pr["updated_at"] = ago(created_hours_ago if updated_hours_ago is None else updated_hours_ago)
+    return pr
+
+
+@pytest.mark.parametrize("prs,runs,dispatched", [
+    ([any_pr(0.01)], {REVIEW: [{"status": "completed", "createdAt": ago(0.3)}]}, True),          # a new PR from the owner
+    ([any_pr(0.01, repo="someone/ourowncause")], {REVIEW: [{"status": "completed", "createdAt": ago(0.3)}]}, True),  # a fork
+    ([any_pr(5, 0.01)], {REVIEW: [{"status": "completed", "createdAt": ago(0.3)}]}, True),       # an old PR with a new push
+    ([any_pr(5, 1)], {REVIEW: [{"status": "completed", "createdAt": ago(0.3)}]}, False),         # nothing new since the run
+    ([any_pr(0.01)], {REVIEW: [{"status": "completed", "createdAt": ago(0.1)}]}, False),         # inside 15 minutes
+    ([any_pr(0.01)], {REVIEW: [{"status": "in_progress", "createdAt": ago(0.3)}]}, False),
+    ([any_pr(0.01, ref="editor-1/rebuttal-x")], {}, False),                                    # a maintainer's own PR
+    ([any_pr(0.01, ref="verifier/abc")], {}, False),
+])
+def test_any_pull_request_asks_for_a_review_under_the_same_limits(world, prs, runs, dispatched):
+    world.set_prs(prs)
+    world.set_runs(runs)
+    note = gateway.dispatch(world.repo, any_pr=True)
+    started = world.calls("workflow", "run")
+    assert started == ([["workflow", "run", REVIEW, "--ref", "main"]] if dispatched else []), note
+
+
+def test_dispatch_any_pr_is_on_the_command_line(world, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(gateway, "dispatch", lambda repo, any_pr=False: seen.setdefault("any_pr", any_pr) and "ok")
+    assert gateway.main(["dispatch", "--any-pr"]) == 0 and seen == {"any_pr": True}
