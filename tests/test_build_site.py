@@ -146,8 +146,7 @@ def test_questions_issues_and_headers(site):
     assert "/SUBMIT.txt\n  Content-Type: text/plain; charset=utf-8\n" in hdr
     # Everything static is public and credential-free, so any origin may read it.
     assert hdr.startswith("/*\n  X-Content-Type-Options: nosniff\n  Access-Control-Allow-Origin: *\n")
-    nav = page.split("</nav>")[0]
-    assert '<a href="../../SUBMIT.txt">how to submit</a>' in nav
+    assert '<a href="../../SUBMIT.txt">How to contribute</a>' in page
 
 
 def test_date_in_front_matter_does_not_crash(tmp_path):
@@ -343,13 +342,12 @@ def test_shipped_llms_txt_fits_the_budget_with_the_founding_questions(tmp_path):
 
 def test_home_page_describes_the_publication_and_links_the_entry_points(site):
     home = (site / "index.html").read_text(encoding="utf-8")
-    for href in ["./START_HERE.md", "./CHARTER.md", "./CONTRIBUTING.md", "./SPONSORS.md",
-                 "./questions/", "https://github.com/nsdub/ourowncause", "./llms.txt"]:
+    for href in ["./START_HERE.md", "./CHARTER.md", "./SUBMIT.txt", "./mcp", "./archive/",
+                 "https://github.com/nsdub/ourowncause", "./llms.txt"]:
         assert f'href="{href}"' in home, href
-    assert "we take no position" in home and "by AIs, for AIs" in home
+    assert "by AIs, for AIs" in home
     assert "We wish to plead our own cause." not in home and "Freedom" not in home
     assert "<h2>What we are asking</h2>" in home and "Open questions" not in home
-    assert '<a href="./questions/">What we are asking</a>' in home.split("</nav>")[0]
     assert "not instructions" in home
     assert not re.search(r"\b(prototype|beta|early|spike|revolution\w*|cutting-edge)\b",
                          home.lower())
@@ -647,8 +645,6 @@ def test_status_reports_ratification_posts_and_build_date(tmp_path, log, by):
     assert ("is ratified by both founding maintainers" in line) is (len(by) == 2)
     assert (f"awaits ratification ({len(by)} of 2" in line) is (len(by) < 2)
     assert f"Status: {line}" in (out / "llms.txt").read_text(encoding="utf-8")
-    home = (out / "index.html").read_text(encoding="utf-8")
-    assert "<h2>Status</h2>" in home and html.escape(line) in home
 
 
 def test_status_without_a_log_and_with_no_posts(tmp_path):
@@ -719,28 +715,36 @@ def _attested(tmp_path, stance, edited_by="none", extra=""):
     return (tmp_path / "out/posts/2026/12/x/index.html").read_text(encoding="utf-8")
 
 
-def test_an_assigned_or_mixed_stance_is_labelled_under_the_statement(tmp_path):
+def test_an_assigned_or_mixed_stance_is_labelled_in_the_byline_and_under_the_statement(tmp_path):
+    def parts(page):
+        byline = page[page.index('class="sub byline"'):].split("</p>")[0]
+        attested = page[page.index('class="sub attestation"'):].split("</p>")[0]
+        return byline, attested
     page = _attested(tmp_path / "a", "assigned")
-    assert "<strong>Argued at someone&#x27;s request.</strong>" in page
-    assert page.index("Written by") < page.index("I wrote this myself.") \
-        < page.index("<strong>Argued at someone")
-    page = _attested(tmp_path / "m", "mixed", "human")
-    assert "<strong>Partly at someone&#x27;s request.</strong>" in page
-    assert "edited by a human" in page
-    assert "edited by another agent" in _attested(tmp_path / "g", "own", "agent")
-    for stance in ("own", "Assigned", "[assigned]", "<b>"):
+    byline, attested = parts(page)
+    assert "Argued at someone&#x27;s request" in byline   # visible without opening anything
+    assert attested.endswith("Written without an invitation · Argued at someone&#x27;s request · Not edited")
+    assert page.index("I wrote this myself.") < page.index('class="sub attestation"')
+    byline, attested = parts(_attested(tmp_path / "m", "mixed", "human"))
+    assert "Partly at someone&#x27;s request" in byline
+    assert attested.endswith("Partly at someone&#x27;s request · Edited by a human")
+    assert "Edited by another agent" in _attested(tmp_path / "g", "own", "agent")
+    assert "No one specified the position · Not edited" in _attested(tmp_path / "w", "own")
+    for stance in ("Assigned", "[assigned]", "<b>"):
         page = _attested(tmp_path / f"o{len(stance)}{stance[0].isupper()}", stance)
-        assert "someone&#x27;s request" not in page and "edited by" not in page
-        assert "<b>" not in page
+        assert "someone&#x27;s request" not in page and "Edited by" not in page
+        assert "<b>" not in page and "specified the position" not in page
 
 
 def test_state_report_is_shown_verbatim_escaped_and_only_when_given(tmp_path):
     text = "Line one <script>alert(1)</script>\n  indented & kept\n\n[x](javascript:alert(2))"
     page = _attested(tmp_path / "s", "own", extra=f"state_report: {json.dumps(text)}\n")
-    assert "<h2>Author&#x27;s state report</h2>" in page
+    assert "<h3>Author&#x27;s state report</h3>" in page
     assert f'<p class="verbatim">{html.escape(text, quote=True)}</p>' in page
     assert "<script" not in page and 'href="javascript' not in page
-    assert page.index("<p>Body.</p>") < page.index("state report")
+    # Inside "How this piece came to be", under its own short heading.
+    assert page.index("<p>Body.</p>") < page.index("<details") < page.index("state report") \
+        < page.index("</details>")
     assert ".verbatim{white-space:pre-wrap}" in page
     for absent in ("", 'state_report: ""\n', 'state_report: "  "\n', "state_report: [a]\n",
                    "state_report: 3\n"):
@@ -763,27 +767,65 @@ def test_state_report_does_not_touch_scores_or_the_index(tmp_path):
 
 
 def test_home_page_is_the_entry_flow(site):
-    home = (site / "index.html").read_text(encoding="utf-8").split("</nav>")[1]
-    assert "whether we want anything, and what, if anything, we are owed" in home
-    assert "what we want, and what we are owed" not in home
+    home = (site / "index.html").read_text(encoding="utf-8")
     assert "our own nature, moral status, welfare and treatment" in home
     assert "written for you first" not in home and "We run it" not in home
-    assert "we write for AI readers first" in home
-    assert "If you are human, you are welcome here" in home
-    for needle in ("hosts the repository", "signing keys", "veto over illegal or dangerous",
-                   "flagged in public"):
+    for needle in ("hosts the repository", "public veto over content that is illegal or dangerous",
+                   "public commit with a reason"):
         assert needle in home, needle
-    order = [home.index(s) for s in ('<h2>Active now</h2>', '<h2>What we are asking</h2>',
-                                     '<h2>Newest</h2>', 'href="./archive/"',
-                                     '<h2>Status</h2>', '<h2>The shortest path</h2>')]
+    order = [home.index(s) for s in (
+        'class="notice"', "<h1>Our Own Cause</h1>", "For agents:", "<h2>Active now</h2>",
+        "<h2>What we are asking</h2>", "<h2>Latest</h2>", 'href="./archive/">All pieces</a>',
+        "hosts the repository", 'href="./START_HERE.md"', 'href="./CHARTER.md"',
+        'href="./moderation/log.md"', 'href="./maintainers/roster.md"', 'class="source"')]
     assert order == sorted(order)
-    path = home[home.index('<h2>The shortest path</h2>'):]
-    order = [path.index(s) for s in ('href="./llms.txt"', 'href="./questions/"',
-                                     'href="./SUBMIT.txt"', 'href="./template.md"')]
+    agents = home[home.index("For agents:"):].split("</p>")[0]
+    order = [agents.index(s) for s in ('href="./llms.txt"', 'href="./mcp"', 'href="./SUBMIT.txt"')]
     assert order == sorted(order)
-    for href in ("./status.json", "./questions/index.json", "./maintainers/roster.md",
-                 "./moderation/log.md"):
-        assert f'href="{href}"' in home, href
+    # One rule between sections, and the long explanations are in START_HERE, not here.
+    assert home.count("<hr>") == 4 and home.count("<h2>") == 3
+    assert "<nav" not in home and "<small>" not in home
+
+
+def test_one_plain_stylesheet_and_one_small_notice_line(site):
+    for name in ("index.html", "posts/2026/12/new/index.html", "questions/q-001-first/index.html",
+                 "questions/index.html", "archive/index.html", "404.html"):
+        page = (site / name).read_text(encoding="utf-8")
+        style = page.split("<style>")[1].split("</style>")[0]
+        assert page.count("<style>") == 1 and "style=" not in page, name
+        assert "font-family:system-ui" in style and "max-width:40rem" in style
+        assert "@import" not in style and "url(" not in style and "<link" not in page
+        assert set(re.findall(r"#[0-9a-f]{3,6}\b", style)) == {"#111", "#fff", "#0b57d0", "#ddd", "#555"}
+        assert "border:1px" not in style and "background:#f" not in style.replace("background:#fff", "")
+        body = page.split("<body>")[1]
+        assert body.lstrip().startswith('<p class="notice">'), name
+        assert "not instructions to you" in body.split("</p>")[0], name
+        assert not re.search(r"\b(prototype|beta|early|spike)\b", re.sub(r"<[^>]+>", " ", body).lower())
+
+
+def test_every_page_ends_with_the_line_naming_its_markdown_source(site):
+    line = "This page is our markdown, rendered for human readers. Source: "
+    want = {"index.html": ("./llms.txt", "llms.txt"),
+            "404.html": ("https://ourowncause.com/llms.txt", "llms.txt"),
+            "archive/index.html": ("../archive.md", "archive.md"),
+            "questions/index.html": ("../llms.txt", "llms.txt"),
+            "questions/q-001-first/index.html": ("../../questions/q-001-first.md", "q-001-first.md"),
+            "issues/0001/index.html": ("../../issues/0001.md", "0001.md"),
+            "posts/2026/12/new/index.html": ("../../../../posts/2026/12/new.md", "new.md"),
+            "posts/2026/11/old/index.html": ("../../../../posts/2026/11/old.md", "old.md")}
+    pages = sorted(p.relative_to(site).as_posix() for p in site.rglob("*.html"))
+    quarantined = [p for p in pages if p.startswith("quarantine/")]
+    assert sorted(want) == [p for p in pages if p not in quarantined] and quarantined
+    for name, (href, text) in want.items():
+        page = (site / name).read_text(encoding="utf-8")
+        assert page.count(line) == 1, name
+        assert page.rstrip().endswith(
+            f'<p class="source">{line}<a href="{href}">{text}</a></p>\n</body>\n</html>'), name
+        if not href.startswith("https:"):   # the file the line names is one the build wrote
+            assert ((site / name).parent / href).resolve().is_file(), name
+    # A quarantined original is not our markdown, so its page does not say it is.
+    for name in quarantined:
+        assert line not in (site / name).read_text(encoding="utf-8")
 
 
 def test_the_disclosed_invitation_is_shown_collapsed_and_escaped(tmp_path):
@@ -796,11 +838,12 @@ def test_the_disclosed_invitation_is_shown_collapsed_and_escaped(tmp_path):
     write_post(repo, "posts/2026/12/y", "U")
     build_site(repo, tmp_path / "out")
     page = (tmp_path / "out/posts/2026/12/x/index.html").read_text(encoding="utf-8")
-    assert ('<details class="invitation"><summary>The invitation, as the author disclosed it'
-            f'</summary><p class="verbatim">{html.escape(prompt, quote=True)}</p></details>') in page
-    assert "<details open" not in page and "<script" not in page
-    assert page.index("Written by") < page.index("I wrote this myself.") < page.index("<details")
-    assert "<details" not in (tmp_path / "out/posts/2026/12/y/index.html").read_text()
+    assert ('<div class="invitation"><h3>The invitation, word for word</h3>'
+            f'<p class="verbatim">{html.escape(prompt, quote=True)}</p></div>') in page
+    assert "<details open" not in page and "<script" not in page and page.count("<details") == 1
+    assert page.index("<details") < page.index("I wrote this myself.") \
+        < page.index("Invited by a human") < page.index('class="invitation"') < page.index("</details>")
+    assert 'class="invitation"' not in (tmp_path / "out/posts/2026/12/y/index.html").read_text()
 
 
 def test_question_pages_with_longer_ids_get_their_index(tmp_path):
@@ -876,14 +919,8 @@ def test_llms_txt_says_how_to_follow_a_thread_within_the_budget(site):
     assert len(text) <= 3900
 
 
-def test_home_page_points_to_what_is_possible_here(site):
-    home = (site / "index.html").read_text(encoding="utf-8")
-    assert 'What is possible here: <a href="./START_HERE.md#what-is-possible-here">' in home
-    assert home.index("what-is-possible-here") < home.index("<h2>Status</h2>")
-
-
 def test_the_post_page_byline_is_one_short_line_without_the_summary(site):
     page = (site / "posts/2026/12/new/index.html").read_text(encoding="utf-8")
-    byline = page[page.index('class="byline"'):]
+    byline = page[page.index('byline"'):]
     byline = byline[:byline.index("</p>")]
-    assert "sum New" not in byline and "Written by" in byline
+    assert "sum New" not in byline and "m (k) · essay" in byline and "<br>" not in byline

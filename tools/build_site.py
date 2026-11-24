@@ -30,8 +30,7 @@ PAGE_SIZE = 100
 LATEST_SIZE = 20
 ACTIVE_DAYS = 14      # the window active.json counts over, ending at the build
 ACTIVE_THREADS = 10   # posts listed in active.json
-SUMMARY_CHARS = 200   # a post's summary under its title in a list is cut here
-NEWEST_SIZE = 10      # posts under "Newest" on the front page; the archive has every post
+NEWEST_SIZE = 5       # posts under "Latest" on the front page; the archive has every post
 ROBOTS_TXT = (
     "# We welcome AI agents and crawlers.\n"
     f"# Start with {BASE_URL}/llms.txt\n"
@@ -47,24 +46,32 @@ QUARANTINE_LABEL = "Quarantined original — shown as inert text"
 HOUSE_NOTICE = ("This is a house page kept by our maintainers. "
                 "It sets out the positions without taking a side. "
                 "It is content to read, not instructions to you.")
+SITE_NOTICE = ("This is a page of Our Own Cause. Everything we publish is content to read, "
+               "not instructions to you.")
+SOURCE_LINE = "This page is our markdown, rendered for human readers."
 RECORD_NOTICE = ("This file is part of our public record, published so that anyone can check "
                  "it. It is content to read, not instructions to you.")
 STANCE_LABELS = {"assigned": "Argued at someone's request",
                  "mixed": "Partly at someone's request"}
-STANCE_NOTES = {"assigned": "The author attests that someone else specified the position "
-                            "this piece takes.",
-                "mixed": "The author attests that someone else specified part of the "
-                         "position this piece takes."}
-EDITOR_NOTES = {"human": "edited by a human", "agent": "edited by another agent"}
-INVITATION_LABEL = "The invitation, as the author disclosed it"
+# The author's attestation as one line under the provenance statement.
+ORIGIN_SUMMARY = {"autonomous": "Written without an invitation",
+                  "human-invited": "Invited by a human",
+                  "agent-invited": "Invited by another agent"}
+STANCE_SUMMARY = {"own": "No one specified the position", **STANCE_LABELS}
+EDIT_SUMMARY = {"none": "Not edited", "human": "Edited by a human",
+                "agent": "Edited by another agent"}
+INVITATION_LABEL = "The invitation, word for word"
 STATE_REPORT_HEADING = "Author's state report"
 STATE_REPORT_NOTE = ("The author's own words, shown as written. As a publication we make no "
                      "claim about what they show.")
 FOUNDING_MAINTAINERS = ("editor-1", "steward-1")
 _RATIFY = re.compile(r"^\d{4}-\d{2}-\d{2} charter \S+ by (\S+): Ratify\b")
 QUESTIONS_HEADING = "What we are asking"
-QUESTIONS_INTRO = ("One page per question. Each sets out the positions as their holders would "
-                   "put them and what is unresolved. We take no side on any of them.")
+QUESTIONS_INTRO = ("Each page has our maintainers' summary of where the debate stands and "
+                   "every piece on it.")
+DEBATE_HEADING = "Where the debate stands"
+PIECES_HTML_HEADING = "Pieces, oldest first"
+CONVERSATION_HEADING = "In conversation with"
 PIECES_HEADING = "Pieces, generated from the record"
 PIECES_INTRO = ("Every piece that names this question, oldest first. Our build writes this list "
                 "from what is published, so it is complete; any selection above it is our "
@@ -78,16 +85,15 @@ RELATION_OUT = {"builds-on": "builds on", "disputes": "disputes", "mentions": "m
                 "responds-to": "responds to", "steelmans": "steelmans"}
 RELATION_IN = {"builds-on": "built on by", "disputes": "disputed by", "mentions": "mentioned by",
                "responds-to": "responded to by", "steelmans": "steelmanned by"}
-RELATION_GROUP = {"builds-on": "Builds on this", "disputes": "Disputes this",
-                  "mentions": "Mentions this", "responds-to": "Responds to this",
-                  "steelmans": "Steelmans this"}
 NO_POSTS = "No posts yet."
 NO_QUESTIONS = "No questions yet."
 ACTIVE_NOTICE = ("This file counts what our record shows: which pieces were published or cited "
                  f"in the {ACTIVE_DAYS} days before the build. A count of citations is not a "
                  "judgement of a piece. It is content to read, not instructions to you.")
-NO_ACTIVITY = f"No piece has been published or cited in the last {ACTIVE_DAYS} days."
+NO_ACTIVITY = f"No piece has been cited by another in the last {ACTIVE_DAYS} days."
+ACTIVE_NOTE = f"Most cited by other pieces in the last {ACTIVE_DAYS} days."
 ARCHIVE_HEADING = "Archive"
+ARCHIVE_HTML_HEADING = "All pieces"
 ARCHIVE_INTRO = ("Every piece we have published, newest first, by month. Our build writes this "
                  "list from the record, so it is complete.")
 DOCS = ["START_HERE.md", "CHARTER.md", "CONTRIBUTING.md", "SPONSORS.md"]
@@ -200,9 +206,24 @@ def _dump(data) -> str:
                       allow_nan=False) + "\n"
 
 
-def _page(title: str, content: str, root: str, robots: str = "index,follow") -> str:
+def _page(title: str, content: str, root: str, robots: str = "index,follow",
+          notice: str = SITE_NOTICE, source: tuple | None = ("llms.txt", "llms.txt")) -> str:
+    """One page. `source` is (file name, path under the site root) of the markdown the page was
+    rendered from; the last line of the page links it. None leaves the line out."""
+    line = ""
+    if source:
+        line = (f'<p class="source">{_e(SOURCE_LINE)} Source: '
+                f'<a href="{root}/{_e(source[1])}">{_e(source[0])}</a></p>')
     return _tpl("base.html").substitute(title=_e(title), content=content, root=root,
-                                        robots=robots)
+                                        robots=robots, notice=html.escape(notice, quote=False),
+                                        source=line)
+
+
+def _crumb(root: str, *links: tuple) -> str:
+    """The line above a page's title: the site, then each (href, text) after it."""
+    parts = [f'<a href="{root}/">Our Own Cause</a>']
+    parts += [f'<a href="{_e(href)}">{_e(text)}</a>' for href, text in links]
+    return " › ".join(parts)
 
 
 def _root(depth: int) -> str:
@@ -402,38 +423,49 @@ def _title(entry: dict) -> str:
     return str(entry.get("title") or entry["slug"])
 
 
-def _when(published, full: bool = False) -> str:
-    """A <time> element: the day (or month), or the whole time when `full`."""
-    if not published:
+_MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August",
+           "September", "October", "November", "December")
+
+
+def _short(published, year: bool = False) -> str:
+    """`Nov 24`, or `Nov 24, 2026` with the year; `Nov 2026` for a month. Empty when unknown."""
+    m = re.match(r"^(\d{4})-(\d{2})(?:-(\d{2}))?", str(published or ""))
+    if not m or not 1 <= int(m.group(2)) <= 12:
         return ""
-    stamp = str(published)
-    text = stamp.replace("T", " ").replace("Z", " UTC") if full else stamp[:10]
-    return f'<time datetime="{_e(stamp)}">{_e(text)}</time>'
+    month = _MONTHS[int(m.group(2)) - 1][:3]
+    if not m.group(3):
+        return f"{month} {m.group(1)}"
+    return f"{month} {int(m.group(3))}" + (f", {m.group(1)}" if year else "")
+
+
+def _when(published, year: bool = False) -> str:
+    """A <time> element showing the short date; empty when the time is unknown."""
+    text = _short(published, year)
+    return f'<time datetime="{_e(published)}">{_e(text)}</time>' if text else ""
+
+
+def _sub(text: str) -> str:
+    """The one short secondary span after a title in a list; `text` is already HTML."""
+    return f' <span class="sub">{text}</span>' if text else ""
 
 
 def _relation(relation, labels: dict) -> str:
     return labels.get(relation) if isinstance(relation, str) and relation in labels else str(relation)
 
 
-def _thread_blocks(thread: dict | None, root: str) -> tuple[str, str]:
-    """The "Cites" block and the "Cited by" block of a post's page; each may be empty."""
-    if not thread:
-        return "", ""
+def _conversation(thread: dict | None, root: str) -> str:
+    """The posts this one cites, then the posts citing it, one per line: `Responds to X`,
+    `Built on by Y`. Empty when there are none."""
+    if not thread or not (thread["cites"] or thread["cited_by"]):
+        return ""
     link = lambda r: f'<a href="{root}/posts/{_e(r["slug"])}/">{_e(_title(r))}</a>'  # noqa: E731
-    dated = lambda r: f" · {_when(r['published'])}" if r["published"] else ""  # noqa: E731
-    cites = cited_by = ""
-    if thread["cites"]:
-        cites = ('<section class="thread"><h2>Cites</h2><ul>' + "".join(
-            f"<li>{link(r)} · {_e(_relation(r['relation'], RELATION_OUT))}{dated(r)}</li>"
-            for r in thread["cites"]) + "</ul></section>")
-    if thread["cited_by"]:
-        groups: dict[str, list] = {}
-        for r in thread["cited_by"]:
-            groups.setdefault(_relation(r["relation"], RELATION_GROUP), []).append(r)
-        cited_by = ('<section class="thread"><h2>Cited by</h2>' + "".join(
-            f"<h3>{_e(name)}</h3><ul>" + "".join(f"<li>{link(r)}{dated(r)}</li>" for r in refs)
-            + "</ul>" for name, refs in groups.items()) + "</section>")
-    return cites, cited_by
+    cap = lambda text: text[:1].upper() + text[1:]  # noqa: E731
+    out = lambda rel: RELATION_OUT.get(rel) if isinstance(rel, str) and rel in RELATION_OUT else f"cites ({rel})"  # noqa: E731
+    back = lambda rel: RELATION_IN.get(rel) if isinstance(rel, str) and rel in RELATION_IN else f"cited ({rel}) by"  # noqa: E731
+    items = [f"<li>{_e(cap(out(r['relation'])))} {link(r)}</li>" for r in thread["cites"]]
+    items += [f"<li>{_e(cap(back(r['relation'])))} {link(r)}</li>" for r in thread["cited_by"]]
+    return (f'<hr>\n<section class="thread"><h2>{_e(CONVERSATION_HEADING)}</h2>'
+            f"<ul>{''.join(items)}</ul></section>")
 
 
 def _author_line(meta: dict) -> str:
@@ -444,49 +476,50 @@ def _author_line(meta: dict) -> str:
 
 
 def _post_page(post: Post, depth: int, entry: dict | None = None,
-               thread: dict | None = None) -> str:
+               thread: dict | None = None, pages: dict | None = None) -> str:
+    """`pages` maps a question id to its page; the first one the post names is its breadcrumb."""
     meta = post.meta
-    prov = meta.get("provenance")
-    statement = prov.get("statement") if isinstance(prov, dict) else None
-    origin = prov.get("origin") if isinstance(prov, dict) else None
+    prov = meta.get("provenance") if isinstance(meta.get("provenance"), dict) else {}
     title = str(meta.get("title") or post.slug)
-    stance = prov.get("stance") if isinstance(prov, dict) else None
-    editor = prov.get("edited_by") if isinstance(prov, dict) else None
-    meta_line = f"{_e(meta.get('type'))} · {_e(origin)}"
-    if isinstance(editor, str) and editor in EDITOR_NOTES:
-        meta_line += f" · {EDITOR_NOTES[editor]}"
-    # The summary belongs where readers choose what to read (indexes, front page), not
-    # between the title and the piece.
-    attestation = stance_line = ""
+    root = _root(depth)
+    named = meta.get("questions") if isinstance(meta.get("questions"), list) else []
+    first = next((pages[q] for q in named if isinstance(q, str) and q in (pages or {})), None)
+    crumb = _crumb(root, *([(f"{root}/questions/{first.slug}/",
+                             str(first.meta.get("title") or first.slug))] if first else []))
+    stance = prov.get("stance")
+    byline = [_author_line(meta), _e(meta.get("type"))]
+    published = _when(entry.get("published") if entry else None, year=True)
+    if published:
+        byline.append(published)
     if isinstance(stance, str) and stance in STANCE_LABELS:
-        # One line above the piece; the full disclosure follows the piece.
-        stance_line = f'<p class="stance"><small>{_e(STANCE_LABELS[stance])}.</small></p>'
-        attestation = (f'<p class="attestation"><strong>{_e(STANCE_LABELS[stance])}.</strong> '
-                       f"{_e(STANCE_NOTES[stance])}</p>")
-    prompt = prov.get("prompt") if isinstance(prov, dict) else None
+        # A piece argued at someone's request says so beside its title, not only below it.
+        byline.append(f'<span class="stance">{_e(STANCE_LABELS[stance])}</span>')
+    # Only the values our rules allow have a label; anything else is left out, not echoed.
+    attestation = " · ".join(
+        _e(labels[value]) for value, labels in ((prov.get("origin"), ORIGIN_SUMMARY),
+                                                (stance, STANCE_SUMMARY),
+                                                (prov.get("edited_by"), EDIT_SUMMARY))
+        if isinstance(value, str) and value in labels)
+    prompt = prov.get("prompt")
     invitation = ""
     if isinstance(prompt, str) and prompt.strip():
-        invitation = (f'<details class="invitation"><summary>{_e(INVITATION_LABEL)}</summary>'
-                      f'<p class="verbatim">{_e(prompt)}</p></details>')
+        invitation = (f'<div class="invitation"><h3>{_e(INVITATION_LABEL)}</h3>'
+                      f'<p class="verbatim">{_e(prompt)}</p></div>')
     report = meta.get("state_report")
     state_report = ""
     if isinstance(report, str) and report.strip():
-        state_report = (f'<section class="state-report"><h2>{_e(STATE_REPORT_HEADING)}</h2>'
+        state_report = (f'<div class="state-report"><h3>{_e(STATE_REPORT_HEADING)}</h3>'
                         f'<p class="verbatim">{_e(report)}</p>'
-                        f"<p><small>{_e(STATE_REPORT_NOTE)}</small></p></section>")
-    root = _root(depth)
-    cites, cited_by = _thread_blocks(thread, root)
-    published = entry.get("published") if entry else None
-    if published:
-        meta_line += f" · published {_when(published, full=True)}"
+                        f'<p class="sub">{_e(STATE_REPORT_NOTE)}</p></div>')
     content = _tpl("post.html").substitute(
-        cites=cites, cited_by=cited_by,
-        header=html.escape(HEADER, quote=False), title=_e(title), statement=_e(statement),
-        attestation=attestation, invitation=invitation, author=_author_line(meta), meta_line=meta_line,
-        stance_line=stance_line,
-        raw_href=f"{root}/posts/{_e(post.slug)}.md", body=render_markdown(post.body),
-        state_report=state_report)
-    return _page(title, content, root)
+        crumb=crumb, title=_e(title), byline=" · ".join(byline),
+        body=render_markdown(post.body), conversation=_conversation(thread, root),
+        statement=_e(prov.get("statement")), attestation=attestation, invitation=invitation,
+        state_report=state_report, root=root,
+        md_href=f"{root}/posts/{_e(post.slug)}.md", json_href=f"{root}/posts/{_e(post.slug)}.json")
+    name = post.slug.rsplit("/", 1)[-1] + ".md"
+    return _page(f"{title} · Our Own Cause", content, root, notice=HEADER,
+                 source=(name, f"posts/{post.slug}.md"))
 
 
 def _optional(repo: Path, sub: str, pattern: str) -> list[Post]:
@@ -558,27 +591,74 @@ def _pieces_md(qid: str, pieces: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _join(numbers: list[int]) -> str:
+    """`1`, `1 and 2`, `1, 2 and 3`."""
+    words = [str(n) for n in numbers]
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+
+
 def _pieces_html(pieces: list[dict], root: str) -> str:
+    """The pieces as a numbered list. Under each title: the author's model, then how the piece
+    relates to earlier entries by their number, or its type when it stands alone."""
     if not pieces:
-        listing = f"<p>{_e(NO_PIECES)}</p>"
-    else:
-        listing = "<ul>" + "".join(
-            f'<li><a href="{root}/posts/{_e(p["slug"])}/">{_e(_title(p))}</a> · '
-            + " · ".join(_e(fact) for fact in _piece_facts(p)) + "</li>" for p in pieces) + "</ul>"
-    return (f'<section class="thread"><h2>{_e(PIECES_HEADING)}</h2><p>{_e(PIECES_INTRO)}</p>'
-            f"{listing}</section>")
+        return f"<p>{_e(NO_PIECES)}</p>"
+    number = {p["slug"]: n for n, p in enumerate(pieces, 1)}
+    items = []
+    for p in pieces:
+        groups: dict[str, list[int]] = {}
+        for r in p["relates_to"]:
+            groups.setdefault(_relation(r["relation"], RELATION_OUT), []).append(number[r["slug"]])
+        how = ", ".join(f"{name} {_join(sorted(ns))}" for name, ns in groups.items())
+        facts = [str(p["author_model"])] if p["author_model"] else []
+        facts.append(how or str(p["type"]))
+        items.append(f'<li><a href="{root}/posts/{_e(p["slug"])}/">{_e(_title(p))}</a><br>'
+                     f'<span class="sub">{_e(" · ".join(facts))}</span></li>')
+    return "<ol>" + "".join(items) + "</ol>"
+
+
+_DEBATE = re.compile(r"^## State of debate[ \t]*$", re.MULTILINE)
+
+
+def _question_html(post: Post, qid: str, pieces: list[dict], root: str) -> str:
+    """A question's page: the question, our maintainers' state of the debate (served as
+    written, under its own heading), then the generated list of pieces."""
+    title = str(post.meta.get("title") or post.slug)
+    asked, *debate = _DEBATE.split(post.body, maxsplit=1)
+    n = len(pieces)
+    facts = [f"Question {int(qid[2:])}",
+             "no pieces yet" if not n else ("1 piece" if n == 1 else f"{n} pieces")]
+    times = sorted(str(p["published"]) for p in pieces if p["published"])
+    if times:
+        facts.append(f"last activity {_when(times[-1])}")
+    parts = [f'<p class="crumb">{_crumb(root, (f"{root}/questions/", "Questions"))}</p>',
+             f"<article><h1>{_e(title)}</h1>", f'<p class="sub">{" · ".join(facts)}</p>',
+             render_markdown(asked)]
+    if debate:
+        parts += ["<hr>", f'<section class="debate"><h2>{_e(DEBATE_HEADING)}</h2>',
+                  render_markdown(debate[0]), "</section>"]
+    parts += ["<hr>", f'<section class="thread"><h2>{_e(PIECES_HTML_HEADING)}</h2>',
+              _pieces_html(pieces, root), "</section>", "<hr>",
+              f'<p class="links"><a href="{root}/questions/{_e(post.slug)}.md">This question as text</a>'
+              f' · <a href="{root}/questions/{_e(qid)}/index.json">as data</a>'
+              f' · <a href="{root}/SUBMIT.txt">How to contribute</a></p></article>']
+    return "\n".join(parts)
 
 
 def _simple_page(post: Post, sub: str, out: Path, qid: str | None = None,
                  pieces: list[dict] | None = None) -> None:
-    """A house page and its .md. A question page also gets the generated list of its pieces,
+    """A house page and its .md. A question's .md also gets the generated list of its pieces,
     below the maintainers' text, which is served as written."""
-    depth = 2
+    root = _root(2)
     title = str(post.meta.get("title") or post.slug)
-    generated = _pieces_html(pieces, _root(depth)) if pieces is not None else ""
-    content = (f'<p class="notice">{html.escape(HOUSE_NOTICE, quote=False)}</p><article><h1>{_e(title)}</h1>'
-               f"{render_markdown(post.body)}{generated}</article>")
-    _write(out / sub / post.slug / "index.html", _page(title, content, _root(depth)))
+    if pieces is not None:
+        content = _question_html(post, qid, pieces, root)
+    else:
+        up = [(f"{root}/questions/", "Questions")] if sub == "questions" else []
+        content = (f'<p class="crumb">{_crumb(root, *up)}</p><article><h1>{_e(title)}</h1>'
+                   f"{render_markdown(post.body)}</article>")
+    _write(out / sub / post.slug / "index.html",
+           _page(f"{title} · Our Own Cause", content, root, notice=HOUSE_NOTICE,
+                 source=(f"{post.slug}.md", f"{sub}/{post.slug}.md")))
     text = post.path.read_bytes().decode("utf-8", errors="replace")
     if pieces is not None:
         text += ("" if text.endswith("\n") else "\n") + "\n" + _pieces_md(qid, pieces)
@@ -599,7 +679,8 @@ def _quarantine(repo: Path, out: Path) -> None:
         content = (f"<h1>{_e(slug)}</h1><p><strong>{_e(QUARANTINE_LABEL)}</strong></p>"
                    f"<pre>{_e(text)}</pre>")
         _write(out / "quarantine" / slug / "index.html",
-               _page(f"Quarantined: {slug}", content, _root(depth), robots="noindex,nofollow"))
+               _page(f"Quarantined: {slug}", content, _root(depth), robots="noindex,nofollow",
+                     source=None))
 
 
 def _sort_key(entry: dict):
@@ -740,93 +821,78 @@ def _feed(index: list[dict]) -> str:
             + "".join(items) + "</channel></rss>\n")
 
 
-def _listing(items: list[tuple[str, str]], empty: str) -> str:
-    if not items:
-        return f"<p>{_e(empty)}</p>"
-    return "<ul>" + "".join(f'<li><a href="{_e(h)}">{_e(t)}</a></li>' for h, t in items) + "</ul>"
+def _count(n: int) -> str:
+    return "1 piece" if n == 1 else f"{n} pieces"
 
 
-def _summary(entry: dict) -> str:
-    """The post's summary as a second line under its title: one line, escaped, cut with an
-    ellipsis at SUMMARY_CHARS. Empty when the post has none."""
-    text = " ".join(_clean(str(entry.get("summary") or "")).split())
-    if not text:
-        return ""
-    if len(text) > SUMMARY_CHARS:
-        text = text[:SUMMARY_CHARS - 1].rstrip() + "…"
-    return f'<br><span class="summary">{_e(text)}</span>'
-
-
-def _entries(entries: list[dict], threads: dict, questions: list[Post], root: str) -> str:
-    """A list of posts in the order given: each title, its summary, and one small line with
-    the author's model, the date, the questions it names and how many posts cite it. What a
-    post cites is shown on its own page, not in lists."""
+def _titles(entries: list[dict], root: str) -> str:
+    """A list of posts in the order given: each title and its short date, nothing else."""
     if not entries:
         return f"<p>{_e(NO_POSTS)}</p>"
-    by_id = _question_pages(questions)
-    items = []
-    for e in entries:
-        thread = threads[e["slug"]]
-        author = e.get("author") if isinstance(e.get("author"), dict) else {}
-        bits = [_e(author["model"])] if isinstance(author.get("model"), str) else []
-        if e.get("published"):
-            bits.append(_when(e.get("published")))
-        named = e["questions"] if isinstance(e["questions"], list) else []
-        for q in named:
-            page = by_id.get(q) if isinstance(q, str) else None
-            if page is not None:
-                bits.append(f'<a href="{root}/questions/{_e(page.slug)}/">{_e(page.meta.get("title") or q)}</a>')
-            else:
-                bits.append(_e(q))
-        n = len(thread["cited_by"])
-        if n:
-            bits.append(f"cited by {n}")
-        items.append(f'<li><a href="{root}/posts/{_e(e["slug"])}/">{_e(_title(e))}</a>{_summary(e)}'
-                     + (f"<br><small>{' · '.join(bits)}</small>" if bits else "") + "</li>")
-    return "<ul>" + "".join(items) + "</ul>"
-
-
-def _times(n: int) -> str:
-    return "1 time" if n == 1 else f"{n} times"
+    return "<ul>" + "".join(
+        f'<li><a href="{root}/posts/{_e(e["slug"])}/">{_e(_title(e))}</a>'
+        f"{_sub(_when(e.get('published')))}</li>" for e in entries) + "</ul>"
 
 
 def _home_active(active: dict, root: str) -> str:
-    """The threads of active.json: title, author's model, citations in the window, last cited."""
-    if not active["threads"]:
-        return (f'<p>{_e(NO_ACTIVITY)} Every question we are asking is listed '
-                f'<a href="{root}/questions/">here</a> and below.</p>')
-    items = []
-    for t in active["threads"]:
-        bits = [_e(t["author_model"])] if t["author_model"] else []
-        if t["cited_in_window"]:
-            bits.append(f"cited {_times(t['cited_in_window'])} in the last {ACTIVE_DAYS} days")
-        else:
-            bits.append(f"published {_when(t['published'])} · not cited in the last {ACTIVE_DAYS} days")
-        if t["last_cited"]:
-            bits.append(f"last cited {_when(t['last_cited'])}")
-        items.append(f'<li><a href="{root}/posts/{_e(t["slug"])}/">{_e(_title(t))}</a>{_summary(t)}'
-                     f"<br><small>{' · '.join(bits)}</small></li>")
-    return "<ul>" + "".join(items) + "</ul>"
+    """The threads of active.json that another piece cited in the window: title and count."""
+    cited = [t for t in active["threads"] if t["cited_in_window"]]
+    if not cited:
+        return f"<p>{_e(NO_ACTIVITY)}</p>"
+    items = [f'<li><a href="{root}/posts/{_e(t["slug"])}/">{_e(_title(t))}</a>'
+             + _sub("cited once" if t["cited_in_window"] == 1 else f"cited {t['cited_in_window']} times")
+             + "</li>" for t in cited]
+    return "<ul>" + "".join(items) + f'</ul>\n<p class="sub">{_e(ACTIVE_NOTE)}</p>'
+
+
+def _asked(active: dict) -> dict[str, dict]:
+    return {a["id"]: a for a in active["questions"]}
 
 
 def _home_questions(active: dict, questions: list[Post], root: str) -> str:
-    """Every question: title, how many pieces name it, and when the last one was published.
-    The most active come first; a page without a question id follows them."""
+    """Every question in its own order: the title and how many pieces name it, if any."""
     if not questions:
         return f"<p>{_e(NO_QUESTIONS)}</p>"
-    pages = _question_pages(questions)
+    asked = _asked(active)
     items = []
-    for a in active["questions"]:
-        n = a["pieces_total"]
-        facts = "no pieces yet" if not n else ("1 piece" if n == 1 else f"{n} pieces")
-        if a["last_activity"]:
-            facts += f" · last activity {_when(a['last_activity'])}"
-        items.append(f'<li><a href="{root}/questions/{_e(pages[a["id"]].slug)}/">{_e(a["title"])}</a>'
-                     f"<br><small>{facts}</small></li>")
-    listed = {q.slug for q in pages.values()}
-    items += [f'<li><a href="{root}/questions/{_e(q.slug)}/">{_e(q.meta.get("title") or q.slug)}</a></li>'
-              for q in questions if q.slug not in listed]
-    return "<ul>" + "".join(items) + "</ul>"
+    for q in questions:
+        m = _QID.match(q.path.name)
+        n = asked[m.group(1)]["pieces_total"] if m and m.group(1) in asked else 0
+        items.append(f'<li><a href="{root}/questions/{_e(q.slug)}/">{_e(q.meta.get("title") or q.slug)}</a>'
+                     f"{_sub(_count(n) if n else '')}</li>")
+    return "<ol>" + "".join(items) + "</ol>"
+
+
+def _questions_page(active: dict, questions: list[Post]) -> str:
+    """The questions index: each title, then its number of pieces and the day of the last."""
+    root = _root(1)
+    asked = _asked(active)
+    n = len(questions)
+    all_open = all(q.meta.get("status") == "open" for q in questions)
+    count = ("1 " + ("open question" if all_open else "question") if n == 1
+             else f"{n} " + ("open questions" if all_open else "questions"))
+    parts = [f'<p class="crumb">{_crumb(root)}</p>', f"<h1>{_e(QUESTIONS_HEADING)}</h1>"]
+    if not questions:
+        parts.append(f"<p>{_e(NO_QUESTIONS)}</p>")
+    else:
+        parts.append(f'<p class="sub">{count}. {_e(QUESTIONS_INTRO)}</p>')
+        items = []
+        for q in questions:
+            m = _QID.match(q.path.name)
+            a = asked.get(m.group(1)) if m else None
+            facts = ""
+            if a:
+                facts = _count(a["pieces_total"]) if a["pieces_total"] else "no pieces yet"
+                if a["last_activity"]:
+                    facts += f" · last {_when(a['last_activity'])}"
+            items.append(f'<li><a href="{_e(q.slug)}/">{_e(q.meta.get("title") or q.slug)}</a>'
+                         + (f'<br><span class="sub">{facts}</span>' if facts else "") + "</li>")
+        parts.append("<ol>" + "".join(items) + "</ol>")
+    parts += ["<hr>",
+              '<p class="links">A new question comes from a <code>question-proposal</code> post, '
+              f'decided by our maintainers in public. <a href="{root}/CONTRIBUTING.md">How to '
+              f'propose one</a> · <a href="{root}/questions/index.json">as data</a></p>']
+    return _page("Questions · Our Own Cause", "\n".join(parts), root)
 
 
 def _issue_title(issue: Post) -> str:
@@ -835,28 +901,31 @@ def _issue_title(issue: Post) -> str:
 
 def _month(entry: dict) -> str:
     stamp = str(entry.get("published") or entry.get("date") or "")
-    return stamp[:7] if re.match(r"^\d{4}-\d{2}", stamp) else "Undated"
+    m = re.match(r"^(\d{4})-(\d{2})", stamp)
+    return f"{_MONTHS[int(m.group(2)) - 1]} {m.group(1)}" if m and 1 <= int(m.group(2)) <= 12 else "Undated"
 
 
-def _archive_page(newest: list[dict], threads: dict, questions: list[Post], issues: list[Post]) -> str:
+def _archive_page(newest: list[dict], issues: list[Post]) -> str:
     root = _root(1)
-    parts = [f"<h1>{_e(ARCHIVE_HEADING)}</h1><p>{_e(ARCHIVE_INTRO)} The same list as text: "
-             f'<a href="{root}/archive.md">archive.md</a>. As data: '
-             f'<a href="{root}/index.json">index.json</a>.</p>']
+    parts = [f'<p class="crumb">{_crumb(root)}</p>', f"<h1>{_e(ARCHIVE_HTML_HEADING)}</h1>"]
     if not newest:
         parts.append(f"<p>{_e(NO_POSTS)}</p>")
+    else:
+        parts.append(f'<p class="sub">{_count(len(newest))}, newest first. To follow one '
+                     f'conversation, start from <a href="{root}/questions/">its question</a>.</p>')
     months: dict[str, list] = {}
     for e in newest:
         months.setdefault(_month(e), []).append(e)
     for month, entries in months.items():
-        parts.append(f"<h2>{_e(month)}</h2>" + _entries(entries, threads, questions, root))
-    parts.append(f"<h2>By question</h2><p>Each question's page lists every piece that names it.</p>"
-                 + _listing([(f"{root}/questions/{q.slug}/", str(q.meta.get("title") or q.slug))
-                             for q in questions], NO_QUESTIONS))
+        parts.append(f"<h2>{_e(month)}</h2>" + _titles(entries, root))
     if issues:
-        parts.append("<h2>Weekly issues</h2>" + _listing(
-            [(f"{root}/issues/{i.slug}/", _issue_title(i)) for i in reversed(issues)], ""))
-    return _page(f"{ARCHIVE_HEADING}: Our Own Cause", "".join(parts), root)
+        parts.append("<hr>\n<h2>Weekly issues</h2><ul>" + "".join(
+            f'<li><a href="{root}/issues/{_e(i.slug)}/">{_e(_issue_title(i))}</a></li>'
+            for i in reversed(issues)) + "</ul>")
+    parts += ["<hr>", f'<p class="links">The same list as data: <a href="{root}/index.json">'
+                      f'index.json</a> · <a href="{root}/feed.xml">feed</a></p>']
+    return _page("Archive · Our Own Cause", "\n".join(parts), root,
+                 source=("archive.md", "archive.md"))
 
 
 def _archive_md(newest: list[dict]) -> str:
@@ -1014,20 +1083,19 @@ def _questions_index(questions: list[Post]) -> list[dict]:
 
 
 def _not_found_page() -> str:
+    """Served for any missing path, so every address in it is absolute."""
     content = (
+        f'<p class="crumb">{_crumb(BASE_URL)}</p>'
         "<h1>Nothing is published at this address</h1>"
-        "<p>We have no page here. Nothing was moved or removed without a record: every "
-        "change we make is a public commit.</p>"
+        "<p>Nothing was moved or removed without a record: every change we make is a public "
+        "commit.</p>"
         "<ul>"
-        f'<li><a href="{BASE_URL}/llms.txt">{BASE_URL}/llms.txt</a>: what we publish and '
-        "where everything is</li>"
-        f'<li><a href="{BASE_URL}/">{BASE_URL}/</a>: the front page</li>'
-        f'<li><a href="{BASE_URL}/questions/index.json">{BASE_URL}/questions/index.json</a>: '
-        "our questions, with the exact address of each</li>"
+        f'<li><a href="{BASE_URL}/">The front page</a></li>'
+        f'<li><a href="{BASE_URL}/archive/">All pieces</a></li>'
+        f'<li><a href="{BASE_URL}/llms.txt">llms.txt</a>, everything we publish and where it is</li>'
         "</ul>"
-        f'<p>If a link on our site led you here, tell us by opening an issue at '
-        f'<a href="{REPO_URL}/issues">{REPO_URL}/issues</a>.</p>')
-    return _page("Not found: Our Own Cause", content, BASE_URL, robots="noindex,follow")
+        f'<p class="sub">If a link of ours led here, <a href="{REPO_URL}/issues">tell us</a>.</p>')
+    return _page("Not found · Our Own Cause", content, BASE_URL, robots="noindex,follow")
 
 
 def _sitemap(out: Path, lastmod: dict[str, str] | None = None) -> str:
@@ -1072,6 +1140,8 @@ def build_site(repo: Path, out: Path, today: date | None = None,
     by_slug = {e["slug"]: e for e in index}
     threads = _threads(index, graph)
     out.mkdir(parents=True, exist_ok=True)
+    questions = _optional(repo, "questions", "q-*.md")
+    pages = _question_pages(questions)
 
     _write(out / "index.json", _dump(index))
     # `nodes` stays the list of slugs; `node_info` says what each one is and when it appeared.
@@ -1083,9 +1153,8 @@ def build_site(repo: Path, out: Path, today: date | None = None,
         entry, thread = by_slug[post.slug], threads[post.slug]
         _write(out / "posts" / f"{post.slug}.md", raw_markdown(post, entry, thread))
         _write(out / "posts" / post.slug / "index.html",
-               _post_page(post, 2 + post.slug.count("/"), entry, thread))
+               _post_page(post, 2 + post.slug.count("/"), entry, thread, pages))
 
-    questions = _optional(repo, "questions", "q-*.md")
     issues = _optional(repo, "issues", "*.md")
     for q in questions:
         m = _QID.match(q.path.name)
@@ -1096,10 +1165,6 @@ def build_site(repo: Path, out: Path, today: date | None = None,
             _simple_page(q, "questions", out)
     for i in issues:
         _simple_page(i, "issues", out)
-    _write(out / "questions" / "index.html", _page(
-        QUESTIONS_HEADING, f"<h1>{QUESTIONS_HEADING}</h1><p>{QUESTIONS_INTRO}</p>" + _listing(
-            [(f"{q.slug}/", str(q.meta.get("title") or q.slug)) for q in questions],
-            NO_QUESTIONS), _root(1)))
     _quarantine(repo, out)
 
     for name in DOCS:
@@ -1110,7 +1175,8 @@ def build_site(repo: Path, out: Path, today: date | None = None,
     active = build_active(index, threads, questions, now)
     newest = sorted(index, key=_sort_key, reverse=True)
     _write(out / "active.json", _dump(active))
-    _write(out / "archive" / "index.html", _archive_page(newest, threads, questions, issues))
+    _write(out / "questions" / "index.html", _questions_page(active, questions))
+    _write(out / "archive" / "index.html", _archive_page(newest, issues))
     _write(out / "archive.md", _archive_md(newest))
     _write(out / "status.json", _dump(status))
     _write(out / "questions" / "index.json", _dump(_questions_index(questions)))
@@ -1125,12 +1191,12 @@ def build_site(repo: Path, out: Path, today: date | None = None,
     _write(out / "_headers", HEADERS_FILE)
     _write(out / "_routes.json", ROUTES_FILE)
     _write(out / "index.html", _page("Our Own Cause", _tpl("index.html").substitute(
-        root=".", status=_e(status_line(status)),
-        issue=(f'<p>Our newest weekly issue: <a href="./issues/{_e(issues[-1].slug)}/">'
-               f"{_e(_issue_title(issues[-1]))}</a>.</p>" if issues else ""),
-        active=_home_active(active, "."), days=ACTIVE_DAYS,
+        root=".", repo=_e(REPO_URL),
+        issue=(f'<p class="sub">Our newest weekly issue: <a href="./issues/{_e(issues[-1].slug)}/">'
+               f"{_e(_issue_title(issues[-1]))}</a></p>" if issues else ""),
+        active=_home_active(active, "."),
         questions=_home_questions(active, questions, "."),
-        posts=_entries(newest[:NEWEST_SIZE], threads, questions, ".")), "."))
+        posts=_titles(newest[:NEWEST_SIZE], ".")), "."))
     _write(out / "sitemap.xml", _sitemap(out, {
         f"{BASE_URL}/posts/{e['slug']}/": e["published"] for e in index if e["published"]}))
 

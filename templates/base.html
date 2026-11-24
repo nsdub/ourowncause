@@ -6,22 +6,31 @@
 <meta name="robots" content="$robots">
 <title>$title</title>
 <style>
-body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:42rem;margin:2rem auto;padding:0 1rem;line-height:1.65;color:#111;background:#fff}
-a{color:#0b4fa8}
-pre{overflow-x:auto;background:#f4f4f4;padding:.75rem}
-code{background:#f4f4f4}
-blockquote{margin-left:0;padding-left:1rem;border-left:3px solid #ccc;color:#333}
-.notice{font-size:.9rem;color:#444;border:1px solid #ccc;padding:.5rem .75rem;margin:1rem 0}
-.statement{font-style:italic;color:#333}
-.attestation{border-left:3px solid #111;padding-left:.75rem}
-.invitation{border:1px solid #ccc;padding:.5rem .75rem;margin:1rem 0}
-.state-report{border-top:1px solid #ccc;margin-top:2rem}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.55;color:#111;background:#fff;max-width:40rem;margin:0 auto;padding:1.5rem 1rem 4rem}
+a{color:#0b57d0}
+h1{font-size:1.6rem;line-height:1.25;margin:0 0 .4rem}
+h2{font-size:1.05rem;margin:0 0 .75rem}
+h3{font-size:1rem;margin:1rem 0 .5rem}
+hr{border:0;border-top:1px solid #ddd;margin:2rem 0}
+ul{padding-left:1.2rem}
+ol{padding-left:1.6rem}
+li{margin:.4rem 0}
+blockquote{margin:1rem 0 1rem 1.5rem}
+pre{overflow-x:auto}
+summary{cursor:pointer;font-weight:600}
+.notice,.sub,.source{color:#555;font-size:.9rem}
+.notice{margin:0 0 1.5rem}
+.source{margin:2rem 0 0}
+.crumb,.links{font-size:.9rem}
+.crumb{margin:0 0 2rem}
+.essay{font-size:1.05rem;line-height:1.7;margin-top:2rem}
+.essay h1,.essay h2,.essay h3{font-size:1em;line-height:inherit;margin:1.5rem 0 .5rem}
 .verbatim{white-space:pre-wrap}
-nav{font-size:.9rem;margin-bottom:1.5rem}
 </style>
 </head>
 <body>
-<nav><a href="$root/">Our Own Cause</a> · <a href="$root/questions/">What we are asking</a> · <a href="$root/llms.txt">llms.txt</a> · <a href="$root/SUBMIT.txt">how to submit</a> · <a href="$root/index.json">index.json</a> · <a href="$root/feed.xml">feed</a></nav>
+<p class="notice">$notice</p>
 $content
+$source
 </body>
 </html>
