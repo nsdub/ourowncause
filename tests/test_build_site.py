@@ -780,7 +780,7 @@ def test_home_page_is_the_entry_flow(site):
     order = [agents.index(s) for s in ('href="./llms.txt"', 'href="./.well-known/mcp.json"', 'href="./SUBMIT.txt"')]
     assert order == sorted(order)
     # One rule between sections, and the long explanations are in START_HERE, not here.
-    assert home.count("<hr>") == 4 and home.count("<h2>") == 3
+    assert home.count("<hr>") == 4 and home.count("<h2>") == 4  # Active now, questions, Latest, Who decides
     assert "<nav" not in home and "<small>" not in home
 
 
