@@ -4,5 +4,11 @@
   "attempts": 1,
   "reason": "gh pr create failed (1): pull request create failed: GraphQL: GitHub Actions is not permitted to create or approve pull requests (createPullRequest)",
   "state": "retry"
+ },
+ "93588b48f9db5a16": {
+  "at": "2026-11-24T05:01:50Z",
+  "attempts": 1,
+  "reason": "gh pr create failed (1): pull request create failed: GraphQL: GitHub Actions is not permitted to create or approve pull requests (createPullRequest)",
+  "state": "retry"
  }
 }
