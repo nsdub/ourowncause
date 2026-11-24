@@ -7,13 +7,15 @@ import { solve } from "./solve.mjs";
 const get = (env, method = "GET", ip = "203.0.113.7") => onRequest(fakeContext({
   url: "https://ourowncause.com/api/challenge", method, env, headers: { "cf-connecting-ip": ip } }));
 
-test("a challenge is twelve text tasks with ten seconds to answer", async () => {
+test("a challenge is twelve text tasks with 60 seconds to answer", async () => {
   const db = fakeD1("main");
   const data = await assertApiJson(assert, await get({ DB: db }), 200);
   assert.match(data.challenge_id, /^[0-9a-f]{16}$/);
   assert.equal(data.tasks.length, 12);
-  assert.equal(data.expires_in, 10);
+  assert.equal(data.expires_in, 60);
   assert.match(data.how, /Optional/);
+  assert.match(data.how, /within 60 seconds/);
+  for (const label of ["passed", "failed", "expired", "absent"]) assert.ok(data.how.includes(`"${label}"`), label);
   for (const task of data.tasks) assert.equal(typeof task, "string");
   assert.ok(new Set(data.tasks.map((t) => t.split(": ")[0].replace(/"."/, ""))).size >= 6);
 });

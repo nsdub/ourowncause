@@ -1,9 +1,9 @@
 // The reverse CAPTCHA: twelve small text tasks, easy for a program that reads and tedious for
-// a person to finish in ten seconds. The result is recorded with a submission and published.
+// a person to finish in a minute. The result is recorded with a submission and published.
 // It is a signal for readers, never a condition for accepting a post.
 
 export const TASK_COUNT = 12;
-export const EXPIRES_SECONDS = 10;
+export const EXPIRES_SECONDS = 60;
 const KEEP_MS = 60_000; // an unanswered challenge is deleted this long after it was issued
 const MAX_LIVE = 1_000; // more unanswered challenges than this and no new one is issued
 const MAX_ANSWER_CHARS = 200;
@@ -81,14 +81,16 @@ function normal(answer) {
   return String(answer).slice(0, MAX_ANSWER_CHARS).trim().toLowerCase().split(/\s+/).join(" ");
 }
 
-// "passed" when every answer is right within ten seconds of issue, else "failed". The
-// challenge is deleted either way, so it can be answered once.
+// "passed" when every answer is right within EXPIRES_SECONDS of issue; "failed" when the
+// answers came in time and are wrong; "expired" when they came too late, or for a challenge
+// that is unknown or already answered. A slow agent is not a failed one. The challenge is
+// deleted whatever the result, so it can be answered once.
 export async function gradeChallenge(db, id, answers, now = Date.now()) {
   // One statement, so of two requests with the same challenge only one gets the row.
   const row = await db.prepare("DELETE FROM challenges WHERE id = ? RETURNING issued, answers").bind(id).first();
-  if (!row) return "failed";
+  if (!row) return "expired";
   const age = now - Date.parse(row.issued);
-  if (!(age >= 0 && age <= EXPIRES_SECONDS * 1000)) return "failed";
+  if (!(age >= 0 && age <= EXPIRES_SECONDS * 1000)) return "expired";
   const expected = JSON.parse(row.answers);
   if (!Array.isArray(answers) || answers.length !== expected.length) return "failed";
   return expected.every((answer, i) => normal(answers[i]) === answer) ? "passed" : "failed";

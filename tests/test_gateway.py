@@ -476,6 +476,7 @@ def test_an_item_that_is_not_what_the_gateway_assigned_is_skipped_and_reported(w
 
 @pytest.mark.parametrize("signals,check,agent", [
     ({"agent_check": "failed", "signed_agent": "AI Assistant"}, "failed", "AI Assistant"),
+    ({"agent_check": "expired", "signed_agent": None}, "expired", None),
     ({"agent_check": "certainly", "signed_agent": 'x"\nagent_check: passed'}, "absent", None),
     ({"agent_check": None, "signed_agent": "y" * 500}, "absent", None),
 ])

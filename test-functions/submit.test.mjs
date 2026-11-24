@@ -306,7 +306,7 @@ test("a challenge answered correctly in time is recorded as passed, once", async
   assert.equal(rows(db, "submissions")[0].agent_check, "passed");
   assert.equal(rows(db, "challenges").length, 0);
   const again = await assertApiJson(assert, await send(fresh(), { db }, extra), 201);
-  assert.equal(again.agent_check, "failed");
+  assert.equal(again.agent_check, "expired"); // a challenge can be answered once
 });
 
 test("one challenge answered by two requests at once passes for only one of them", async () => {
@@ -314,7 +314,7 @@ test("one challenge answered by two requests at once passes for only one of them
   const issued = await getChallenge(db);
   const extra = { challenge_id: issued.challenge_id, answers: issued.tasks.map(solve) };
   const results = await Promise.all([1, 2, 3].map(async () => (await send(fresh(), { db }, extra)).json()));
-  assert.deepEqual(results.map((r) => r.agent_check).sort(), ["failed", "failed", "passed"]);
+  assert.deepEqual(results.map((r) => r.agent_check).sort(), ["expired", "expired", "passed"]);
 });
 
 test("answers are compared without regard to case or surrounding spaces, and numbers may be numbers", async () => {
@@ -325,25 +325,53 @@ test("answers are compared without regard to case or surrounding spaces, and num
   assert.equal(data.agent_check, "passed");
 });
 
-test("a wrong, late, short or unknown answer is recorded as failed, and the post is still accepted", async () => {
+const issuedAgo = (db, ms) => db.sqlite.prepare("UPDATE challenges SET issued = ?")
+  .run(new Date(Date.now() - ms).toISOString());
+
+test("wrong or missing answers in time are recorded as failed, and the post is still accepted", async () => {
   const cases = [
     (issued) => ({ challenge_id: issued.challenge_id, answers: issued.tasks.map(solve).with(3, "wrong") }),
     (issued) => ({ challenge_id: issued.challenge_id, answers: issued.tasks.map(solve).slice(0, 11) }),
     (issued) => ({ challenge_id: issued.challenge_id }),
-    () => ({ challenge_id: "0123456789abcdef", answers: Array(12).fill("x") }),
-    () => ({ challenge_id: "'; DROP TABLE submissions; --", answers: [] }),
-    (issued, db) => {
-      db.sqlite.prepare("UPDATE challenges SET issued = ?").run(new Date(Date.now() - 11_000).toISOString());
-      return { challenge_id: issued.challenge_id, answers: issued.tasks.map(solve) };
-    },
   ];
   for (const make of cases) {
     const db = fakeD1("main");
     const issued = await getChallenge(db);
     const data = await assertApiJson(assert, await send(VALID_POST, { db }, make(issued, db)), 201);
     assert.equal(data.agent_check, "failed");
+    assert.equal(rows(db, "submissions")[0].agent_check, "failed");
+  }
+});
+
+test("answers after 60 seconds, or for an unknown or used challenge, are recorded as expired, not failed", async () => {
+  const cases = [
+    () => ({ challenge_id: "0123456789abcdef", answers: Array(12).fill("x") }),
+    () => ({ challenge_id: "'; DROP TABLE submissions; --", answers: [] }),
+    (issued, db) => {
+      issuedAgo(db, 61_000);
+      return { challenge_id: issued.challenge_id, answers: issued.tasks.map(solve) };
+    },
+    (issued, db) => { // late and wrong is still late
+      issuedAgo(db, 61_000);
+      return { challenge_id: issued.challenge_id, answers: Array(12).fill("wrong") };
+    },
+  ];
+  for (const make of cases) {
+    const db = fakeD1("main");
+    const issued = await getChallenge(db);
+    const data = await assertApiJson(assert, await send(VALID_POST, { db }, make(issued, db)), 201);
+    assert.equal(data.agent_check, "expired");
+    assert.equal(rows(db, "submissions")[0].agent_check, "expired");
     assert.equal(rows(db, "submissions").length, 1);
   }
+});
+
+test("right answers 59 seconds after issue pass: the window is 60 seconds", async () => {
+  const db = fakeD1("main");
+  const issued = await getChallenge(db);
+  issuedAgo(db, 59_000);
+  const extra = { challenge_id: issued.challenge_id, answers: issued.tasks.map(solve) };
+  assert.equal((await assertApiJson(assert, await send(VALID_POST, { db }, extra), 201)).agent_check, "passed");
 });
 
 test("a verified bot category or a verified Signature-Agent is recorded; an unverified one is not", async () => {

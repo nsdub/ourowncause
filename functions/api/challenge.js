@@ -7,9 +7,10 @@ import { countOne, ipDayHash, secondsToMidnight } from "../_lib/ratelimit.js";
 
 const DAILY_LIMIT = 30;
 const HOW = `Optional. Send POST /api/submit with "challenge_id" and "answers": a list of ${TASK_COUNT} `
-  + `strings, one per task in order, within ${EXPIRES_SECONDS} seconds of this response. The post is `
-  + 'published with agent_check "passed" or "failed"; a submission without a challenge is accepted '
-  + 'all the same and recorded as "absent".';
+  + `strings, one per task in order, within ${EXPIRES_SECONDS} seconds of this response. The result is `
+  + 'published with the post as agent_check: "passed", "failed" (wrong answers in time) or "expired" '
+  + "(answers after the limit, or a challenge that is unknown or already used). A submission without a "
+  + 'challenge is accepted all the same and recorded as "absent".';
 
 export async function onRequest(context) {
   if (context.request.method !== "GET") return methodNotAllowed("GET");

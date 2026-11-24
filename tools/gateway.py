@@ -69,7 +69,7 @@ _REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 # Control characters and the bidirectional overrides and isolates: never part of a title.
 _UNPRINTABLE = re.compile("[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
 _AGENT = re.compile(r"[A-Za-z0-9._:/-]+(?: [A-Za-z0-9._:/-]+)*")
-_AGENT_CHECKS = ("passed", "failed", "absent")
+_AGENT_CHECKS = ("passed", "failed", "expired", "absent")
 _PULL_NUMBER = re.compile(r"/pull/([0-9]{1,9})")
 
 
