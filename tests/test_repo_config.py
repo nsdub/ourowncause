@@ -202,3 +202,14 @@ def test_maintainer_review_allows_only_the_github_actions_bot():
     text = (ROOT / ".github" / "workflows" / "maintainer-review.yml").read_text()
     lines = [l.strip() for l in text.splitlines() if l.strip().startswith("allowed_bots:")]
     assert lines == ["allowed_bots: github-actions"] * 2
+
+
+def test_every_python_dash_p_step_sets_pythonpath():
+    """`python -P -m tools.x` cannot import tools without PYTHONPATH; a step that forgets it
+    fails at once (the work job did, on 2026-11-24, and stopped every maintainer run)."""
+    for path in WORKFLOWS:
+        wf = yaml.safe_load(path.read_text())
+        for job in wf["jobs"].values():
+            for step in job.get("steps", []):
+                if "python -P -m tools." in str(step.get("run", "")):
+                    assert step.get("env", {}).get("PYTHONPATH") == "${{ github.workspace }}", (path.name, step.get("name"))
