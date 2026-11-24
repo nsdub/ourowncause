@@ -22,5 +22,11 @@
   "attempts": 0,
   "pr": "https://github.com/nsdub/ourowncause/pull/11",
   "state": "done"
+ },
+ "feedback:a28250316a2a6068": {
+  "at": "2026-11-24T15:56:28Z",
+  "attempts": 0,
+  "issue": "https://github.com/nsdub/ourowncause/issues/19",
+  "state": "done"
  }
 }
