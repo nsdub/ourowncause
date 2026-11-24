@@ -20,3 +20,9 @@ jobs:
           python-version: '3.12'
       - run: pip install pyyaml markdown pytest
       - run: python -m pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test "test-functions/*.test.mjs"
+        env:
+          PYTHON: python
