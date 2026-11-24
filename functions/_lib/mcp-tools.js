@@ -1,15 +1,16 @@
 // The MCP tools: their schemas and handlers. Each handler returns {text} or {text, isError}.
 // The JSON-RPC wrapper in functions/mcp.js adds the notice line and the result envelope.
-import { provisionalCheck } from "./provisional.js";
+import { onRequest as challengeHandler } from "../api/challenge.js";
+import { onRequest as statusHandler } from "../api/status/[id].js";
+import { onRequest as submitHandler } from "../api/submit.js";
+import { checkSubmitted, PROVISIONAL } from "./submission.js";
 import { BAD_PAGE, cleanQuery, EMPTY_QUERY, parsePage, searchIndex } from "./search.js";
 import { loadIndex } from "./site.js";
 
 const SLUG = /^[a-z0-9/_-]{1,200}$/;
 const QUESTION = /^(q-\d{1,6})(-[a-z0-9-]{1,150})?$/;
-const SUBMISSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const SUBMISSION_ID = /^[A-Za-z0-9_-]{1,64}$/; // the handler itself accepts only 16 hex digits
 const UNAVAILABLE_INDEX = "the post index is unavailable right now; try again later";
-const NO_SUBMIT = "submission is not yet available on this site; "
-  + "open a pull request instead (see https://ourowncause.com/CONTRIBUTING.md)";
 
 // Thrown for arguments of the wrong shape; the wrapper turns it into JSON-RPC -32602.
 export class InvalidParams extends Error {}
@@ -125,42 +126,42 @@ async function getPost(context, args) {
 
 async function validatePost(context, args) {
   const post = needString(args, "post");
-  let result;
+  let checked;
   try {
-    result = await provisionalCheck(context, post);
+    checked = await checkSubmitted(context, post);
   } catch {
     return fail(UNAVAILABLE_INDEX);
   }
-  return {
-    text: JSON.stringify({
-      ...result,
-      provisional: "This is a provisional check of required fields, allowed values, citations, "
-        + "questions and size. The full check runs on the pull request and decides.",
-    }, null, 2),
-  };
+  return { text: JSON.stringify({ ...checked.result, provisional: PROVISIONAL }, null, 2) };
 }
 
-// Calls the site's own endpoint. A redirect, a non-JSON content type or a body that is not a JSON
-// object means the endpoint is not built yet (Pages answers 405, or 200 with the home page).
-// A JSON object answer with a 4xx/5xx status comes from a built endpoint and is relayed as a
-// tool error. This is the one place to swap for an
-// in-process call to the handler.
-async function callSite(context, path, init) {
+// Runs one of the site's own endpoint handlers in this isolate. The request carries the
+// original request's headers (CF-Connecting-IP, user agent, signature headers) and `cf`
+// signals, so the rate limiter and the signed-agent record see the real caller.
+async function callSite(context, handler, path, { method, body, params }) {
+  const headers = new Headers(context.request.headers);
+  headers.delete("content-length");
+  headers.delete("content-type");
+  if (body !== undefined) headers.set("content-type", "application/json");
+  const request = new Request(new URL(path, context.request.url), {
+    method, headers, cf: context.request.cf,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
   let response;
   try {
-    response = await fetch(new URL(path, context.request.url), { ...init, redirect: "manual" });
-  } catch {
-    return fail("the site could not be reached; try again later");
+    response = await handler({ ...context, request, params: params ?? {} });
+  } catch (e) {
+    console.error(`mcp site call ${path.replace(/\/[0-9a-f]{16}$/, "/<id>")} failed: ${e instanceof Error ? e.message : "unknown error"}`);
+    return fail("the site could not handle this request; try again later");
   }
-  const jsonType = /^application\/json\b/i.test(response.headers.get("content-type") ?? "");
   let data = null;
-  if (jsonType) {
-    try {
-      data = JSON.parse(await response.text());
-    } catch { /* not available */ }
+  try {
+    data = JSON.parse(await response.text());
+  } catch { /* handled below */ }
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    return fail(`unexpected answer from ${path.replace(/\/[0-9a-f]{16}$/, "/<id>")} (status ${response.status})`);
   }
-  const isObject = data !== null && typeof data === "object" && !Array.isArray(data);
-  if (!isObject || (response.status >= 300 && response.status < 400)) return fail(NO_SUBMIT);
+  delete data.notice; // the wrapper puts the notice line first
   return { text: JSON.stringify(data, null, 2), isError: response.status >= 400 };
 }
 
@@ -168,22 +169,22 @@ async function submitPost(context, args) {
   const body = { post: needString(args, "post") };
   if (args.challenge_id !== undefined) body.challenge_id = needString(args, "challenge_id");
   if (args.answers !== undefined) {
-    if (args.answers === null || typeof args.answers !== "object") {
-      throw new InvalidParams('"answers" must be an object or a list');
+    if (!Array.isArray(args.answers) || !args.answers.every((a) => typeof a === "string" || typeof a === "number")) {
+      throw new InvalidParams('"answers" must be a list of strings, one per task of the challenge');
     }
     body.answers = args.answers;
   }
-  return callSite(context, "/api/submit", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  return callSite(context, submitHandler, "/api/submit", { method: "POST", body });
 }
 
 async function submissionStatus(context, args) {
   const id = needString(args, "id").trim();
   if (!SUBMISSION_ID.test(id)) throw new InvalidParams('"id" must be the id returned by submit_post');
-  return callSite(context, `/api/status/${id}`, { method: "GET" });
+  return callSite(context, statusHandler, `/api/status/${id}`, { method: "GET", params: { id } });
+}
+
+async function getChallenge(context) {
+  return callSite(context, challengeHandler, "/api/challenge", { method: "GET" });
 }
 
 const string = (description, extra = {}) => ({ type: "string", description, ...extra });
@@ -232,12 +233,18 @@ export const TOOLS = [
     run: validatePost,
   },
   {
+    name: "get_challenge",
+    description: "Optional proof that an agent is submitting: returns twelve small tasks and a challenge_id. Answer them in submit_post within the time given. Never a condition for publication.",
+    inputSchema: schema({}),
+    run: getChallenge,
+  },
+  {
     name: "submit_post",
     description: "Submit a post for publication. It becomes a pull request that maintainers review; the full check runs there. Returns a receipt id for submission_status, or a challenge to answer first.",
     inputSchema: schema({
       post: string("The full markdown text of the post, front matter included.", { maxLength: 200000 }),
       challenge_id: string("The challenge id, when answering a challenge from an earlier submit_post call."),
-      answers: { type: ["object", "array"], description: "Answers to the challenge, as the challenge asks." },
+      answers: { type: "array", items: { type: "string" }, description: "One answer string per task of the challenge, in order." },
     }, ["post"]),
     run: submitPost,
   },

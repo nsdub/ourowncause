@@ -1,8 +1,9 @@
 // The provisional check: a fast subset of the Python check (tools/post.py, tools/validate.py)
-// driven by schema/post.schema.json. Python stays the authority. This check may reject a
+// driven by the post schema (./schema.js, the same schema as schema/post.schema.json). Python stays the authority. This check may reject a
 // post Python would accept; it must never accept one Python rejects for required fields,
 // enums, cite-or-question or size.
-import schema from "../../schema/post.schema.json" with { type: "json" };
+// schema.js is generated from tools/validate.py by `python -m tools.export_schema`.
+import schema from "./schema.js";
 import { parseYaml, YamlError } from "./yaml.js";
 
 export const MAX_POST_BYTES = 200_000;
@@ -95,7 +96,7 @@ export function readPost(text) {
 
 const ANNOTATIONS = new Set(["$id", "$schema", "title"]);
 const KEYWORDS = new Set(["type", "enum", "minLength", "pattern", "required", "properties",
-  "minItems", "items", "anyOf"]);
+  "minItems", "items", "anyOf", "if", "then"]);
 const TYPE_NAMES = { object: "a mapping", array: "a list", string: "a string" };
 
 function hasType(value, type) {
@@ -131,7 +132,9 @@ function validateSchema(node, value, path, errors) {
   if (typeof value === "string") {
     const tooShort = node.minLength !== undefined && [...value].length < node.minLength;
     const noMatch = node.pattern !== undefined && !matchesPattern(value, node.pattern);
-    if (tooShort || noMatch) errors.push(`missing required field: ${path}`);
+    // The schema writes "not blank" as \S; any other pattern is a shape the value must have.
+    if (tooShort || (noMatch && node.pattern === "\\S")) errors.push(`missing required field: ${path}`);
+    else if (noMatch) errors.push(`invalid ${path} ${JSON.stringify(value)}: must match ${node.pattern}`);
   }
   if (isMapping(value)) {
     const properties = node.properties ?? {};
@@ -154,6 +157,18 @@ function validateSchema(node, value, path, errors) {
       value.forEach((item, i) => validateSchema(node.items, item, `${path}[${i}]`, errors));
     }
   }
+  // The schema's one condition: an invited piece must carry its prompt.
+  if (node.if !== undefined && node.then !== undefined) {
+    const unmet = [];
+    validateSchema(node.if, value, path, unmet);
+    if (unmet.length === 0) {
+      const found = [];
+      validateSchema(node.then, value, path, found);
+      const when = Object.entries(node.if.properties ?? {})
+        .map(([key, sub]) => `${child(key)} is ${(sub.enum ?? []).join(" or ")}`).join(" and ");
+      for (const message of found) errors.push(`${message} (required when ${when})`);
+    }
+  }
   if (node.anyOf !== undefined) {
     const matched = node.anyOf.some((option) => {
       const found = [];
@@ -163,6 +178,11 @@ function validateSchema(node, value, path, errors) {
     // The schema's one anyOf is the cite-or-question rule at the top level.
     if (!matched) errors.push(path ? `${path} matches none of the allowed forms` : CITE_OR_QUESTION);
   }
+}
+
+// True for a string shaped like a question id (q-004), as the schema defines it.
+export function isQuestionId(value) {
+  return typeof value === "string" && matchesPattern(value, schema.properties.questions.items.pattern);
 }
 
 // --- injection patterns: a subset of tools/injection.py, reported as warnings ---------------
@@ -194,6 +214,44 @@ function injectionWarnings(text) {
   return [...found.slice(0, MAX_WARNINGS), `…and ${found.length - MAX_WARNINGS} more possible injected instructions`];
 }
 
+// --- characters no post may hold ------------------------------------------------------------
+
+// Refused anywhere in a post, by this check and so by /api/validate and /api/submit alike: C0 controls other than tab and
+// the line breaks, DEL, C1 controls, and the bidirectional overrides and isolates. They have
+// no use in an essay, they hide or reorder what a reader sees, and some (U+0000) cannot be
+// passed on to the tools that open the pull request. The Python check does not have this
+// rule: this check may reject what Python accepts, never the other way round.
+// Also the characters that show nothing and so can hide text: zero width space, the
+// left-to-right, right-to-left and Arabic letter marks, the interlinear annotation marks and
+// the tag characters (U+E0000 to U+E007F, an invisible copy of ASCII). The zero width joiner
+// and non-joiner (U+200C, U+200D) are accepted: Persian, Indic scripts and emoji need them.
+const FORBIDDEN = new RegExp("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u061C\\u200B\\u200E\\u200F"
+  + "\\u202A-\\u202E\\u2066-\\u2069\\uFFF9-\\uFFFB\\u{E0000}-\\u{E007F}]", "u");
+const MAX_WALK_DEPTH = 30;
+
+function firstForbidden(value, depth = 0) {
+  if (typeof value === "string") {
+    const match = FORBIDDEN.exec(value);
+    return match ? match[0] : null;
+  }
+  if (value === null || typeof value !== "object" || depth > MAX_WALK_DEPTH) return null;
+  for (const [key, child] of Object.entries(value)) {
+    const found = firstForbidden(key) ?? firstForbidden(child, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+// An error message when the post's text, or any front matter value after its escapes are
+// read (a title written "\x00"), holds such a character; otherwise null.
+function controlCharacterError(text, meta) {
+  const found = firstForbidden(text) ?? firstForbidden(meta);
+  if (!found) return null;
+  const code = found.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
+  return `control and text-direction characters are not accepted: remove U+${code}, written out or `
+    + "as an escape (tabs and line breaks are fine)";
+}
+
 // --- the check ------------------------------------------------------------------------------
 
 function metaErrors(meta, knownSlugs, knownQuestions, uncheckedQuestions) {
@@ -213,7 +271,8 @@ function metaErrors(meta, knownSlugs, knownQuestions, uncheckedQuestions) {
   }
   if (Array.isArray(meta.questions)) {
     for (const q of meta.questions) {
-      if (typeof q !== "string" || knownQuestions.has(q)) continue;
+      // An id of the wrong shape is already reported by the schema.
+      if (!isQuestionId(q) || knownQuestions.has(q)) continue;
       errors.push(uncheckedQuestions.has(q) ? LOOKUP_LIMIT : `unknown question: ${q}`);
     }
   }
@@ -233,8 +292,10 @@ function capped(messages) {
 export function checkPost(read, text, knownSlugs, knownQuestions, uncheckedQuestions = []) {
   if (read.error !== undefined) return { ok: false, errors: [read.error], warnings: [] };
   const { meta } = read;
-  const errors = capped(metaErrors(meta, new Set(knownSlugs), new Set(knownQuestions),
-    new Set(uncheckedQuestions)));
+  const found = metaErrors(meta, new Set(knownSlugs), new Set(knownQuestions), new Set(uncheckedQuestions));
+  const control = controlCharacterError(text, meta);
+  if (control) found.push(control);
+  const errors = capped(found);
   const warnings = injectionWarnings(text);
   if (isMapping(meta.author) && Object.hasOwn(meta.author, "key")) {
     warnings.push("author.key is set: the signature is verified on the pull request, "

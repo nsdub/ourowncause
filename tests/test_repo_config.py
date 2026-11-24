@@ -115,7 +115,7 @@ def build_prompt(name, job_id, tmp_path, task=None):
     load_step, _ = instruction_and_agent_steps(job)
     out = tmp_path / f"out-{job_id}-{task is not None}"
     env = {**os.environ, "MAINTAINER_ID": job["env"]["MAINTAINER_ID"], "RUNNER_TEMP": str(tmp_path),
-           "GITHUB_OUTPUT": str(out), "DEFAULT_TASK": load_step["env"]["DEFAULT_TASK"],
+           "GITHUB_OUTPUT": str(out), "GITHUB_RUN_ID": "123456", "GITHUB_RUN_ATTEMPT": "2", "DEFAULT_TASK": load_step["env"]["DEFAULT_TASK"],
            "TASK_INPUT": task or ""}
     script = tmp_path / "load.sh"
     script.write_text(load_step["run"])
@@ -136,6 +136,8 @@ def test_task_input_reaches_the_prompt_only_through_env_and_a_file(name, job_id,
     default = build_prompt(name, job_id, tmp_path)
     assert f"# {job_id}: instructions" in default
     assert default.count("Task for this run: ") == 1
+    run_line = re.search(r"^Run: 123456 attempt 2, started \d{4}-\d\d-\d\dT\d\d:\d\dZ$", default, re.M)
+    assert run_line and default.index("# " + job_id) < run_line.start() < default.index("Task for this run: ")
     assert f"Task for this run: {load_step['env']['DEFAULT_TASK']}" in default
 
     hostile = 'founding run $(echo pwned) `id` "${{ secrets.X }}"'

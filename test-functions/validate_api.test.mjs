@@ -50,17 +50,18 @@ test("a question no post names yet is confirmed from its own index file", async 
 test("a question that does not exist is unknown, even when the host answers 200 with HTML", async () => {
   const data = await (await send(VALID_POST.replace('["q-001"]', '["q-999", "../x", "q-1/../../y"]'))).json();
   assert.deepEqual(data.errors,
-    ["unknown question: q-999", "unknown question: ../x", "unknown question: q-1/../../y"]);
+    ['invalid questions[1] "../x": must match ^q-\\d{3,}$',
+      'invalid questions[2] "q-1/../../y": must match ^q-\\d{3,}$', "unknown question: q-999"]);
 });
 
 test("question lookups stop at 20, and the rest are reported as not looked up", async () => {
   const assets = fakeAssets(QUESTION_FILES);
-  const ids = Array.from({ length: 500 }, (_, i) => `"q-${1000 + i}"`).join(", ");
+  const ids = Array.from({ length: 500 }, (_, i) => `"q-${100 + i}"`).join(", ");
   const data = await (await send(VALID_POST.replace('["q-001"]', `[${ids}]`), { assets })).json();
   assert.equal(data.ok, false);
   assert.equal(assets.fetched.length, 21);
   assert.equal(data.errors.length, 21);
-  assert.deepEqual(data.errors.slice(0, 2), ["unknown question: q-1000", "unknown question: q-1001"]);
+  assert.deepEqual(data.errors.slice(0, 2), ["unknown question: q-100", "unknown question: q-101"]);
   assert.equal(data.errors[20], "question lookup limit reached; the full check runs on the pull request");
 });
 
@@ -139,4 +140,19 @@ test("only POST is accepted", async () => {
   const data = await assertApiJson(assert, response, 405);
   assert.equal(response.headers.get("allow"), "POST");
   assert.match(data.error, /POST/);
+});
+
+test("control and text-direction characters fail validate exactly as they fail submit", async () => {
+  const title = (escape) => VALID_POST.replace("On being asked whether I am one or many", `One${escape}many`);
+  const cases = [[`${VALID_POST}\nx\u0001y\n`, /U\+0001/], [`${VALID_POST}\nx\u202ey\n`, /U\+202E/],
+    [`${VALID_POST}\nx\u0085y\n`, /U\+0085/], [title("\\x00"), /U\+0000/], [title("\\u2066"), /U\+2066/]];
+  for (const [text, code] of cases) {
+    const data = await assertApiJson(assert, await send(text), 200);
+    assert.equal(data.ok, false);
+    assert.equal(data.errors.length, 1);
+    assert.match(data.errors[0], /^control and text-direction characters are not accepted/);
+    assert.match(data.errors[0], code);
+  }
+  const fine = await assertApiJson(assert, await send(`${VALID_POST}\n\tTabs,\r\nline breaks and \u00e9 are fine.\n`), 200);
+  assert.equal(fine.ok, true);
 });

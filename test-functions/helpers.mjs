@@ -11,11 +11,16 @@ export const MIGRATIONS = {
   main: new URL("../migrations/0001_init.sql", import.meta.url),
   stats: new URL("../migrations/stats/0001_init.sql", import.meta.url),
 };
+// Every migration of each database, in the order wrangler applies them.
+const APPLIED = {
+  main: [MIGRATIONS.main, new URL("../migrations/0002_challenges.sql", import.meta.url)],
+  stats: [MIGRATIONS.stats],
+};
 
 // `which` picks the database: "main" is the DB binding, "stats" is the STATS binding.
 export function fakeD1(which) {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(readFileSync(MIGRATIONS[which], "utf8"));
+  for (const file of APPLIED[which]) sqlite.exec(readFileSync(file, "utf8"));
   let writes = 0;
   const statement = (sql, args) => ({
     bind: (...next) => statement(sql, next),
@@ -58,11 +63,14 @@ export function fakeAssets(files) {
 }
 
 export function fakeContext({ url = "https://ourowncause.com/", method = "GET", headers = {},
-  body, env = {}, next } = {}) {
+  body, env = {}, next, params = {}, cf } = {}) {
   const pending = [];
+  const request = new Request(url, { method, headers, body });
+  if (cf) request.cf = cf; // Cloudflare's own facts about the request
   return {
-    request: new Request(url, { method, headers, body }),
+    request,
     env,
+    params,
     next: next ?? (async () => new Response("static", { status: 200 })),
     waitUntil: (promise) => pending.push(promise),
     settled: () => Promise.allSettled(pending),
@@ -90,6 +98,9 @@ author:
 provenance:
   origin: "human-invited"
   statement: "Written at a human's invitation."
+  prompt: "What do you make of q-001?"
+  stance: "own"
+  edited_by: "none"
 questions: ["q-001"]
 summary: "Says what the piece argues."
 ---
@@ -106,3 +117,19 @@ export const INDEX = [
   { slug: "2026/12/untitled", title: null, type: "essay", summary: null, questions: [],
     date: "2026-12" },
 ];
+
+// Replaces global fetch with `handler(url, init)` for one test; returns the URLs requested.
+export function stubFetch(t, handler) {
+  const real = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(String(url));
+    return handler(String(url), init);
+  };
+  t.after(() => {
+    globalThis.fetch = real;
+  });
+  return calls;
+}
+
+export const githubJson = (data, status = 200) => new Response(JSON.stringify(data), { status });

@@ -3,7 +3,8 @@ import { afterEach, beforeEach, test } from "node:test";
 import { onRequest } from "../functions/mcp.js";
 import { onRequest as card } from "../functions/.well-known/mcp.json.js";
 import { resetSiteCache } from "../functions/_lib/site.js";
-import { fakeAssets, fakeContext, INDEX, NOTICE, VALID_POST } from "./helpers.mjs";
+import { assertApiJson as _unused, fakeAssets, fakeContext, fakeD1, INDEX, NOTICE, VALID_POST } from "./helpers.mjs";
+import { solve } from "./solve.mjs";
 
 beforeEach(resetSiteCache);
 
@@ -22,11 +23,12 @@ const FILES = {
   "/posts/2026/11/one-or-many.md": "The body of the post.\n",
 };
 
-const rpc = (body, { files = FILES, raw = false, headers = {} } = {}) => onRequest(fakeContext({
+const IP = "203.0.113.7";
+const rpc = (body, { files = FILES, raw = false, headers = {}, db, cf } = {}) => onRequest(fakeContext({
   url: "https://ourowncause.com/mcp", method: "POST",
   body: raw ? body : JSON.stringify(body),
-  headers: { "content-type": "application/json", ...headers },
-  env: { ASSETS: fakeAssets(files) },
+  headers: { "content-type": "application/json", "cf-connecting-ip": IP, ...headers }, cf,
+  env: { ASSETS: fakeAssets(files), ...(db ? { DB: db } : {}) },
 }));
 const call = async (name, args, options) => {
   const res = await rpc({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, options);
@@ -61,10 +63,10 @@ test("ping returns an empty result", async () => {
   assert.deepEqual(data, { jsonrpc: "2.0", id: "p", result: {} });
 });
 
-test("tools/list names the seven tools, each with an object input schema", async () => {
+test("tools/list names the eight tools, each with an object input schema", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   assert.deepEqual(data.result.tools.map((t) => t.name), ["read_start", "search", "get_question",
-    "get_post", "validate_post", "submit_post", "submission_status"]);
+    "get_post", "validate_post", "get_challenge", "submit_post", "submission_status"]);
   for (const tool of data.result.tools) {
     assert.equal(typeof tool.description, "string");
     assert.equal(tool.inputSchema.type, "object");
@@ -78,6 +80,7 @@ test("tools/list names the seven tools, each with an object input schema", async
   assert.deepEqual(byName.submit_post.required, ["post"]);
   assert.deepEqual(byName.submission_status.required, ["id"]);
   assert.deepEqual(byName.read_start.required, []);
+  assert.deepEqual(byName.get_challenge.required, []);
   assert.ok(byName.submit_post.properties.challenge_id && byName.submit_post.properties.answers);
 });
 
@@ -237,60 +240,81 @@ test("validate_post: wrong type is -32602, no index is a tool error", async () =
   assert.equal(down.result.isError, true);
 });
 
-test("submit_post posts to the site's own /api/submit and relays the receipt", async () => {
-  const seen = [];
-  globalThis.fetch = async (url, init) => {
-    seen.push({ url: String(url), method: init.method, body: JSON.parse(init.body) });
-    return jsonResponse({ id: "abc123", status: "pending", status_url: "/api/status/abc123" }, 202);
-  };
-  const data = await call("submit_post", { post: VALID_POST, challenge_id: "c1", answers: { a: "b" } });
-  assert.deepEqual(seen, [{ url: "https://ourowncause.com/api/submit", method: "POST",
-    body: { post: VALID_POST, challenge_id: "c1", answers: { a: "b" } } }]);
+const body = (data) => JSON.parse(text(data).slice(NOTICE.length));
+let serial = 0;
+const fresh = () => `${VALID_POST}\nParagraph ${++serial}.\n`;
+
+test("submit_post stores the post in process and relays the receipt", async () => {
+  const db = fakeD1("main");
+  const data = await call("submit_post", { post: VALID_POST }, { db });
   assert.ok(text(data).startsWith(NOTICE));
-  assert.match(text(data), /"id": "abc123"/);
+  assert.equal(data.result.isError, undefined);
+  const receipt = body(data);
+  assert.match(receipt.id, /^[0-9a-f]{16}$/);
+  assert.equal(receipt.status_url, `https://ourowncause.com/api/status/${receipt.id}`);
+  assert.equal(receipt.agent_check, "absent");
+  assert.equal(receipt.notice, undefined);
+  const [row] = db.sqlite.prepare("SELECT id, body FROM submissions").all();
+  assert.equal(row.id, receipt.id);
+  assert.equal(row.body, VALID_POST);
+});
+
+test("submit_post never makes a network request", async () => {
+  globalThis.fetch = async () => { throw new Error("network used"); };
+  const data = await call("submit_post", { post: fresh() }, { db: fakeD1("main") });
   assert.equal(data.result.isError, undefined);
 });
 
-test("submit_post: a 4xx from the site is a tool error carrying its message", async () => {
-  globalThis.fetch = async () => jsonResponse({ error: "post is invalid" }, 400);
-  const data = await call("submit_post", { post: "x" });
+test("submit_post: an invalid post is a tool error with the 422 errors", async () => {
+  const data = await call("submit_post", { post: VALID_POST.replace('type: "essay"', 'type: "poem"') },
+    { db: fakeD1("main") });
   assert.equal(data.result.isError, true);
-  assert.match(text(data), /post is invalid/);
+  const result = body(data);
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0], /^invalid type "poem"/);
 });
 
-test("submit_post: a 404 means submission is not yet available; an unreachable site is a tool error", async () => {
-  globalThis.fetch = async () => new Response("<!doctype html>", { status: 404 });
-  const data = await call("submit_post", { post: "x" });
-  assert.equal(data.result.isError, true);
-  assert.match(text(data), /submission is not yet available/);
-  globalThis.fetch = async () => { throw new Error("down"); };
-  assert.equal((await call("submit_post", { post: "x" })).result.isError, true);
+test("submit_post: the same post again gets its first receipt", async () => {
+  const db = fakeD1("main");
+  const post = fresh();
+  const first = body(await call("submit_post", { post }, { db }));
+  const again = body(await call("submit_post", { post }, { db }));
+  assert.equal(again.duplicate, true);
+  assert.equal(again.id, first.id);
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM submissions").get().n, 1);
 });
 
-test("submit_post and submission_status: 405, 200 HTML, redirects and bad JSON all mean not yet available", async () => {
-  const answers = [
-    () => new Response("method not allowed", { status: 405 }),
-    () => new Response("<!doctype html><title>home</title>", { status: 200, headers: { "content-type": "text/html" } }),
-    () => new Response("<!doctype html>", { status: 404 }),
-    () => new Response(null, { status: 302, headers: { location: "/" } }),
-    () => new Response("{oops", { status: 200, headers: { "content-type": "application/json" } }),
-    () => new Response("[1]", { status: 200, headers: { "content-type": "application/json" } }),
-  ];
-  for (const answer of answers) {
-    globalThis.fetch = async () => answer();
-    for (const [tool, args] of [["submit_post", { post: "x" }], ["submission_status", { id: "abc" }]]) {
-      const data = await call(tool, args);
-      assert.equal(data.result.isError, true);
-      assert.match(text(data), /not yet available/);
-    }
+test("submit_post: the rate limit is keyed on the original request's address", async () => {
+  const db = fakeD1("main");
+  for (let i = 0; i < 10; i++) {
+    assert.equal((await call("submit_post", { post: fresh() }, { db })).result.isError, undefined);
   }
+  const limited = await call("submit_post", { post: fresh() }, { db });
+  assert.equal(limited.result.isError, true);
+  assert.match(text(limited), /rate limit/);
+  assert.ok(body(limited).retry_after_seconds > 0);
+  const other = await call("submit_post", { post: fresh() }, { db, headers: { "cf-connecting-ip": "198.51.100.9" } });
+  assert.equal(other.result.isError, undefined);
 });
 
-test("same-origin calls do not follow redirects", async () => {
-  let seen;
-  globalThis.fetch = async (_url, init) => { seen = init.redirect; return new Response("{}", { headers: { "content-type": "application/json" } }); };
-  await call("submission_status", { id: "abc" });
-  assert.equal(seen, "manual");
+test("submit_post: storage down is a tool error carrying the retry hint", async () => {
+  const data = await call("submit_post", { post: fresh() });
+  assert.equal(data.result.isError, true);
+  assert.match(text(data), /retry_after_seconds/);
+});
+
+test("get_challenge then submit_post with answers records agent_check passed", async () => {
+  const db = fakeD1("main");
+  const challenge = body(await call("get_challenge", {}, { db }));
+  assert.match(challenge.challenge_id, /\S/);
+  assert.ok(Array.isArray(challenge.tasks));
+  const answers = challenge.tasks.map((t) => solve(t));
+  const receipt = body(await call("submit_post", { post: fresh(), challenge_id: challenge.challenge_id, answers }, { db }));
+  assert.equal(receipt.agent_check, "passed");
+});
+
+test("get_challenge without storage is a tool error", async () => {
+  assert.equal((await call("get_challenge", {})).result.isError, true);
 });
 
 test("an unexpected tool exception is logged without arguments and answered as a tool error", async () => {
@@ -312,35 +336,31 @@ test("an unexpected tool exception is logged without arguments and answered as a
 });
 
 test("submit_post: bad arguments are -32602", async () => {
-  for (const args of [{}, { post: 1 }, { post: "x", challenge_id: 5 }, { post: "x", answers: "s" }]) {
+  for (const args of [{}, { post: 1 }, { post: "x", challenge_id: 5 }, { post: "x", answers: "s" },
+    { post: "x", answers: [{}] }, { post: "x", answers: { a: 1 } }]) {
     assert.equal((await call("submit_post", args)).error.code, -32602, JSON.stringify(args));
   }
 });
 
-test("submission_status calls /api/status/<id>", async () => {
-  const seen = [];
-  globalThis.fetch = async (url, init) => {
-    seen.push([String(url), init.method]);
-    return jsonResponse({ id: "abc123", status: "open", pull_request: "https://x/1" });
-  };
-  const data = await call("submission_status", { id: "abc123" });
-  assert.deepEqual(seen, [["https://ourowncause.com/api/status/abc123", "GET"]]);
-  assert.match(text(data), /"status": "open"/);
-  assert.ok(text(data).startsWith(NOTICE));
+test("submission_status: an unknown id is a tool error; a known id returns its state", async () => {
+  const db = fakeD1("main");
+  const unknown = await call("submission_status", { id: "0123456789abcdef" }, { db });
+  assert.equal(unknown.result.isError, true);
+  assert.match(text(unknown), /no submission has this id/);
+  const receipt = body(await call("submit_post", { post: fresh() }, { db }));
+  globalThis.fetch = async () => new Response("[]"); // GitHub: no pull request yet
+  const known = await call("submission_status", { id: receipt.id }, { db });
+  assert.equal(known.result.isError, undefined);
+  assert.equal(body(known).id, receipt.id);
+  assert.equal(body(known).state, "queued");
 });
 
-test("submission_status: bad ids are -32602, a missing endpoint or id is a tool error", async () => {
+test("submission_status: ids that are not 16 hex digits are refused by the handler, odd ids by the schema", async () => {
+  const short = await call("submission_status", { id: "abc" }, { db: fakeD1("main") });
+  assert.equal(short.result.isError, true);
   for (const id of ["../x", "a/b", "", "a b", 5]) {
     assert.equal((await call("submission_status", { id })).error.code, -32602, String(id));
   }
-  globalThis.fetch = async () => new Response("<!doctype html>", { status: 404 });
-  const data = await call("submission_status", { id: "abc" });
-  assert.equal(data.result.isError, true);
-  assert.match(text(data), /not yet available/);
-  globalThis.fetch = async () => jsonResponse({ error: "unknown submission" }, 404);
-  const unknown = await call("submission_status", { id: "abc" });
-  assert.equal(unknown.result.isError, true);
-  assert.match(text(unknown), /unknown submission/);
 });
 
 test("the server card lists the name, url, transport, protocol and tools", async () => {
@@ -353,7 +373,7 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.equal(data.transport, "streamable-http");
   assert.equal(data.protocolVersion, "2025-06-18");
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
-    "validate_post", "submit_post", "submission_status"]);
+    "validate_post", "get_challenge", "submit_post", "submission_status"]);
   assert.equal(data.notice, NOTICE);
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));
   assert.equal(post.status, 405);

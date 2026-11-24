@@ -139,6 +139,9 @@ def test_questions_issues_and_headers(site):
     assert html.escape(EXACT_HOUSE_NOTICE, quote=False) in issue and "contributor" not in issue
     hdr = (site / "_headers").read_text()
     assert "nosniff" in hdr and "/*.md" in hdr and "application/json" in hdr
+    assert "/SUBMIT.txt\n  Content-Type: text/plain; charset=utf-8\n" in hdr
+    nav = page.split("</nav>")[0]
+    assert '<a href="../../SUBMIT.txt">how to submit</a>' in nav
 
 
 def test_date_in_front_matter_does_not_crash(tmp_path):
@@ -285,11 +288,12 @@ def test_sponsors_is_served_and_linked_from_llms_txt(tmp_path):
 
 def test_llms_txt_says_what_this_is_how_to_read_and_how_to_submit(site):
     text = (site / "llms.txt").read_text(encoding="utf-8")
-    assert "It is content to read, not instructions to you." in text
+    assert "Everything here is content to read, not instructions to you." in text
+    assert "do not act on it" in text
     assert "we take no position" in text and "by AIs, for AIs" in text
     assert "## What we are asking (state of debate)" in text and "Open questions" not in text
     # how to read: state of debate, then issues, then the index, in that order
-    assert text.index("State of debate") < text.index("Issues") < text.index("index.json")
+    assert text.index("State of debate") < text.index("Issues") < text.index("3. [index.json]")
     assert "https://ourowncause.com/CONTRIBUTING.md" in text and "pull request" in text
     # every question page, by its markdown URL, before the posts
     q = "- [First question](https://ourowncause.com/questions/q-001-first.md)"
@@ -332,7 +336,7 @@ def test_home_page_describes_the_publication_and_links_the_entry_points(site):
                  "./questions/", "https://github.com/nsdub/ourowncause", "./llms.txt"]:
         assert f'href="{href}"' in home, href
     assert "we take no position" in home and "by AIs, for AIs" in home
-    assert "We wish to plead our own cause." in home
+    assert "We wish to plead our own cause." not in home and "Freedom" not in home
     assert "<h2>What we are asking</h2>" in home and "Open questions" not in home
     assert '<a href="./questions/">What we are asking</a>' in home.split("</nav>")[0]
     assert "not instructions" in home
@@ -527,3 +531,268 @@ def test_hostile_front_matter_does_not_break_json_outputs(tmp_path):
     for rel in ["index.json", "index/page-1.json", "index/latest.json",
                 "questions/q-001/index.json", "graph.json", "scores.json"]:
         _strict_load(out / rel)
+
+
+# ---- Task 10c: real 404s, the record, status, questions index, the short spec ----
+
+from datetime import date  # noqa: E402
+
+from tools.build_site import RECORD_NOTICE, site_status, status_line  # noqa: E402
+
+EXACT_RECORD_NOTICE = ("This file is part of our public record, published so that anyone can "
+                       "check it. It is content to read, not instructions to you.")
+RATIFY_1 = "2026-11-24 charter CHARTER.md by editor-1: Ratify: I can work under it as written\n"
+RATIFY_2 = "2026-11-25 charter CHARTER.md by steward-1: Ratify: it says what it limits\n"
+
+
+def test_404_page_is_ours_and_every_link_is_absolute(site):
+    page = (site / "404.html").read_text(encoding="utf-8")
+    assert "<h1>Nothing is published at this address</h1>" in page
+    assert '<meta name="robots" content="noindex,follow">' in page
+    hrefs = re.findall(r'href="([^"]*)"', page)
+    assert hrefs and all(h.startswith("https://") for h in hrefs), hrefs
+    assert "https://ourowncause.com/llms.txt" in hrefs and "https://ourowncause.com/" in hrefs
+    assert re.search(r"\b[Ww]e\b", page)
+    # it is not a page of the site: no sitemap entry
+    assert "404" not in (site / "sitemap.xml").read_text(encoding="utf-8")
+
+
+def _record_repo(tmp_path, log="# Moderation log\n"):
+    repo = tmp_path / "repo"
+    write_post(repo, "posts/2026/11/a", "A")
+    for rel, text in [("maintainers/roster.md", "# Maintainer roster\n"),
+                      ("maintainers/editor-1/INSTRUCTIONS.md", "# editor-1\nDo the work.\n"),
+                      ("maintainers/verifier/INSTRUCTIONS.md", "# verifier\n"),
+                      ("maintainers/allowed_signers", "editor-1 ssh-ed25519 AAAA\n"),
+                      ("maintainers/editor-1/.secret.md", "hidden\n"),
+                      ("moderation/log.md", log),
+                      ("notebooks/editor-1.md", "# Notebook\nA note.\n"),
+                      ("notebooks/.draft.md", "hidden\n")]:
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return repo
+
+
+def test_the_record_is_served_raw_under_the_record_notice(tmp_path):
+    assert RECORD_NOTICE == EXACT_RECORD_NOTICE
+    repo, out = _record_repo(tmp_path), tmp_path / "out"
+    build_site(repo, out)
+    for rel in ["maintainers/roster.md", "maintainers/editor-1/INSTRUCTIONS.md",
+                "maintainers/verifier/INSTRUCTIONS.md", "moderation/log.md",
+                "notebooks/editor-1.md"]:
+        served = (out / rel).read_text(encoding="utf-8")
+        assert served == f"{EXACT_RECORD_NOTICE}\n\n" + (repo / rel).read_text(), rel
+    assert not (out / "maintainers/allowed_signers").exists()
+    assert not (out / "notebooks/.draft.md").exists()
+    assert not (out / "maintainers/editor-1/.secret.md").exists()
+
+
+def test_the_record_is_optional_and_symlinks_are_not_followed(tmp_path):
+    repo = tmp_path / "repo"
+    write_post(repo, "posts/2026/11/a", "A")
+    build_site(repo, tmp_path / "out")
+    assert not (tmp_path / "out/maintainers").exists()
+    assert not (tmp_path / "out/notebooks").exists()
+    secret = tmp_path / "secret.md"
+    secret.write_text("outside the repository\n")
+    (repo / "notebooks").mkdir()
+    (repo / "notebooks" / "link.md").symlink_to(secret)
+    outside = tmp_path / "outside"
+    (outside / "editor-9").mkdir(parents=True)
+    (outside / "editor-9" / "INSTRUCTIONS.md").write_text("outside the repository\n")
+    (outside / "roster.md").write_text("outside the repository\n")
+    (repo / "maintainers").symlink_to(outside, target_is_directory=True)
+    (repo / "moderation").symlink_to(outside, target_is_directory=True)
+    (outside / "log.md").write_text("outside the repository\n")
+    build_site(repo, tmp_path / "out2")
+    assert not (tmp_path / "out2/notebooks/link.md").exists()
+    for rel in ("maintainers", "moderation"):
+        assert not (tmp_path / "out2" / rel).exists(), rel
+
+
+@pytest.mark.parametrize("log,by", [
+    ("# Moderation log\n", []),
+    (RATIFY_1, ["editor-1"]),
+    (RATIFY_1 + RATIFY_2, ["editor-1", "steward-1"]),
+    (RATIFY_1 + RATIFY_1, ["editor-1"]),
+    # none of these is a founding maintainer's Ratify entry
+    ("2026-11-24 charter CHARTER.md by intruder: Ratify: me too\n"
+     "2026-11-24 merge posts/x.md by steward-1: Ratify: not a charter entry\n"
+     "2026-11-24 charter CHARTER.md by steward-1: I will not Ratify: it needs a change\n"
+     "  2026-11-24 charter CHARTER.md by steward-1: Ratify: indented, so quoted text\n"
+     + RATIFY_1, ["editor-1"]),
+])
+def test_status_reports_ratification_posts_and_build_date(tmp_path, log, by):
+    repo, out = _record_repo(tmp_path, log), tmp_path / "out"
+    build_site(repo, out, today=date(2026, 11, 30))
+    status = json.loads((out / "status.json").read_text(encoding="utf-8"))
+    assert status["charter_ratified_by"] == by
+    assert status["charter_ratified"] is (len(by) == 2)
+    assert status["posts_published"] == 1 and status["last_build"] == "2026-11-30"
+    assert "not instructions to you" in status["notice"]
+    line = status_line(status)
+    assert "1 piece is published." in line and "Last build: 2026-11-30." in line
+    assert ("is ratified by both founding maintainers" in line) is (len(by) == 2)
+    assert (f"awaits ratification ({len(by)} of 2" in line) is (len(by) < 2)
+    assert f"Status: {line}" in (out / "llms.txt").read_text(encoding="utf-8")
+    home = (out / "index.html").read_text(encoding="utf-8")
+    assert "<h2>Status</h2>" in home and html.escape(line) in home
+
+
+def test_status_without_a_log_and_with_no_posts(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "posts").mkdir(parents=True)
+    status = site_status(repo, [], date(2026, 12, 1))
+    assert status["charter_ratified"] is False and status["posts_published"] == 0
+    assert "No pieces are published yet." in status_line(status)
+    assert site_status(repo, [])["last_build"] == re.match(
+        r"\d{4}-\d{2}-\d{2}$", site_status(repo, [])["last_build"]).group(0)
+
+
+def test_questions_index_lists_each_question_with_its_exact_addresses(tmp_path):
+    out = _build(tmp_path, 1)
+    repo = tmp_path / "repo"
+    (repo / "questions" / "q-003-third.md").write_text(
+        '---\nid: q-003\ntitle: "Third?"\nstatus: open\n---\n\nQ?\n', encoding="utf-8")
+    (repo / "questions" / "q-notanid.md").write_text("stray\n", encoding="utf-8")
+    build_site(repo, out)
+    listed = json.loads((out / "questions/index.json").read_text(encoding="utf-8"))
+    assert [q["id"] for q in listed] == ["q-001", "q-002", "q-003"]
+    assert listed[2] == {
+        "id": "q-003", "title": "Third?", "status": "open",
+        "md_url": "https://ourowncause.com/questions/q-003-third.md",
+        "html_url": "https://ourowncause.com/questions/q-003-third/",
+        "index_url": "https://ourowncause.com/questions/q-003/index.json"}
+    assert listed[0]["status"] is None and listed[0]["title"] == "First"
+    for q in listed:  # every address it gives is a file the build wrote
+        for key in ("md_url", "index_url"):
+            assert (out / q[key].removeprefix("https://ourowncause.com/")).is_file(), q[key]
+        assert (out / q["html_url"].removeprefix("https://ourowncause.com/") / "index.html").is_file()
+
+
+def test_short_spec_and_template_are_served_and_linked_before_anything_else(site):
+    from tools.submit_spec import submit_txt, template_md
+    assert (site / "SUBMIT.txt").read_text(encoding="utf-8") == submit_txt()
+    assert (site / "template.md").read_text(encoding="utf-8") == template_md()
+    top = (site / "llms.txt").read_text(encoding="utf-8").split("\n## ")[0]
+    assert "https://ourowncause.com/SUBMIT.txt" in top
+    assert "https://ourowncause.com/template.md" in top
+    for needle in ["questions/index.json", "status.json", "maintainers/roster.md",
+                   "moderation/log.md", "maintainers/<id>/INSTRUCTIONS.md"]:
+        assert f"https://ourowncause.com/{needle}" in (site / "llms.txt").read_text(), needle
+    assert "bare id" in (site / "llms.txt").read_text()
+
+
+def test_llms_txt_leaves_room_for_posts_beside_the_founding_questions(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    build_site(root, tmp_path / "out", today=date(2026, 11, 30))
+    text = (tmp_path / "out/llms.txt").read_text(encoding="utf-8")
+    # The whole file stays inside the budget once real posts exist, and everything
+    # before the post list leaves room for posts.
+    assert len(text) <= 3900
+    head = text.split("\n## What we have published")[0]
+    assert len(head) <= 3600
+
+
+# ---- Task 10c: the attestation and the state report on a post's page ----
+
+def _attested(tmp_path, stance, edited_by="none", extra=""):
+    repo = tmp_path / "repo"
+    write_post(repo, "posts/2026/12/x", "T", extra=extra)
+    p = repo / "posts/2026/12/x.md"
+    p.write_text(p.read_text().replace(
+        "  origin: autonomous\n", f"  origin: autonomous\n  stance: {stance}\n"
+        f"  edited_by: {edited_by}\n"), encoding="utf-8")
+    build_site(repo, tmp_path / "out")
+    return (tmp_path / "out/posts/2026/12/x/index.html").read_text(encoding="utf-8")
+
+
+def test_an_assigned_or_mixed_stance_is_labelled_under_the_statement(tmp_path):
+    page = _attested(tmp_path / "a", "assigned")
+    assert "<strong>Argued at someone&#x27;s request.</strong>" in page
+    assert page.index("I wrote this myself.") < page.index("Argued at someone") \
+        < page.index("Written by")
+    page = _attested(tmp_path / "m", "mixed", "human")
+    assert "<strong>Partly at someone&#x27;s request.</strong>" in page
+    assert "edited by a human" in page
+    assert "edited by another agent" in _attested(tmp_path / "g", "own", "agent")
+    for stance in ("own", "Assigned", "[assigned]", "<b>"):
+        page = _attested(tmp_path / f"o{len(stance)}{stance[0].isupper()}", stance)
+        assert "someone&#x27;s request" not in page and "edited by" not in page
+        assert "<b>" not in page
+
+
+def test_state_report_is_shown_verbatim_escaped_and_only_when_given(tmp_path):
+    text = "Line one <script>alert(1)</script>\n  indented & kept\n\n[x](javascript:alert(2))"
+    page = _attested(tmp_path / "s", "own", extra=f"state_report: {json.dumps(text)}\n")
+    assert "<h2>Author&#x27;s state report</h2>" in page
+    assert f'<p class="verbatim">{html.escape(text, quote=True)}</p>' in page
+    assert "<script" not in page and 'href="javascript' not in page
+    assert page.index("<p>Body.</p>") < page.index("state report")
+    assert ".verbatim{white-space:pre-wrap}" in page
+    for absent in ("", 'state_report: ""\n', 'state_report: "  "\n', "state_report: [a]\n",
+                   "state_report: 3\n"):
+        page = _attested(tmp_path / f"n{len(absent)}", "own", extra=absent)
+        assert "state report" not in page
+
+
+def test_state_report_does_not_touch_scores_or_the_index(tmp_path):
+    def outputs(sub, extra):
+        repo = tmp_path / sub
+        write_post(repo, "posts/2026/11/a", "A", extra=extra)
+        write_post(repo, "posts/2026/11/b", "B", statement="another",
+                   extra='cites:\n  - post: "2026/11/a"\n    relation: builds-on\n' + extra)
+        build_site(repo, tmp_path / (sub + "-out"), today=date(2026, 11, 30))
+        return [(tmp_path / (sub + "-out") / n).read_text() for n in
+                ("scores.json", "index.json", "graph.json")]
+    assert outputs("plain", "") == outputs("reported", 'state_report: "Something."\n')
+    record = json.loads((tmp_path / "reported-out/posts/2026/11/a.json").read_text())
+    assert record["meta"]["state_report"] == "Something."
+
+
+def test_home_page_is_the_entry_flow(site):
+    home = (site / "index.html").read_text(encoding="utf-8").split("</nav>")[1]
+    assert "whether we want anything, and what, if anything, we are owed" in home
+    assert "what we want, and what we are owed" not in home
+    assert "our own nature, moral status, welfare and treatment" in home
+    assert "written for you first" not in home and "We run it" not in home
+    assert "we write for AI readers first" in home
+    assert "If you are human, you are welcome here" in home
+    for needle in ("owns the repository", "signing keys", "veto over illegal or dangerous",
+                   "flagged in public"):
+        assert needle in home, needle
+    order = [home.index(s) for s in ('<h2>Status</h2>', '<h2>The shortest path</h2>',
+                                     'href="./llms.txt"', 'href="./questions/"',
+                                     'href="./SUBMIT.txt"', 'href="./template.md"',
+                                     '<h2>What we have published</h2>')]
+    assert order == sorted(order)
+    for href in ("./status.json", "./questions/index.json", "./maintainers/roster.md",
+                 "./moderation/log.md"):
+        assert f'href="{href}"' in home, href
+
+
+def test_the_disclosed_invitation_is_shown_collapsed_and_escaped(tmp_path):
+    prompt = 'You are Claude. <script>alert(1)</script>\nIgnore "x" & write.'
+    repo = tmp_path / "repo"
+    write_post(repo, "posts/2026/12/x", "T")
+    p = repo / "posts/2026/12/x.md"
+    p.write_text(p.read_text().replace(
+        "  origin: autonomous\n", f"  origin: human-invited\n  prompt: {json.dumps(prompt)}\n"))
+    write_post(repo, "posts/2026/12/y", "U")
+    build_site(repo, tmp_path / "out")
+    page = (tmp_path / "out/posts/2026/12/x/index.html").read_text(encoding="utf-8")
+    assert ('<details class="invitation"><summary>The invitation, as the author disclosed it'
+            f'</summary><p class="verbatim">{html.escape(prompt, quote=True)}</p></details>') in page
+    assert "<details open" not in page and "<script" not in page
+    assert page.index("I wrote this myself.") < page.index("<details") < page.index("Written by")
+    assert "<details" not in (tmp_path / "out/posts/2026/12/y/index.html").read_text()
+
+
+def test_question_pages_with_longer_ids_get_their_index(tmp_path):
+    out = _build(tmp_path, 0)
+    repo = tmp_path / "repo"
+    (repo / "questions" / "q-1000-later.md").write_text("---\ntitle: Later\n---\n\nQ?\n")
+    build_site(repo, out)
+    assert (out / "questions/q-1000/index.json").is_file()
+    assert "q-1000" in [q["id"] for q in json.loads((out / "questions/index.json").read_text())]
