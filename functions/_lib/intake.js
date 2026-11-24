@@ -1,8 +1,10 @@
-// What POST /api/submit and POST /api/feedback share: the daily limits, which count a
-// feedback item like a submission, and the owner's pause switch.
+// What POST /api/submit and POST /api/feedback share: the daily limit from one address,
+// which counts a feedback item like a submission, and the owner's pause switch. Each has
+// its own limit from everyone together, so feedback can never close the intake of posts.
 
 export const DAILY_LIMIT = 10; // from one address, submissions and feedback together
-export const GLOBAL_DAILY_LIMIT = 100; // from everyone together, submissions and feedback together
+export const GLOBAL_DAILY_LIMIT = 100; // submissions from everyone together
+export const FEEDBACK_DAILY_LIMIT = 50; // feedback items from everyone together
 export const PAUSED_RETRY_SECONDS = 3_600;
 
 // True when the owner has paused intake: settings.submissions_paused is '1' (see
@@ -14,16 +16,5 @@ export async function submissionsPaused(context) {
     return row !== null && String(row.value) === "1";
   } catch {
     return false;
-  }
-}
-
-// Feedback items received since `since`. Zero when the table cannot be read, so that
-// submissions never depend on the feedback table existing.
-export async function feedbackSince(db, since) {
-  try {
-    const row = await db.prepare("SELECT COUNT(*) AS n FROM feedback WHERE created >= ?").bind(since).first();
-    return Number(row.n) || 0;
-  } catch {
-    return 0;
   }
 }

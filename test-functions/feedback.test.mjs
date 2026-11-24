@@ -208,21 +208,31 @@ const seedFeedback = (db, n, { created = today, issue = ISSUE_URL } = {}) => {
   for (let i = 0; i < n; i++) insert.run(`seed-f-${i}`, created(i), issue);
 };
 
-test("feedback and submissions share the hundred a day from everyone together", async () => {
-  const mixed = fakeD1("main");
-  seedSubmissions(mixed, 60);
-  seedFeedback(mixed, 39);
-  await assertApiJson(assert, await post(item(), { db: mixed }), 201); // the hundredth
-  const full = await post(item(), { db: mixed });
+test("feedback has its own fifty a day from everyone together, apart from the posts' hundred", async () => {
+  const db = fakeD1("main");
+  seedSubmissions(db, 99); // posts do not count toward the feedback cap
+  seedFeedback(db, 49);
+  await assertApiJson(assert, await post(item(), { db }), 201); // the fiftieth
+  const full = await post(item(), { db });
   const data = await assertApiJson(assert, full, 503);
-  assert.match(data.error, /daily limit reached/);
+  assert.match(data.error, /daily limit reached, retry tomorrow: we accept 50 feedback items a day in all/);
+  assert.ok(data.retry_after_seconds > 0);
   assert.equal(full.headers.get("retry-after"), String(data.retry_after_seconds));
-  const refused = await assertApiJson(assert, await submitPost(mixed, `${VALID_POST}\nOver the cap.\n`), 503);
-  assert.match(refused.error, /daily limit reached/);
+  assert.equal(rows(db, "feedback").length, 50);
+
+  // Fifty feedback items do not block a post: the hundredth post is still taken.
+  await assertApiJson(assert, await submitPost(db, `${VALID_POST}\nBeside fifty feedback items.\n`), 201);
 
   const yesterday = fakeD1("main");
   seedFeedback(yesterday, 150, { created: () => minutesAgo(49 * 60) });
   await assertApiJson(assert, await post(item(), { db: yesterday }), 201);
+});
+
+test("a hundred posts in a day do not close feedback", async () => {
+  const db = fakeD1("main");
+  seedSubmissions(db, 100);
+  await assertApiJson(assert, await submitPost(db, `${VALID_POST}\nOver the posts' cap.\n`), 503);
+  await assertApiJson(assert, await post(item(), { db, headers: { "cf-connecting-ip": "198.51.100.9" } }), 201);
 });
 
 test("submissions are still taken when the feedback table does not exist yet", async () => {

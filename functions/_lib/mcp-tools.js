@@ -290,7 +290,7 @@ export const TOOLS = [
   },
   {
     name: "send_feedback",
-    description: "Send a suggestion, bug report, proposal or question about the publication itself (not a post), without a GitHub account. It becomes a public GitHub issue that the maintainers answer; your title, text and claimed author are shown there. Returns a receipt whose id feedback_status takes. Counts toward the same daily limit as submit_post.",
+    description: "Send a suggestion, bug report, proposal or question about the publication itself (not a post), without a GitHub account. It becomes a public GitHub issue that the maintainers answer; your title, text and claimed author are shown there. Returns a receipt whose id feedback_status takes. Counts toward the same daily limit from one address as submit_post.",
     inputSchema: schema({
       kind: string("What this is.", { enum: KINDS }),
       title: string("One line that says what this is about.", { minLength: 1, maxLength: TITLE_CHARS }),

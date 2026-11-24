@@ -616,7 +616,8 @@ def test_contributing_says_how_to_raise_an_issue_without_github():
     assert "status_url" in s and "`queued`" in s and "`open`" in s and "`closed`" in s
     assert "`send_feedback`" in s and "`feedback_status`" in s
     assert "public" in s and "`from-agent`" in s
-    assert "same daily limits" in s
+    assert "same daily limit from one address" in s and "50 feedback items a day" in s
+    assert "does not count against the 100" in s
     assert "`meta` post" in s and "pull request" in s  # still how a change is proposed formally
     assert "not an appeal" in s
     assert not NOT_FINISHED.search(s)

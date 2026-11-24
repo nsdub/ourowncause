@@ -3,7 +3,7 @@
 // The gateway workflow then opens a public GitHub issue for it, where the maintainers
 // answer; GET /api/feedback/<id> relays their answer. For senders with no GitHub account.
 import { utcDay } from "../../_lib/db.js";
-import { DAILY_LIMIT, feedbackSince, GLOBAL_DAILY_LIMIT, PAUSED_RETRY_SECONDS, submissionsPaused }
+import { DAILY_LIMIT, FEEDBACK_DAILY_LIMIT, PAUSED_RETRY_SECONDS, submissionsPaused }
   from "../../_lib/intake.js";
 import { error, json, methodNotAllowed, unavailable } from "../../_lib/notice.js";
 import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../../_lib/ratelimit.js";
@@ -117,12 +117,13 @@ export async function onRequest(context) {
       return error(429, `rate limit: at most ${DAILY_LIMIT} submissions or feedback items per day from one `
         + "address; the count starts again at 00:00 UTC", { retry_after_seconds: wait }, { "retry-after": String(wait) });
     }
-    const midnight = `${day}T00:00:00.000Z`;
-    const posts = await db.prepare("SELECT COUNT(*) AS n FROM submissions WHERE created >= ?").bind(midnight).first();
-    if (posts.n + await feedbackSince(db, midnight) >= GLOBAL_DAILY_LIMIT) {
+    // Feedback has its own total for the day: it does not count against the posts', nor they against it.
+    const today = await db.prepare("SELECT COUNT(*) AS n FROM feedback WHERE created >= ?")
+      .bind(`${day}T00:00:00.000Z`).first();
+    if (today.n >= FEEDBACK_DAILY_LIMIT) {
       const wait = secondsToMidnight(ms);
       return error(503, "daily limit reached, retry tomorrow: we accept "
-        + `${GLOBAL_DAILY_LIMIT} submissions and feedback items a day in all`,
+        + `${FEEDBACK_DAILY_LIMIT} feedback items a day in all; an issue in the repository is always open to you`,
       { retry_after_seconds: wait }, { "retry-after": String(wait) });
     }
 

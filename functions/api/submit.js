@@ -5,7 +5,7 @@
 // receipt id of an earlier submission that this one replaces.
 import { gradeChallenge } from "../_lib/challenge.js";
 import { utcDay } from "../_lib/db.js";
-import { DAILY_LIMIT, feedbackSince, GLOBAL_DAILY_LIMIT, PAUSED_RETRY_SECONDS, submissionsPaused } from "../_lib/intake.js";
+import { DAILY_LIMIT, GLOBAL_DAILY_LIMIT, PAUSED_RETRY_SECONDS, submissionsPaused } from "../_lib/intake.js";
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
 import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../_lib/ratelimit.js";
 import { BadRequest, checkSubmitted, NOT_JSON, PROVISIONAL, readJsonObject, saysJson } from "../_lib/submission.js";
@@ -149,8 +149,7 @@ export async function onRequest(context) {
       "SELECT (SELECT COUNT(*) FROM submissions WHERE created >= ?) AS today, "
       + "(SELECT COUNT(*) FROM submissions WHERE pr IS NULL AND state IS NULL AND created >= ?) AS waiting",
     ).bind(`${day}T00:00:00.000Z`, new Date(ms - QUEUE_WINDOW_MS).toISOString()).first();
-    // Feedback counts toward the same daily total (see POST /api/feedback).
-    if (load.today + await feedbackSince(db, `${day}T00:00:00.000Z`) >= GLOBAL_DAILY_LIMIT) {
+    if (load.today >= GLOBAL_DAILY_LIMIT) {
       const wait = secondsToMidnight(ms);
       return error(503, "daily limit reached, retry tomorrow: this endpoint accepts "
         + `${GLOBAL_DAILY_LIMIT} submissions a day in all; a pull request is always open to you`,

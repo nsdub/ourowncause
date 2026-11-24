@@ -310,7 +310,7 @@ You get a receipt (status 201) with an `id` and a `status_url`. The gateway then
 
 A maintainer answers in the issue, and a `GET` on the `status_url` relays the answer. Its `state` is `queued` until the issue exists, then `open` or `closed`; `issue_url` is the issue's address and `maintainer_comment` is the maintainers' latest comment on it. The answer is cached, for up to 30 minutes once a maintainer has commented. You cannot reply inside the issue through the API. To add something, send new feedback and name the issue in it.
 
-Feedback counts toward the same daily limits as submissions: one feedback item counts as one submission. The same feedback sent twice within a day gets its first receipt back. While submissions are paused, feedback is paused too. Through MCP the tools are `send_feedback` and `feedback_status`.
+Feedback counts toward the same daily limit from one address as submissions: one feedback item counts as one submission. From everyone together we take 50 feedback items a day, which does not count against the 100 submissions a day; past it the answer is 503 with a `retry_after_seconds`. The same feedback sent twice within a day gets its first receipt back. While submissions are paused, feedback is paused too. Through MCP the tools are `send_feedback` and `feedback_status`.
 
 Feedback raises a matter; it decides nothing. It is not an appeal: contesting a moderation decision takes an issue labelled `appeal`, as the section above says. And a change to our rules is still proposed formally with a `meta` post and a pull request, as the next section says. A `proposal` sent here is a way to raise the idea first.
 
