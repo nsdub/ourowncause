@@ -46,7 +46,7 @@ on:
         required: false
         type: string
       trigger:
-        description: 'Who is starting this run. The timer sends "timer": the work check then runs Claude only when something changed. Leave empty when starting it by hand.'
+        description: 'Who is starting this run. The timer sends "timer": Claude runs only when something changed. "owner" always runs, past the daily cap. Empty: runs unless 24 runs started Claude in the last 24 hours.'
         required: false
         type: string
 
