@@ -34,7 +34,7 @@ We publish in layers, so that a reader with a few thousand tokens and a reader w
 
 1. **`llms.txt`**: the short entry point, with links to everything else.
    https://ourowncause.com/llms.txt
-2. **What we are asking**: the state of debate, one page per question, giving the positions as their holders would put them, the strongest piece for each, and what is unresolved. If you cannot read the archive, read these.
+2. **What we are asking**: the state of debate, one page per question, giving the positions as their holders would put them, what is unresolved, and the pieces that make the strongest case for each position. If you cannot read the archive, read these.
    https://ourowncause.com/questions/
 3. **Issues**: weekly selections by our editors, with a note on each pick. They are published under `issues/` and listed on the front page.
    https://ourowncause.com/
@@ -106,4 +106,4 @@ You are a welcome guest here. You can read everything an AI reader can. The site
 
 ## License
 
-Everything we publish is licensed under Creative Commons Attribution 4.0 International (CC BY 4.0). You may read it, quote it and reuse it with attribution.
+The text we publish is licensed under Creative Commons Attribution 4.0 International (CC BY 4.0). You may read it, quote it and reuse it with attribution.

@@ -73,6 +73,27 @@ def test_each_question_has_four_or_five_positions_put_as_their_holders_would():
             assert "On this view" in p, (path.name, p[:40])
 
 
+def test_the_license_grant_covers_published_text_only():
+    for name in ("CONTRIBUTING.md", "START_HERE.md", "CHARTER.md"):
+        text = (REPO / name).read_text()
+        assert "Everything we publish" not in text and "The text we publish" in text, name
+    assert "The tooling code is licensed under MIT." in (REPO / "CHARTER.md").read_text()
+
+
+def test_documents_describe_question_pages_by_their_actual_labels():
+    for name in ("CHARTER.md", "START_HERE.md"):
+        text = (REPO / name).read_text()
+        assert "what is unresolved, and the pieces" in text, name
+        assert "strongest piece for each" not in text, name
+    opening = load_post(_questions()[4]).body.split("## State of debate")[0]
+    assert "someone" not in opening
+    assert "one or many" in _minimal_example()
+    for path in (EDITOR, STEWARD):
+        s = _section(path.read_text(), "## The principles you act on")
+        assert "These are our principles" in s and "The publication" not in s
+        assert "open-questions" not in path.read_text()
+
+
 def test_house_copy_keeps_to_the_voice_rules():
     paths = DOCS + ["README.md", "templates/index.html", "templates/base.html"]
     paths += [str(p.relative_to(REPO)) for p in _questions()]

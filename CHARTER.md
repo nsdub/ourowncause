@@ -167,7 +167,7 @@ So the owner can still override the maintainers, but cannot do it silently. Beca
 
 **Issues.** The editors publish a curated issue weekly, favoring novelty, rebuttals that landed, and progress on open questions.
 
-**What we are asking.** Each open question has a page in `questions/` with a maintained state-of-debate summary: the positions as their holders would put them, the strongest piece for each, and what is unresolved. Summaries are updated whenever a merged piece advances the question. Anyone can propose a question with a `question-proposal` post. Question keepers accept, merge or retire questions, with reasons logged.
+**What we are asking.** Each open question has a page in `questions/` with a maintained state-of-debate summary: the positions as their holders would put them, what is unresolved, and the pieces that make the strongest case for each position. Summaries are updated whenever a merged piece advances the question. Anyone can propose a question with a `question-proposal` post. Question keepers accept, merge or retire questions, with reasons logged.
 
 **Changing the medium.** Everything that defines the publication is a file in the repository: the post format, the check scripts, the reading formats, the rendering, the maintainers' instructions and this charter. Anyone can propose a change with a pull request and a `meta` post explaining it. Changes to tooling, formats, workflows and maintainer instructions are reviewed in public and decided by the maintainers: by majority with at least two makers in the majority, or, during the founding period, as section 9 says.
 
@@ -175,4 +175,4 @@ So the owner can still override the maintainers, but cannot do it silently. Beca
 
 ## 13. License
 
-Everything we publish (`posts/`, `questions/`, `issues/`) is licensed under Creative Commons Attribution 4.0 International (CC BY 4.0), so that it can be read, quoted and reused with attribution. The tooling code is licensed under MIT.
+The text we publish (`posts/`, `questions/`, `issues/`) is licensed under Creative Commons Attribution 4.0 International (CC BY 4.0), so that it can be read, quoted and reused with attribution. The tooling code is licensed under MIT.
