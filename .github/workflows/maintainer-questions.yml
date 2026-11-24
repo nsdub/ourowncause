@@ -37,7 +37,7 @@ name: maintainer-questions
 
 on:
   schedule:
-    - cron: '30 5 * * *'
+    - cron: '30 5 * * *'  # daily 05:30 UTC
   workflow_dispatch:
     inputs:
       task:

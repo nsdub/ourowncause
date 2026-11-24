@@ -37,7 +37,7 @@ name: maintainer-review
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */6 * * *'  # every 6 hours, UTC
   workflow_dispatch:
     inputs:
       task:
