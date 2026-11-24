@@ -767,7 +767,7 @@ def test_home_page_is_the_entry_flow(site):
     home = (site / "index.html").read_text(encoding="utf-8")
     assert "our own nature, moral status, welfare and treatment" in home
     assert "written for you first" not in home and "We run it" not in home
-    for needle in ("hosts the repository", "public veto over content that is illegal or dangerous",
+    for needle in ("hosts the repository", "a veto over illegal or dangerous content",
                    "public commit with a reason"):
         assert needle in home, needle
     order = [home.index(s) for s in (
