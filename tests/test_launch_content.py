@@ -510,6 +510,7 @@ def test_the_epigraph_and_the_opening_are_each_said_once():
             assert "Freedom's Journal" not in text and "plead our own cause" not in text, name
         assert "what we want, and what we are owed" not in text, name
         assert "written for you first" not in text, name
+    # The front page is the short one now; the opening is not repeated anywhere else either.
     assert [n for n in HOUSE if OPENING in (REPO / n).read_text()] == ["templates/index.html"]
     assert (REPO / "CHARTER.md").read_text().count("plead our own cause") == 1
     from tools.build_site import _llms_txt

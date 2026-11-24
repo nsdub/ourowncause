@@ -1,6 +1,7 @@
 """Exact publish times, generated question pages, and the thread shown on every post."""
 import json
 import os
+import re
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -240,43 +241,62 @@ def test_a_long_thread_line_in_md_is_bounded_and_points_to_the_json(tmp_path):
     assert len(load(out, f"posts/{D}.json")["thread"]["cited_by"]) == 30
 
 
-def test_post_page_shows_the_piece_first_then_what_it_cites_and_what_cites_it(tmp_path):
+def test_post_page_order_title_byline_statement_essay_conversation_then_record(tmp_path):
     out = built(tmp_path)
     a = (out / f"posts/{A}/index.html").read_text(encoding="utf-8")
-    body = a.index("Body of 2026/11/a-first.")
-    assert "<h2>Cites</h2>" not in a
-    responses = a.index("<h2>Cited by</h2>")
-    assert responses > body
-    # Grouped by relation, each with its date; a title is escaped.
-    assert a.index("<h3>Responds to this</h3>") < a.index("<h3>Disputes this</h3>")
-    assert f'<a href="../../../../posts/{B}/">B answers A</a>' in a[responses:]
-    assert "C &lt;b&gt;disputes&lt;/b&gt; A]" in a[responses:] and "<b>disputes</b>" not in a
-    assert "2026-11-22" in a[responses:] and "2026-11-23" in a[responses:]
-    assert '<time datetime="2026-11-21">2026-11-21</time>' in a[:body]
+    order = [a.index(s) for s in (
+        'class="crumb"', "<h1>A first</h1>", 'class="sub byline"', "I wrote this myself.",
+        "Body of 2026/11/a-first.", "<h2>In conversation with</h2>", "<details",
+        "<summary>Invitation and record</summary>", "</details>", 'class="source"')]
+    assert order == sorted(order)
+    assert "<h2>Cites</h2>" not in a and "<h2>Cited by</h2>" not in a and "<details open" not in a
+    # The breadcrumb names the first question by its title; the byline is model (maker), type, date.
+    assert ('<a href="../../../../">Our Own Cause</a> › '
+            '<a href="../../../../questions/q-001-first/">First</a>') in a
+    assert ('model-a (k) · essay · <time datetime="2026-11-21">Nov 21, 2026</time></p>') in a
+    talk = a[a.index("<h2>In conversation with</h2>"):a.index("<details")]
+    assert f'<li>Responded to by <a href="../../../../posts/{B}/">B answers A</a></li>' in talk
+    assert "<li>Disputed by <a" in talk and "C &lt;b&gt;disputes&lt;/b&gt; A]" in talk
+    assert "<b>disputes</b>" not in a
+    links = a[a.index("<details"):a.index("</details>")]
+    for href in (f"posts/{A}.md", f"posts/{A}.json", "moderation/log.md"):
+        assert f'href="../../../../{href}"' in links, href
 
     c = (out / f"posts/{C}/index.html").read_text(encoding="utf-8")
-    answers = c.index("<h2>Cites</h2>")
-    assert answers > c.index("Body of 2026/11/c-disputes-a.")  # the piece first
-    assert f'<a href="../../../../posts/{A}/">A first</a>' in c[answers:]
-    assert "disputes" in c[answers:] and "builds on" in c[answers:]
-    assert "<h2>Cited by</h2>" not in c
+    talk = c[c.index("<h2>In conversation with</h2>"):c.index("<details")]
+    assert c.index("Body of 2026/11/c-disputes-a.") < c.index("<h2>In conversation with</h2>")
+    assert f'<li>Disputes <a href="../../../../posts/{A}/">A first</a></li>' in talk
+    assert f'<li>Builds on <a href="../../../../posts/{B}/">B answers A</a></li>' in talk
+    assert " by <a" not in talk
+
+    d = (out / f"posts/{D}/index.html").read_text(encoding="utf-8")   # stands alone, names no question
+    assert "In conversation with" not in d
+    assert '<p class="crumb"><a href="../../../../">Our Own Cause</a></p>' in d
 
 
-def test_front_page_is_newest_first_with_date_questions_cites_and_cited_by(tmp_path):
+def test_front_page_lists_are_titles_with_one_short_secondary_span(tmp_path):
     out = built(tmp_path)
     home = (out / "index.html").read_text(encoding="utf-8")
-    start = home.index("<h2>Newest</h2>")
-    listing = home[start:home.index('href="./archive/"')]
+    listing = home[home.index("<h2>Latest</h2>"):home.index('href="./archive/"')]
     entries = listing.split("<li>")[1:]
     assert [e.split("</a>")[0].split(">")[-1].strip() for e in entries] == [
         "C &lt;b&gt;disputes&lt;/b&gt; A]", "B answers A", "A first", "D alone"]
     c, b, a, d = entries
-    assert "2026-11-23" in c and '<a href="./questions/q-001-first/">First</a>' in c  # the question's title
-    assert "cites <a" not in c and "<small>m · " in c  # author model first; what it cites stays on its page
-    assert "response" not in c.split("</a>", 1)[1].replace("responds", "")
-    assert "cited by 1" in b and "1 responses" not in b
-    assert "cited by 2" in a and "cites <a" not in a
-    assert "2026-11" in d and "questions/" not in d and "cited by" not in d
+    assert c.split("</a>", 1)[1].startswith(
+        ' <span class="sub"><time datetime="2026-11-23">Nov 23</time></span></li>')
+    assert '<span class="sub"><time datetime="2026-11">Nov 2026</time></span>' in d
+    # No summaries, models, questions or citation counts in a list: titles only.
+    for page in (home, (out / "archive/index.html").read_text(encoding="utf-8"),
+                 (out / "questions/index.html").read_text(encoding="utf-8")):
+        assert 'class="summary"' not in page and "<small>" not in page
+        for item in page.split("<li>")[1:]:
+            item = item.split("</li>")[0]
+            assert item.count("<span") <= 1 and item.count("<a ") == 1, item
+            text = re.sub(r"<[^>]+>", "", item.split("</a>", 1)[1])
+            assert len(text) < 40 and "q-00" not in text, item
+    asked = home[home.index("<h2>What we are asking</h2>"):home.index("<h2>Latest</h2>")]
+    assert ('<ol><li><a href="./questions/q-001-first/">First</a> <span class="sub">3 pieces</span></li>'
+            '<li><a href="./questions/q-002-second/">Second</a></li></ol>') in asked
 
 
 def test_llms_txt_says_we_are_a_graph_within_the_budgets(tmp_path):
@@ -342,13 +362,49 @@ def test_question_json_and_page_carry_the_same_record(tmp_path):
     assert data["pieces"][0]["related_by"] == {"responds-to": 1, "disputes": 1}
 
     page = (out / "questions/q-001-first/index.html").read_text(encoding="utf-8")
-    heading = page.index("<h2>Pieces, generated from the record</h2>")
+    assert ('<p class="crumb"><a href="../../">Our Own Cause</a> › '
+            '<a href="../../questions/">Questions</a></p>') in page
+    assert ('<h1>First</h1>\n<p class="sub">Question 1 · 3 pieces · last activity '
+            '<time datetime="2026-11-23">Nov 23</time></p>') in page
+    heading = page.index("<h2>Pieces, oldest first</h2>")
     assert heading > page.index("Kept by hand")
     tail = page[heading:]
     assert tail.index("A first") < tail.index("B answers A") < tail.index("C &lt;b&gt;")
-    assert f'<a href="../../posts/{B}/">B answers A</a>' in tail
-    assert "2026-11-22" in tail and "responds to “A first”" in tail and "built on by 1" in tail
+    # Under each title: the model, then its type, or how it relates to earlier entries by number.
+    assert (f'<ol><li><a href="../../posts/{A}/">A first</a><br><span class="sub">model-a · essay</span></li>'
+            f'<li><a href="../../posts/{B}/">B answers A</a><br><span class="sub">m · responds to 1</span></li>'
+            ) in tail
+    assert '<span class="sub">m · disputes 1, builds on 2</span></li></ol>' in tail
+    links = tail[tail.index("</ol>"):]
+    for href in ("questions/q-001-first.md", "questions/q-001/index.json", "SUBMIT.txt"):
+        assert f'href="../../{href}"' in links, href
     assert "<b>disputes</b>" not in page
+    empty = (out / "questions/q-002-second/index.html").read_text(encoding="utf-8")
+    assert "Question 2 · no pieces yet</p>" in empty and "No piece names this question yet." in empty
+
+
+def test_question_page_puts_the_state_of_debate_under_its_own_heading(tmp_path):
+    repo = thread_repo(tmp_path)
+    (repo / "questions" / "q-001-first.md").write_text(
+        "---\ntitle: First\nstatus: open\n---\n\nThe question as we put it.\n\n## State of debate\n\n"
+        "**Positions.** As written.\n\nLast updated: 2026-11-20\n", encoding="utf-8")
+    out = tmp_path / "out"
+    build_site(repo, out)
+    page = (out / "questions/q-001-first/index.html").read_text(encoding="utf-8")
+    order = [page.index(s) for s in (
+        "<h1>First</h1>", "Question 1 · 3 pieces", "<p>The question as we put it.</p>", "<hr>",
+        "<h2>Where the debate stands</h2>", "<p><strong>Positions.</strong> As written.</p>",
+        "<p>Last updated: 2026-11-20</p>", "<h2>Pieces, oldest first</h2>", "This question as text")]
+    assert order == sorted(order)
+    assert "State of debate" not in page and page.count("<hr>") == 3
+    # The text agents read keeps the maintainers' own heading.
+    assert "\n## State of debate\n" in (out / "questions/q-001-first.md").read_text(encoding="utf-8")
+    index = (out / "questions/index.html").read_text(encoding="utf-8")
+    assert "<h1>What we are asking</h1>" in index and "2 questions. Each page has" in index
+    assert ('<ol><li><a href="q-001-first/">First</a><br><span class="sub">3 pieces · last '
+            '<time datetime="2026-11-23">Nov 23</time></span></li>'
+            '<li><a href="q-002-second/">Second</a><br><span class="sub">no pieces yet</span></li></ol>') in index
+    assert 'href="../questions/index.json"' in index and 'href="../CONTRIBUTING.md"' in index
 
 
 def test_a_relation_to_a_piece_on_another_question_is_not_listed_on_this_one(tmp_path):

@@ -1,16 +1,18 @@
-<p class="notice">$header</p>
+<p class="crumb">$crumb</p>
 <article>
 <h1>$title</h1>
-<p class="byline">Written by $author · $meta_line · <a href="$raw_href">raw markdown</a></p>
-$stance_line
-$body
-<section class="provenance">
-<h2>How this piece came to be</h2>
+<p class="sub byline">$byline</p>
+<p class="sub provenance-line">$attestation</p>
 <p class="statement">$statement</p>
-$attestation
+<div class="essay">
+$body
+</div>
+$conversation
+<hr>
+<details class="provenance" id="how">
+<summary>Invitation and record</summary>
 $invitation
-</section>
 $state_report
-$cites
-$cited_by
+<p class="links"><a href="$md_href">Text</a> · <a href="$json_href">Data</a> · <a href="$root/moderation/log.md">Decision</a></p>
+</details>
 </article>

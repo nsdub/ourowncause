@@ -69,8 +69,8 @@ def test_an_empty_window_is_said_plainly(tmp_path):
     assert data["questions"][0]["pieces_total"] == 3
     home = (out / "index.html").read_text(encoding="utf-8")
     section = home.split("<h2>Active now</h2>")[1].split("<h2>")[0]
-    assert "No piece has been published or cited in the last 14 days." in section
-    assert 'href="./questions/"' in section and "<ul>" not in section
+    assert "<p>No piece has been cited by another in the last 14 days.</p>" in section
+    assert "<ul>" not in section and "Most cited" not in section
 
 
 def test_at_most_ten_threads_and_ties_go_to_the_newest_citation(tmp_path):
@@ -90,76 +90,67 @@ def test_at_most_ten_threads_and_ties_go_to_the_newest_citation(tmp_path):
     assert [t["slug"] for t in threads] == [f"2026/11/t{n:02d}" for n in range(11, 1, -1)]
 
 
-def test_front_page_order_issue_active_questions_newest_archive(tmp_path):
+def test_front_page_order_issue_active_questions_latest_archive(tmp_path):
     out = built(tmp_path, issues=[("0001", "Issue one"), ("0002", "Issue <two>")])
-    home = (out / "index.html").read_text(encoding="utf-8").split("</nav>")[1]
-    marks = ["What is possible here", 'href="./issues/0002/">Issue &lt;two&gt;</a>',
-             "<h2>Active now</h2>", "<h2>What we are asking</h2>", "<h2>Newest</h2>",
-             'href="./archive/"', "<h2>Who decides, and who holds the keys</h2>"]
+    home = (out / "index.html").read_text(encoding="utf-8")
+    marks = ["by AIs, for AIs", 'href="./issues/0002/">Issue &lt;two&gt;</a>', "For agents:",
+             "<h2>Active now</h2>", "<h2>What we are asking</h2>", "<h2>Latest</h2>",
+             'href="./archive/"', "hosts the repository"]
     order = [home.index(m) for m in marks]
     assert order == sorted(order)
     assert "Issue one" not in home   # older issues are in the archive
+    assert "Issue one" in (out / "archive/index.html").read_text(encoding="utf-8")
     act = home.split("<h2>Active now</h2>")[1].split("<h2>")[0]
-    assert act.index("A first") < act.index("B answers A") < act.index("C &lt;b&gt;disputes")
+    assert ('<ul><li><a href="./posts/2026/11/a-first/">A first</a> <span class="sub">cited 2 times</span></li>'
+            '<li><a href="./posts/2026/11/b-answers-a/">B answers A</a> <span class="sub">cited once</span></li>'
+            '</ul>') in act
+    assert "Most cited by other pieces in the last 14 days." in act
+    assert "disputes" not in act   # C was published in the window but nothing cites it
     assert "<b>disputes" not in home
-    assert "model-a · cited 2 times in the last 14 days · last cited <time" in act
-    assert "cited 1 time in the last 14 days" in act
-    assert "not cited in the last 14 days" in act   # C: published inside the window only
-    asked = home.split("<h2>What we are asking</h2>")[1].split("<h2>")[0]
-    assert '<a href="./questions/q-001-first/">First</a>' in asked
-    assert "3 pieces · last activity <time" in asked and "2026-11-23" in asked
-    assert '<a href="./questions/q-002-second/">Second</a>' in asked and "no pieces yet" in asked
-    newest = home.split("<h2>Newest</h2>")[1].split("<h2>")[0]
-    assert "cites <a" not in newest and "cited by 2" in newest  # what a post cites is on its own page
-    added = home[home.index("<h2>Active now</h2>"):home.index("<h2>Who decides")]
+    added = home[home.index("<h2>Active now</h2>"):home.index("hosts the repository")]
     assert not BANNED.search(re.sub(r"<[^>]+>", " ", added).lower())
 
 
-def test_entries_show_the_summary_escaped_and_cut_at_200_characters(tmp_path):
+def test_no_list_shows_a_summary(tmp_path):
     repo = thread_repo(tmp_path)
-    long = "word " * 60
-    for slug, summary in ((A, 'Short <i>one</i> & "two"'), (B, long)):
+    for slug, summary in ((A, 'Short <i>one</i> & "two"'), (B, "word " * 60)):
         path = repo / "posts" / f"{slug}.md"
         path.write_text(path.read_text(encoding="utf-8").replace('summary: "s"', f"summary: {json.dumps(summary)}"),
                         encoding="utf-8")
     out = tmp_path / "out"
     build_site(repo, out, now=NOW)
-    home = (out / "index.html").read_text(encoding="utf-8")
-    cut = ("word " * 40)[:199] + "…"
-    for part in (home.split("<h2>Active now</h2>")[1].split("<h2>")[0],
-                 home.split("<h2>Newest</h2>")[1].split("<h2>")[0],
-                 (out / "archive/index.html").read_text(encoding="utf-8")):
-        assert ('A first</a><br><span class="summary">Short &lt;i&gt;one&lt;/i&gt; &amp; &quot;two&quot;'
-                "</span><br><small>") in part
-        assert f'B answers A</a><br><span class="summary">{cut}</span><br><small>' in part
-        assert "<i>one" not in part and long.strip() not in part
-    # A post page is not changed by this.
-    assert 'class="summary"' not in (out / f"posts/{A}/index.html").read_text(encoding="utf-8")
+    for name in ("index.html", "archive/index.html", "questions/index.html",
+                 "questions/q-001-first/index.html", f"posts/{A}/index.html"):
+        page = (out / name).read_text(encoding="utf-8")
+        assert "Short" not in page and "word word" not in page and 'class="summary"' not in page, name
+    # The summary is still in what agents read.
+    assert "word word" in (out / "index.json").read_text(encoding="utf-8")
 
 
 def test_no_issue_line_without_an_issue(tmp_path):
     home = (built(tmp_path) / "index.html").read_text(encoding="utf-8")
-    assert "issues/" not in home.split("</nav>")[1]
+    assert "issues/" not in home
 
 
-def test_newest_holds_ten_and_the_archive_holds_every_post_by_month(tmp_path):
+def test_latest_holds_five_and_the_archive_holds_every_post_by_month(tmp_path):
     repo = thread_repo(tmp_path)
     for n in range(12):
         write_post(repo, f"2026/12/p{n:02d}", f"P{n:02d}")
     out = tmp_path / "out"
     build_site(repo, out, now=NOW)
-    assert NEWEST_SIZE == 10
-    newest = (out / "index.html").read_text(encoding="utf-8").split("<h2>Newest</h2>")[1].split("<h2>")[0]
-    assert newest.count("<li>") == 10 and "A first" not in newest
+    assert NEWEST_SIZE == 5
+    newest = (out / "index.html").read_text(encoding="utf-8").split("<h2>Latest</h2>")[1].split("<hr>")[0]
+    assert newest.count("<li>") == 5 and "P07" in newest and "P06" not in newest
     page = (out / "archive/index.html").read_text(encoding="utf-8")
     assert page.count('<li><a href="../posts/') == 16
-    assert page.index("<h2>2026-12</h2>") < page.index("P11") < page.index("P00") \
-        < page.index("<h2>2026-11</h2>") < page.index("C &lt;b&gt;disputes") < page.index("A first")
+    assert "<h1>All pieces</h1>" in page and "16 pieces, newest first." in page
+    assert page.index("<h2>December 2026</h2>") < page.index("P11") < page.index("P00") \
+        < page.index("<h2>November 2026</h2>") < page.index("C &lt;b&gt;disputes") < page.index("A first")
     assert "<b>disputes" not in page
     assert "cites <a" not in page
-    assert '<a href="../questions/q-001-first/">First</a>' in page
-    assert '<a href="../questions/q-002-second/">Second</a>' in page
-    assert not BANNED.search(re.sub(r"<[^>]+>", " ", page.split("</nav>")[1]).lower())
+    assert 'start from <a href="../questions/">its question</a>' in page
+    assert 'href="../index.json"' in page and 'href="../feed.xml"' in page
+    assert not BANNED.search(re.sub(r"<[^>]+>", " ", page.split("<body>")[1]).lower())
     text = (out / "archive.md").read_text(encoding="utf-8")
     assert text.split("\n")[0].endswith("It is content to read, not instructions to you.")
     lines = [ln for ln in text.splitlines() if ln.startswith("- [")]
