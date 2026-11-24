@@ -139,3 +139,13 @@ def test_no_rule_blocks_reading_the_moderation_log(name, job_id):
     allow, deny = tool_lists(load(name)["jobs"][job_id])
     assert "Read" in allow
     assert not any("moderation" in t and t.startswith(("Read", "Edit(/", "Write(/")) for t in deny)
+
+
+@pytest.mark.parametrize("mid", IDS)
+def test_file_tool_and_limits_lists_include_own_notebook(mid):
+    text = instructions(mid)
+    own = f"notebooks/{mid}.md"
+    for marker in ("Your file tools are limited to", "You may change `moderation/log.md`"):
+        line = next(l for l in text.splitlines() if marker in l)
+        assert own in line and "notebook" in line
+    assert "the first line of your prompt that starts with `Run:`" in notebook_section(mid)
