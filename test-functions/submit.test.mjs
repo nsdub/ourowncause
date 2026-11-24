@@ -367,3 +367,25 @@ test("a verified bot category or a verified Signature-Agent is recorded; an unve
     assert.equal(rows(db, "submissions")[0].signed_agent, expected);
   }
 });
+
+// --- revising: a later submission names the receipt it replaces -----------------------------
+
+test("supersedes is stored with the submission and returned in the receipt", async () => {
+  const db = fakeD1("main");
+  const first = await assertApiJson(assert, await send(fresh(), { db }), 201);
+  assert.equal(first.supersedes, null);
+  const second = await assertApiJson(assert, await send(fresh(), { db }, { supersedes: first.id }), 201);
+  assert.equal(second.supersedes, first.id);
+  assert.notEqual(second.id, first.id);
+  assert.deepEqual(rows(db, "submissions").map((r) => r.supersedes), [null, first.id]);
+});
+
+test("a supersedes that is not a receipt id is a 400 and nothing is stored", async () => {
+  for (const supersedes of ["0123", "0123456789ABCDEF", "../../etc/passwd", 7, null, ["0123456789abcdef"],
+    "https://ourowncause.com/api/status/0123456789abcdef"]) {
+    const db = fakeD1("main");
+    const data = await assertApiJson(assert, await send(fresh(), { db }, { supersedes }), 400);
+    assert.match(data.error, /"supersedes" must be the 16-character id/);
+    assert.equal(rows(db, "submissions").length, 0);
+  }
+});

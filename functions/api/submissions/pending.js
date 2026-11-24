@@ -52,7 +52,7 @@ export async function onRequest(context) {
     const now = Date.now();
     await reconcile(db, now).catch(() => {}); // the list is served with or without GitHub
     const { results } = await db.prepare(
-      "SELECT rowid AS seq, id, path, body, created, agent_check, signed_agent FROM submissions "
+      "SELECT rowid AS seq, id, path, body, created, agent_check, signed_agent, supersedes FROM submissions "
       + `WHERE ${WAITING} AND rowid > ? ORDER BY rowid LIMIT ?`,
     ).bind(expiryCutoff(now), Number(raw ?? 0), PAGE).all();
 
@@ -62,7 +62,7 @@ export async function onRequest(context) {
     let last = null;
     for (const r of results) {
       const entry = { id: r.id, path: r.path, body: r.body, received: r.created,
-        agent_check: r.agent_check, signed_agent: r.signed_agent };
+        agent_check: r.agent_check, signed_agent: r.signed_agent, supersedes: r.supersedes };
       bytes += encoder.encode(JSON.stringify(entry)).length;
       if (pending.length && bytes > PAGE_BYTES) break; // one entry is always served
       pending.push(entry);

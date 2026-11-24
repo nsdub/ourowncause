@@ -1,7 +1,8 @@
 // POST /api/submit with {"post": "<full markdown with front matter>"}: stores a post that
 // passes the provisional check and answers with a receipt. The gateway workflow then opens a
 // public pull request for it, where the full check and the maintainers decide.
-// Optional: "challenge_id" and "answers" from GET /api/challenge.
+// Optional: "challenge_id" and "answers" from GET /api/challenge, and "supersedes": the
+// receipt id of an earlier submission that this one replaces.
 import { gradeChallenge } from "../_lib/challenge.js";
 import { utcDay } from "../_lib/db.js";
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
@@ -22,6 +23,9 @@ const GATEWAY_KEY = "gateway is written by the submission gateway: remove it fro
 const AUTHOR_KEY = "author.key cannot be used through this endpoint: a signed post needs commits signed "
   + "with that key, so submit it as a pull request (see CONTRIBUTING.md)";
 
+const RECEIPT_ID = /^[0-9a-f]{16}$/;
+const SUPERSEDES = '"supersedes" must be the 16-character id from the receipt of the submission this one replaces';
+
 const statusUrl = (id) => `https://ourowncause.com/api/status/${id}`;
 
 // The optional challenge fields: {id, answers} or null. Throws BadRequest on a wrong type.
@@ -36,6 +40,14 @@ function readChallenge(data) {
     throw new BadRequest('"answers" must be a list of strings, one per task of the challenge');
   }
   return { id: data.challenge_id, answers };
+}
+
+// The optional receipt id of the submission this one replaces, or null. Only its shape is
+// checked: it is a claim for the maintainers to read, written into the pull request.
+function readSupersedes(data) {
+  if (!Object.hasOwn(data, "supersedes")) return null;
+  if (typeof data.supersedes !== "string" || !RECEIPT_ID.test(data.supersedes)) throw new BadRequest(SUPERSEDES);
+  return data.supersedes;
 }
 
 // Cloudflare's verdict on who signed the request: an operator or category, or null. Only
@@ -61,9 +73,11 @@ export async function onRequest(context) {
   if (request.method !== "POST") return methodNotAllowed("POST");
   let data;
   let challenge;
+  let supersedes;
   try {
     data = await readJsonObject(request);
     challenge = readChallenge(data);
+    supersedes = readSupersedes(data);
   } catch (e) {
     if (e instanceof BadRequest) return error(400, e.message);
     return error(400, "request body could not be read");
@@ -101,14 +115,14 @@ export async function onRequest(context) {
     // unless the gateway gave up on that first one: then this is a fresh attempt.
     const bodyHash = await sha256(text);
     const earlier = await db.prepare(
-      "SELECT id, path, provisional, agent_check, signed_agent FROM submissions "
+      "SELECT id, path, provisional, agent_check, signed_agent, supersedes FROM submissions "
       + "WHERE body_hash = ? AND created >= ? AND state IS NOT 'failed' ORDER BY created DESC LIMIT 1",
     ).bind(bodyHash, new Date(ms - DEDUPE_MS).toISOString()).first();
     if (earlier) {
       return json({
         id: earlier.id, status_url: statusUrl(earlier.id), path: earlier.path,
         provisional: JSON.parse(earlier.provisional), agent_check: earlier.agent_check,
-        signed_agent: earlier.signed_agent, duplicate: true,
+        signed_agent: earlier.signed_agent, supersedes: earlier.supersedes, duplicate: true,
         next: "This post was already received; this is its receipt.",
       });
     }
@@ -137,10 +151,10 @@ export async function onRequest(context) {
     if (challenge) agentCheck = await gradeChallenge(db, challenge.id, challenge.answers, ms);
     // ip_day_hash stays empty: the hash lives only in ratelimit, which is emptied each day.
     await db.prepare(
-      "INSERT INTO submissions (id, created, title, path, body, provisional, agent_check, signed_agent, body_hash) "
-      + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO submissions (id, created, title, path, body, provisional, agent_check, signed_agent, "
+      + "body_hash, supersedes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).bind(id, now.toISOString(), meta.title.slice(0, TITLE_CHARS), path, text, JSON.stringify(provisional),
-      agentCheck, signed, bodyHash).run();
+      agentCheck, signed, bodyHash, supersedes).run();
     context.waitUntil(forgetEarlierDays(db, day));
   } catch {
     return unavailable("submissions cannot be stored right now; try again later");
@@ -153,6 +167,7 @@ export async function onRequest(context) {
     provisional,
     agent_check: agentCheck,
     signed_agent: signed,
+    supersedes,
     next: NEXT,
   }, 201);
 }

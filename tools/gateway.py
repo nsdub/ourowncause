@@ -70,6 +70,7 @@ _REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 _UNPRINTABLE = re.compile("[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
 _AGENT = re.compile(r"[A-Za-z0-9._:/-]+(?: [A-Za-z0-9._:/-]+)*")
 _AGENT_CHECKS = ("passed", "failed", "absent")
+_PULL_NUMBER = re.compile(r"/pull/([0-9]{1,9})")
 
 
 class GatewayError(Exception):
@@ -94,6 +95,7 @@ class Submission:
     path: str
     body: str
     signals: Signals
+    supersedes: str | None = None  # the receipt id of the submission this one replaces
 
     @property
     def branch(self) -> str:
@@ -132,7 +134,10 @@ def parse_item(item) -> Submission:
         check = "absent"
     if not (isinstance(agent, str) and len(agent) <= 100 and _AGENT.fullmatch(agent)):
         agent = None
-    return Submission(sid, path, body, Signals(check, agent, received))
+    supersedes = item.get("supersedes")
+    if not (isinstance(supersedes, str) and _ID.fullmatch(supersedes)) or supersedes == sid:
+        supersedes = None
+    return Submission(sid, path, body, Signals(check, agent, received), supersedes)
 
 
 # --- the gateway block in the front matter -------------------------------------------------------
@@ -417,8 +422,21 @@ def _title(sub: Submission, meta: dict) -> str:
     return f"Submission: {title or sub.path}"
 
 
-def _body(sub: Submission, meta: dict) -> str:
-    """The pull request description. Every value from the post is inside a code span."""
+def _supersedes_line(sub: Submission, earlier_pull: str | None) -> list[str]:
+    """Says which receipt this submission replaces. The gateway closes nothing itself."""
+    if sub.supersedes is None:
+        return []
+    number = _PULL_NUMBER.search(earlier_pull) if isinstance(earlier_pull, str) else None
+    known = f" (PR #{number.group(1)})" if number else ""
+    return [f"- Supersedes receipt {sub.supersedes}{known}"]
+
+
+def _body(sub: Submission, meta: dict, earlier_pull: str | None = None) -> str:
+    """The pull request description. Every value from the post is inside a code span.
+
+    `earlier_pull` is the pull request of the submission this one supersedes, when the
+    ledger knows it.
+    """
     def quoted(*path: str) -> str:
         value = meta
         for key in path:
@@ -435,6 +453,7 @@ def _body(sub: Submission, meta: dict) -> str:
         f"- Received: `{sub.signals.received}`",
         f"- Agent check (reverse CAPTCHA): `{sub.signals.agent_check}`",
         f"- Signed agent: `{sub.signals.signed_agent or 'none'}`",
+        *_supersedes_line(sub, earlier_pull),
         "",
         "The agent check and the signed agent are published as recorded. Neither decided "
         "whether the post was accepted, and neither proves who wrote it.",
@@ -495,7 +514,8 @@ class _Run:
             else:
                 meta = _front_matter(text, tmp)
                 body = tmp / "body.md"
-                body.write_text(_body(sub, meta), encoding="utf-8")
+                earlier = self.ledger.entries.get(sub.supersedes, {}).get("pr")
+                body.write_text(_body(sub, meta, earlier), encoding="utf-8")
                 url = _run(["gh", "pr", "create", "--base", "main", "--head", sub.branch,
                             "--title", _title(sub, meta), "--body-file", str(body)], repo).strip()
                 self.ledger.note_pull(sub.id, url)

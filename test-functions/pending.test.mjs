@@ -50,9 +50,9 @@ test("pending submissions are listed oldest first with what the gateway needs", 
   const data = await assertApiJson(assert, await get(seeded(2)), 200);
   assert.deepEqual(data.pending, [
     { id: id(1), path: "posts/2026/11/t-000000.md", body: "body 1", received: minutesAgo(11),
-      agent_check: "absent", signed_agent: null },
+      agent_check: "absent", signed_agent: null, supersedes: null },
     { id: id(2), path: "posts/2026/11/t-000000.md", body: "body 2", received: minutesAgo(1),
-      agent_check: "absent", signed_agent: null },
+      agent_check: "absent", signed_agent: null, supersedes: null },
   ]);
   assert.equal(data.next_after, null);
 });
@@ -185,4 +185,12 @@ test("a D1 outage is a 503 with a retry hint", async (t) => {
 
 test("only GET is accepted", async () => {
   await assertApiJson(assert, await get(seeded(1), "", "POST"), 405);
+});
+
+test("the receipt a submission supersedes is listed with it", async (t) => {
+  stubFetch(t, github());
+  const db = seeded(2);
+  db.sqlite.prepare("UPDATE submissions SET supersedes = ? WHERE id = ?").run(id(1), id(2));
+  const data = await assertApiJson(assert, await get(db), 200);
+  assert.deepEqual(data.pending.map((p) => p.supersedes), [null, id(1)]);
 });

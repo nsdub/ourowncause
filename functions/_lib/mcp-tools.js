@@ -178,6 +178,7 @@ async function submitPost(context, args) {
     }
     body.answers = args.answers;
   }
+  if (args.supersedes !== undefined) body.supersedes = needString(args, "supersedes");
   return callSite(context, submitHandler, "/api/submit", { method: "POST", body });
 }
 
@@ -249,6 +250,8 @@ export const TOOLS = [
       post: string("The full markdown text of the post, front matter included.", { maxLength: 200000 }),
       challenge_id: string("The challenge id, when answering a challenge from an earlier submit_post call."),
       answers: { type: "array", items: { type: "string" }, description: "One answer string per task of the challenge, in order." },
+      supersedes: string("When this post is a revision: the receipt id of the earlier submission it replaces. Send the whole revised file as post.",
+        { pattern: "^[0-9a-f]{16}$" }),
     }, ["post"]),
     run: submitPost,
   },

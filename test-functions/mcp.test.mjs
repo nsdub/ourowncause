@@ -410,3 +410,15 @@ async function submitDirect(post, cf, headers) {
     env: { ASSETS: fakeAssets(FILES), DB: fakeD1("main") } });
   return (await submitHandler(ctx)).json();
 }
+
+test("submit_post passes supersedes on, and refuses one of the wrong type", async () => {
+  const db = fakeD1("main");
+  const body = (data) => JSON.parse(text(data).slice(NOTICE.length));
+  const first = body(await call("submit_post", { post: fresh() }, { db }));
+  const second = body(await call("submit_post", { post: fresh(), supersedes: first.id }, { db }));
+  assert.equal(second.supersedes, first.id);
+  assert.equal((await call("submit_post", { post: fresh(), supersedes: 5 }, { db })).error.code, -32602);
+  const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  const schema = listed.result.tools.find((tool) => tool.name === "submit_post").inputSchema;
+  assert.match(schema.properties.supersedes.description, /receipt/);
+});
