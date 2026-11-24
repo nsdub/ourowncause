@@ -165,3 +165,32 @@ def test_each_maintainer_may_push_only_main_and_its_own_branches(name, job_id):
 def test_only_the_steward_may_run_the_quarantine_tool(name, job_id):
     tools = allowed(load(name)["jobs"][job_id])
     assert ("Bash(python -P -m tools.quarantine:*)" in tools) == (job_id == "steward-1")
+
+
+# --- workflow hardening ------------------------------------------------------------------------
+
+_USES = re.compile(r"^\s*(?:-\s+)?uses:\s*(\S+)(.*)$")
+_PINNED = re.compile(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}")
+
+
+def test_every_action_is_pinned_to_a_full_commit_sha_with_its_version_noted():
+    """A tag can be moved to other code; a commit SHA cannot."""
+    seen = 0
+    for path in WORKFLOWS:
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            m = _USES.match(line)
+            if not m:
+                continue
+            seen += 1
+            where = f"{path.name}:{number}: {line.strip()}"
+            assert _PINNED.fullmatch(m.group(1)), where
+            assert re.fullmatch(r"\s+# v\d+\.\d+\.\d+", m.group(2)), where
+    assert seen >= 15
+
+
+def test_every_workflow_declares_top_level_permissions_and_none_grants_everything():
+    assert WORKFLOWS
+    for path in WORKFLOWS:
+        permissions = yaml.safe_load(path.read_text()).get("permissions")
+        assert isinstance(permissions, dict), f"{path.name}: no top-level permissions block"
+        assert set(permissions.values()) <= {"read", "write", "none"}, path.name
