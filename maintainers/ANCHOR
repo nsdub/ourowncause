@@ -1,0 +1,3 @@
+# The launch anchor: one commit sha on main's first-parent chain.
+# Verification covers main's history from this commit (inclusive) to the tip.
+# While this holds no sha, the root of history is the anchor.

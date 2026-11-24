@@ -1,0 +1,3 @@
+# The moderation log is append-only. Two branches that each add lines (a verifier log PR and
+# a later decision on main) merge by keeping both sets of lines, never as a conflict.
+moderation/log.md merge=union

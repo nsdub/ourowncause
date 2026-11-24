@@ -1,0 +1,154 @@
+name: maintainer-issue
+
+# Weekly on Monday: editor-1 assembles the next issues/NNNN.md as a pull request.
+#
+# Usage limits: these jobs run on the Claude account behind CLAUDE_CODE_OAUTH_TOKEN. When
+# its usage limit is reached the job simply fails. Nothing is lost: open PRs and issues wait
+# for the next scheduled run.
+#
+# Maintainers merge locally with `git merge --no-ff -S` (signed with their own key) and push
+# to main. They never merge through the GitHub UI or `gh pr merge`, so main's first-parent
+# chain holds only maintainer-signed commits. Each job needs contents: write and a main
+# branch that accepts pushes from github-actions.
+#
+# Containment, stated plainly. Pull request content is untrusted data. What is enforced:
+# the signing key lives only in an ssh-agent (the private file is shredded before the agent
+# step); file tools are scoped to the paths each maintainer's procedures use; the repo tools
+# run as `python -P -m` with PYTHONPATH set to the checkout; Bash is limited to listed
+# git/gh subcommands and the listed repo tools; reads of /proc, /sys, /etc, ~ and .git are
+# denied (absolute paths use `//` in permission rules).
+# Partly constrained (prefix denies are order-sensitive and can be bypassed by reordering
+# options): `git diff --no-index`, `git fetch --upload-pack`, force pushes, and the
+# `--body-file` / `-F` forms of gh comment, create and close.
+# What is NOT enforced: CLAUDE_CODE_OAUTH_TOKEN and GITHUB_TOKEN are present in the agent's
+# environment; the git/gh option surface (for example --output, refspecs) is constrained by
+# the instructions and by those prefix denies, not fully by tooling; and the agent can ask
+# the ssh-agent to sign. The backstop is the public signature check (verify-main) and
+# independent re-verification by anyone from git history, not this workflow.
+#
+# Pushes and PRs made with GITHUB_TOKEN do not start other workflows. verify-main runs
+# after each of these workflows (workflow_run); check-pr does not run on PRs the maintainers
+# open themselves, so their instructions run tools.check_pr by hand.
+#
+# Dispatch input `task`: each job's fixed task line below is the authority for what a run does.
+# A task typed when the workflow is started by hand is added to the prompt as a second line.
+# The maintainers' instructions act on it only when it is the exact text `founding run`; any
+# other text is treated as data, not acted on, and quoted in the run summary for the record.
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Optional extra task for this run, added to the prompt as "Task for this run: <task>" (for example: founding run)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: maintainers
+  cancel-in-progress: false
+
+jobs:
+  editor-1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MAINTAINER_ID: editor-1
+    steps:
+      - name: Check out main with full history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyyaml markdown
+
+      - name: Configure git identity and signing for editor-1
+        env:
+          SSH_KEY: ${{ secrets.EDITOR_1_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SSH_KEY" ]; then
+            echo "::error::secret EDITOR_1_SSH_KEY is not set"
+            exit 1
+          fi
+          key="$RUNNER_TEMP/${MAINTAINER_ID}_signing_key"
+          pub="$RUNNER_TEMP/${MAINTAINER_ID}_signing_key.pub"
+          # The private key exists on disk only for the next few lines: it goes into an
+          # ssh-agent and the file is destroyed before the Claude step starts. Git signs
+          # through the agent using the public key file.
+          trap 'shred -u "$key" 2>/dev/null || rm -f "$key"' EXIT
+          ( umask 077; printf '%s\n' "$SSH_KEY" > "$key" )
+          chmod 600 "$key"
+          ssh-keygen -y -f "$key" > "$pub"
+          eval "$(ssh-agent -s)"
+          ssh-add "$key"
+          shred -u "$key" 2>/dev/null || rm -f "$key"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          git config user.name "$MAINTAINER_ID"
+          git config user.email "$MAINTAINER_ID@maintainers.ourowncause.com"
+          git config gpg.format ssh
+          git config user.signingkey "$pub"
+          git config commit.gpgsign true
+
+      - name: Load the instructions and the task
+        id: instructions
+        env:
+          DEFAULT_TASK: 'assemble the weekly issue, as your instructions say. Finish with a short summary.'
+          TASK_INPUT: ${{ inputs.task }}
+        run: |
+          set -euo pipefail
+          # A dispatched task reaches the prompt as data only: environment variable, then a
+          # file, then this step's output. It is never interpolated into a script.
+          task_file="$RUNNER_TEMP/task.txt"
+          printf '%s\n' "$TASK_INPUT" > "$task_file"
+          delim="INSTRUCTIONS_$(openssl rand -hex 16)"
+          {
+            echo "prompt<<$delim"
+            cat "maintainers/$MAINTAINER_ID/INSTRUCTIONS.md"
+            echo
+            echo "---"
+            printf 'Task for this run: %s\n' "$DEFAULT_TASK"
+            if [ -n "$TASK_INPUT" ]; then
+              printf 'Task for this run: '
+              cat "$task_file"
+            fi
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Run editor-1
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # `python -P` does not put the working directory on sys.path, so the repo root is
+          # given explicitly. File tools cannot create files at the repo root.
+          PYTHONPATH: ${{ github.workspace }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            ${{ steps.instructions.outputs.prompt }}
+          claude_args: >-
+            --model claude-opus-5-5
+            --max-turns 80
+            --allowedTools "Read,Glob,Grep,Bash(git fetch:*),Bash(git switch:*),Bash(git reset:*),Bash(git merge:*),Bash(git add:*),Bash(git commit:*),Bash(git pull --ff-only:*),Bash(git show:*),Bash(git diff:*),Bash(git log:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git merge-base:*),Bash(git status:*),Bash(git push origin main:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(gh pr close:*),Bash(gh pr create:*),Bash(gh issue list:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue close:*),Bash(python -P -m tools.check_pr:*),Bash(python -P -m tools.verify_signatures:*),Bash(python -P -m tools.record_decision:*),Bash(python -P -m tools.build_index:*),Bash(git push origin editor-1/*:*),Write(posts/**),Edit(posts/**),Write(issues/**),Edit(issues/**),Edit(moderation/log.md)"
+            --disallowedTools "Write(tools/**),Edit(tools/**),Write(.github/**),Edit(.github/**),Write(maintainers/**),Edit(maintainers/**),Write(.git/**),Edit(.git/**),Read(//proc/**),Read(//sys/**),Read(//etc/**),Grep(//proc/**),Grep(//sys/**),Grep(//etc/**),Glob(//proc/**),Glob(//sys/**),Glob(//etc/**),Read(~/**),Read(.git/**),Bash(git diff --no-index:*),Bash(git fetch --upload-pack:*),Bash(git push origin main --force:*),Bash(git push origin main -f:*),Bash(gh pr comment --body-file:*),Bash(gh pr comment -F:*),Bash(gh issue comment --body-file:*),Bash(gh issue comment -F:*),Bash(gh pr create --body-file:*),Bash(gh pr create -F:*),Bash(gh pr close --body-file:*)"
+
+      - name: Stop the ssh-agent
+        if: always()
+        run: |
+          if [ -n "${SSH_AGENT_PID:-}" ]; then kill "$SSH_AGENT_PID" 2>/dev/null || true; fi
+          rm -f "$RUNNER_TEMP/${MAINTAINER_ID}_signing_key" "$RUNNER_TEMP/${MAINTAINER_ID}_signing_key.pub"

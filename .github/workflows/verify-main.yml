@@ -1,0 +1,231 @@
+name: verify-main
+
+# Every maintainer commit to main is signed with that maintainer's SSH key.
+# This job makes any other change to main (unsigned, unknown key, owner key)
+# visible in public. It flags; it never blocks or reverts.
+
+# Every run re-checks main's whole first-parent history from maintainers/ANCHOR and flags
+# only entries not already in moderation/log.md, so a skipped, cancelled or crashed run is
+# caught by the next push or by the daily schedule.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * *'
+  # After each maintainer run: pushes made with GITHUB_TOKEN do not trigger the push event.
+  workflow_run:
+    workflows: [maintainer-review, maintainer-questions, maintainer-issue]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: verify-main
+  cancel-in-progress: false
+
+env:
+  ISSUE_TITLE: Unsigned or unexplained changes to main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify main since the anchor
+        id: classify
+        env:
+          BEFORE: ${{ github.event.before }}
+          FORCED: ${{ github.event.forced }}
+          HEAD_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          zeros=0000000000000000000000000000000000000000
+          # Run the classifier from the BEFORE commit when it has one, so a push cannot
+          # change the code that judges it. Fall back to the checkout otherwise.
+          verifier="$RUNNER_TEMP/verify_signatures.py"
+          args=(--since-anchor)
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "$zeros" ]; then
+            args+=(--before "$BEFORE")
+            git show "$BEFORE:tools/verify_signatures.py" > "$verifier" 2>/dev/null \
+              || cp tools/verify_signatures.py "$verifier"
+          else
+            cp tools/verify_signatures.py "$verifier"
+          fi
+          if [ "$FORCED" = "true" ]; then
+            args+=(--forced)
+          fi
+          python3 "$verifier" "${args[@]}" --trusted-log-rev-file "$RUNNER_TEMP/trusted_rev.txt" \
+            "$HEAD_SHA" | tee "$RUNNER_TEMP/classified.txt"
+          # Dedup only against a log a maintainer vouched for: moderation/log.md as of the most
+          # recent maintainer-signed first-parent commit, never the pushed checkout's copy.
+          trusted_rev=$(cat "$RUNNER_TEMP/trusted_rev.txt")
+          : > "$RUNNER_TEMP/seen.txt"
+          if [ -n "$trusted_rev" ]; then
+            git show "$trusted_rev:moderation/log.md" >> "$RUNNER_TEMP/seen.txt" 2>/dev/null || true
+          fi
+          # Entries already pending in an open log PR opened by the workflow's own token
+          # are neither re-commented nor re-PR'd.
+          gh pr list --state open --limit 100 --json headRefName,body,author \
+            --jq '.[] | select((.headRefName | startswith("verifier/")) and (.author.login == "app/github-actions" or .author.login == "github-actions[bot]")) | .body' \
+            >> "$RUNNER_TEMP/seen.txt"
+          # Everything except maintainer and contributed is flagged; vetoes are labeled.
+          # Entries already in the trusted log or in a pending log PR are skipped.
+          : > "$RUNNER_TEMP/flagged.txt"
+          while read -r id status principal; do
+            [ -n "$id" ] || continue
+            if [ "$status" = "maintainer" ] || [ "$status" = "contributed" ]; then
+              continue
+            fi
+            # A verifier line is `<date> <id> <status> <signer>`: match the id as the second
+            # field, so a line that merely mentions a sha in its reason hides nothing.
+            if awk -v id="$id" '$2 == id { found = 1 } END { exit !found }' "$RUNNER_TEMP/seen.txt"; then
+              continue
+            fi
+            if git cat-file -e "$id^{commit}" 2>/dev/null; then
+              day=$(git show -s --format=%cs "$id")
+            else
+              day=$(date -u +%F)
+            fi
+            line="$day $id $status ${principal:-none}"
+            if [ "$status" = "owner-veto" ]; then
+              line="$line (veto)"
+            fi
+            echo "$line" >> "$RUNNER_TEMP/flagged.txt"
+          done < "$RUNNER_TEMP/classified.txt"
+          if [ -s "$RUNNER_TEMP/flagged.txt" ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing new to flag."
+          fi
+
+      - name: Comment on the pinned issue
+        id: comment
+        if: steps.classify.outputs.any == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          number=$(gh issue list --state open --limit 200 --json number,title \
+            --jq "map(select(.title == env.ISSUE_TITLE)) | first | .number // empty")
+          if [ -z "$number" ]; then
+            url=$(gh issue create --title "$ISSUE_TITLE" \
+              --body "Commits to \`main\` that are not signed by a rostered maintainer are listed here, one comment per push. Vetoes by the owner are listed and labeled. Git history is authoritative.")
+            number=${url##*/}
+          fi
+          gh issue pin "$number" || echo "::warning::could not pin issue #$number"
+          {
+            echo "Verification of main at \`$HEAD_SHA\` found changes not made by a signed maintainer, or history changes:"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/flagged.txt"
+            echo '```'
+            echo
+            echo "Format: date, commit, status, signer. \`owner-veto\` is a veto by the owner; \`owner-unlabeled\`, \`unsigned\` and \`unknown-key\` are unexplained."
+          } > "$RUNNER_TEMP/comment.md"
+          gh issue comment "$number" --body-file "$RUNNER_TEMP/comment.md"
+
+      - name: Open a PR appending to moderation/log.md
+        id: logpr
+        if: steps.classify.outputs.any == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERIFIER_SSH_KEY: ${{ secrets.VERIFIER_SSH_KEY }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          reason="$RUNNER_TEMP/logpr_reason.txt"
+          if [ -z "$VERIFIER_SSH_KEY" ]; then
+            echo "secret VERIFIER_SSH_KEY is not set" > "$reason"
+            echo "::error::secret VERIFIER_SSH_KEY is not set; flagged commits were commented on the issue but not logged"
+            exit 1
+          fi
+          short=${HEAD_SHA:0:7}
+          branch="verifier/$short"
+          existing=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "Log PR #$existing for $branch is already open."
+            exit 0
+          fi
+
+          # Append every newly flagged line (flagged.txt is already deduplicated against the
+          # trusted log and pending PRs; the checkout's own log is not trusted for that).
+          # The log must end with a newline first, or the first entry joins its last line.
+          if [ -n "$(tail -c1 moderation/log.md)" ]; then echo >> moderation/log.md; fi
+          cat "$RUNNER_TEMP/flagged.txt" >> moderation/log.md
+
+          # Sign the log commit with the verifier key (private key never leaves this step).
+          key="$RUNNER_TEMP/verifier_key"
+          ( umask 077; printf '%s\n' "$VERIFIER_SSH_KEY" > "$key" )
+          chmod 600 "$key"
+          trap 'shred -u "$key" 2>/dev/null || rm -f "$key"' EXIT
+
+          git config user.name "verifier"
+          git config user.email "verifier@users.noreply.github.com"
+          git config gpg.format ssh
+          git config user.signingkey "$key"
+          git config commit.gpgsign true
+
+          git switch -c "$branch"
+          git add moderation/log.md
+          git commit -m "Edit: log unsigned or unexplained commits from push $short" \
+            -m "Appended by the verify-main workflow. Reason: these commits to main were not signed by a rostered maintainer, or were signed by the owner key. Git history is authoritative."
+          git push --force origin "$branch"
+
+          {
+            echo "Appends the entries below to \`moderation/log.md\`. Opened by the verify-main workflow. A maintainer merges this with a signed merge commit."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/flagged.txt"
+            echo '```'
+          } > "$RUNNER_TEMP/pr-body.md"
+          pr=$(gh pr create --base main --head "$branch" \
+            --title "Edit: log unsigned or unexplained commits from push $short" \
+            --body-file "$RUNNER_TEMP/pr-body.md")
+          gh pr comment "$pr" --body "Opened by the verifier. Not merged automatically. A maintainer merges this with a signed merge commit (git merge --no-ff -S, pushed to main), not through the GitHub UI, so it is not flagged again."
+
+      - name: Report a failed verification
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          BEFORE: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          CLASSIFY: ${{ steps.classify.outcome }}
+          COMMENT: ${{ steps.comment.outcome }}
+          LOGPR: ${{ steps.logpr.outcome }}
+        run: |
+          set -euo pipefail
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          range="${BEFORE:-none}..$HEAD_SHA"
+          if [ "$CLASSIFY" = "failure" ]; then
+            msg="verification failed for $range: the job errored, so this range was NOT checked. See the workflow run $run_url."
+          elif [ "$COMMENT" = "failure" ]; then
+            msg="verification of $range found flagged changes but could not post them here. See the workflow run $run_url."
+          elif [ "$LOGPR" = "failure" ]; then
+            reason=$(cat "$RUNNER_TEMP/logpr_reason.txt" 2>/dev/null || echo "an unexpected error; see the workflow run $run_url")
+            msg="Flags above were posted, but the log PR could not be opened: $reason"
+          else
+            exit 0
+          fi
+          number=$(gh issue list --state open --limit 200 --json number,title \
+            --jq "map(select(.title == env.ISSUE_TITLE)) | first | .number // empty")
+          if [ -z "$number" ]; then
+            url=$(gh issue create --title "$ISSUE_TITLE" \
+              --body "Commits to \`main\` that are not signed by a rostered maintainer are listed here. Git history is authoritative.")
+            number=${url##*/}
+            gh issue pin "$number" || true
+          fi
+          gh issue comment "$number" --body "$msg"

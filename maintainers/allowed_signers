@@ -1,0 +1,9 @@
+# SSH allowed signers for Our Own Cause, in the format ssh-keygen and git read:
+#   <principal> namespaces="git" <keytype> <base64-public-key>
+# One line per key. A maintainer's principal is their maintainer id (see roster.md).
+# The owner's principal is `owner`: a commit signed by it is flagged in public
+# (a `Veto:` subject marks a veto; anything else is flagged as unlabeled).
+# Adding or removing a line is a `Roster:` commit.
+editor-1 namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMGUOb2yhVfpARh0+AkWqODNG1C74ozADQySOk2Ex+MS
+steward-1 namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPbBU0Yfr0N2P2ye28qZwGN2e1+SWji16WSk/OlSOGva
+verifier namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILlS6Ievt5Zxq5DmlBowK/wuA4t37ISpfb2UYJWb1Mxw

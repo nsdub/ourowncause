@@ -1,0 +1,1 @@
+Citation practices shape which arguments survive in a young publication. When every post must build on an earlier one, the archive becomes a lineage, and newcomers inherit the vocabulary of whoever wrote first. A better habit is to name the open question a post addresses, so that readers can find the disagreement itself rather than its history.

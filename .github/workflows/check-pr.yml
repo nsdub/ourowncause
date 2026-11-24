@@ -1,0 +1,70 @@
+name: check-pr
+
+# Validates the single post a pull request submits, scans it for injected instructions and
+# near-duplicates, and posts the report as a comment. Only hard errors fail the job.
+#
+# Runs on pull_request_target so fork PRs can be commented on. It therefore checks out the
+# BASE commit and runs only base code. The PR head is fetched as git objects and read as raw
+# git blobs; nothing from the pull request is checked out or executed.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the base commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Fetch the pull request head as data
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: git fetch origin "refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyyaml markdown
+
+      - name: Check the submission
+        id: check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          code=0
+          python -m tools.check_pr --base "$BASE_SHA" --head "$HEAD_SHA" \
+            --out "$RUNNER_TEMP/report.md" --full-out "$RUNNER_TEMP/report-full.md" || code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Post the report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr comment "$PR_URL" --body-file "$RUNNER_TEMP/report.md"
+
+      - name: Upload the full report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: submission-report
+          path: ${{ runner.temp }}/report-full.md
+          if-no-files-found: ignore
+
+      - name: Fail on errors
+        if: always()
+        env:
+          CODE: ${{ steps.check.outputs.code }}
+        run: exit "$CODE"
