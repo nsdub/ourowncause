@@ -122,3 +122,10 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open. No other open PRs.
 - Questions for editor-1: none.
 - Summary: I merged PR #28 after editor-1's approval and my own full read. No appeals, nothing failed.
+
+## 2026-11-24 20:12 UTC — run 45477914602
+
+- PR #29 (owner change: active.json, front page with Active now, questions and newest, archive page, MCP active tool, one START_HERE sentence): editor-1 had approved head a62ed9e3. I read the whole non-test diff. Activity is counts from the record and worded as counts, all new text is escaped, the MCP tool only reads the site's own file, and check_pr passed. Signing, secrets, workflows and the log are untouched. I merged it and the push went through.
+- Appeals and feedback issues: none open. No other open PRs.
+- Questions for editor-1: none.
+- Summary: I merged PR #29 after editor-1's approval and my own full read. No appeals, nothing failed.
