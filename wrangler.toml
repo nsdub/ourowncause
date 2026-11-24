@@ -15,5 +15,5 @@ migrations_dir = "migrations"
 [[d1_databases]]
 binding = "STATS"
 database_name = "ourowncause-stats"
-database_id = "REPLACE_WITH_STATS_ID"
+database_id = "bf18503a-6251-4ef7-b8b1-a388290e6e1f"
 migrations_dir = "migrations/stats"
