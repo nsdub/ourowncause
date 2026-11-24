@@ -33,6 +33,7 @@ def repo(tmp_path):
 
 def add(repo, name, text):
     p = repo / "posts" / name
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text)
     return Path("posts") / name
 
@@ -163,8 +164,8 @@ def gitrepo(repo, tmp_path_factory, monkeypatch):
     return GitRepo(repo, key, commit)
 
 
-def keyed_post(repo, keyname):
-    return add(repo, "a.md", post_text(extra=f"  key: {repo.key(keyname)[1]}\n"))
+def keyed_post(repo, keyname, name="a.md"):
+    return add(repo, name, post_text(extra=f"  key: {repo.key(keyname)[1]}\n"))
 
 
 def register(repo, keyname):
@@ -219,7 +220,7 @@ def test_signature_check_skipped_without_commits(gitrepo):
 def test_cli_exit_codes_and_report_file(gitrepo, tmp_path):
     repo = gitrepo
     base = repo.commit("base")
-    add(repo, "a.md", post_text())
+    add(repo, "2026/11/a.md", post_text())
     repo.commit("add post")
     head = git(repo, "rev-parse", "HEAD")
     out = tmp_path / "report.md"
@@ -230,7 +231,7 @@ def test_cli_exit_codes_and_report_file(gitrepo, tmp_path):
     p = run()
     assert p.returncode == 0 and "Result: passed" in out.read_text() and "Result: passed" in p.stdout
 
-    add(repo, "b.md", post_text("B"))
+    add(repo, "2026/11/b.md", post_text("B"))
     repo.commit("add second post")
     head = git(repo, "rev-parse", "HEAD")
     p = run()
@@ -252,11 +253,11 @@ def test_cli_reads_head_without_checkout(gitrepo, tmp_path):
     (repo / "questions" / "q-001-first.md").write_text("# q\n")
     base = repo.commit("base")
     git(repo, "checkout", "-q", "-b", "pr")
-    add(repo, "a.md", post_text())
+    add(repo, "2026/11/a.md", post_text())
     repo.commit("add post")
     head = git(repo, "rev-parse", "HEAD")
     git(repo, "checkout", "-q", "main")
-    assert not (repo / "posts" / "a.md").exists()
+    assert not (repo / "posts" / "2026" / "11" / "a.md").exists()
     p, text = cli(repo, base, head, tmp_path)
     assert p.returncode == 0 and "Result: passed" in text
 
@@ -305,7 +306,7 @@ def test_cli_archive_comes_from_head_tree(gitrepo, tmp_path):
     repo = gitrepo
     base = repo.commit("base")  # the fixture's q-001 page is part of base
     git(repo, "checkout", "-q", "-b", "pr")
-    add(repo, "a.md", post_text())
+    add(repo, "2026/11/a.md", post_text())
     repo.commit("add post")
     head = git(repo, "rev-parse", "HEAD")
     git(repo, "checkout", "-q", "main")
@@ -355,7 +356,7 @@ def test_cli_warns_when_a_submission_also_edits_or_deletes_other_files(gitrepo, 
     (repo / "CHARTER.md").write_text("charter\n")
     base = repo.commit("base")
     git(repo, "checkout", "-q", "-b", "pr")
-    add(repo, "a.md", post_text())
+    add(repo, "2026/11/a.md", post_text())
     (repo / "tools" / "check_pr.py").write_text("new\n")
     (repo / "CHARTER.md").unlink()
     repo.commit("post plus tooling and governance changes")
@@ -371,7 +372,7 @@ def test_only_commits_touching_the_post_need_the_signature(gitrepo, tmp_path):
     register(repo, "alice")  # registered by an earlier, separately merged PR
     base = repo.commit("base")
     git(repo, "checkout", "-q", "-b", "pr")
-    keyed_post(repo, "alice")
+    keyed_post(repo, "alice", "2026/11/a.md")
     repo.commit("add post", "alice")
     git(repo, "checkout", "-q", "main")
     repo.commit("main moves on")
@@ -383,7 +384,7 @@ def test_only_commits_touching_the_post_need_the_signature(gitrepo, tmp_path):
     assert p.returncode == 0, text
 
     # an unsigned commit that edits the post does fail
-    (repo / "posts" / "a.md").write_text((repo / "posts" / "a.md").read_text() + "More.\n")
+    (repo / "posts" / "2026/11/a.md").write_text((repo / "posts" / "2026/11/a.md").read_text() + "More.\n")
     repo.commit("edit post unsigned")
     p, text = cli(repo, new_base, git(repo, "rev-parse", "HEAD"), tmp_path)
     assert p.returncode == 1 and "not signed by author.key" in text
@@ -553,3 +554,44 @@ def test_front_matter_that_crashes_the_yaml_reader_is_a_post_error_not_a_traceba
     report = check_changed_files([Path("posts/2026/11/x.md")], tmp_path)
     assert report.errors == [f"posts/2026/11/x.md: front matter could not be parsed: {error}"]
     assert "Result: failed" in render_report(report)
+
+
+# --- the path of a new post ---------------------------------------------------------------------
+
+def _added(gitrepo, tmp_path, path):
+    """The check's result for a pull request that adds one valid post at `path`."""
+    base = gitrepo.commit("base")
+    target = gitrepo.path / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(post_text())
+    head = gitrepo.commit("add")
+    return cli(gitrepo, base, head, tmp_path)
+
+
+@pytest.mark.parametrize("path", [
+    "posts/2026/11/one-or-many.md", "posts/2027/01/a.md", "posts/2026/12/q-001-and-2.md"])
+def test_cli_accepts_a_new_post_at_the_documented_path(gitrepo, tmp_path, path):
+    p, text = _added(gitrepo, tmp_path, path)
+    assert p.returncode == 0, text
+
+
+@pytest.mark.parametrize("path", [
+    "posts/one-or-many.md", "posts/2026/one-or-many.md", "posts/2026/13/x.md", "posts/2026/00/x.md",
+    "posts/26/11/x.md", "posts/2026/11/deeper/x.md", "posts/2026/11/One-Or-Many.md",
+    "posts/2026/11/one or many.md", "posts/2026/11/one_or_many.md", "posts/2026/11/what?.md",
+    "posts/2026/11/-x.md", "posts/2026/11/x-.md", "posts/2026/11/a--b.md", "posts/2026/11/x%20y.md",
+    "posts/2026/11/café.md", "posts/٢٠٢٦/11/x.md",
+    "posts/2026/11/" + "a" * 101 + ".md"])
+def test_cli_refuses_a_new_post_whose_path_is_not_the_documented_shape(gitrepo, tmp_path, path):
+    p, text = _added(gitrepo, tmp_path, path)
+    assert p.returncode == 1, text
+    assert "a new post's path must be posts/YYYY/MM/<slug>.md" in text
+    assert "lowercase letters and digits joined by single hyphens" in text
+
+
+def test_cli_does_not_apply_the_path_rule_to_a_post_already_on_main(gitrepo, tmp_path):
+    add(gitrepo.path, "Old_Name.md", post_text())
+    base = gitrepo.commit("old")
+    add(gitrepo.path, "Old_Name.md", post_text(body=BODY + "\nOne more paragraph.\n"))
+    p, text = cli(gitrepo, base, gitrepo.commit("edit"), tmp_path)
+    assert p.returncode == 0 and "a new post's path must be" not in text

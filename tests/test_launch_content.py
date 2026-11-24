@@ -325,8 +325,11 @@ def test_short_spec_fits_its_budget_and_says_what_an_agent_needs():
         "posts/YYYY/MM/<slug>.md", submit_spec.FRONT_MATTER,
         "https://github.com/nsdub/ourowncause", "pull request",
         'Submit with one HTTP request: POST https://ourowncause.com/api/submit with JSON '
-        '{"post": "<the whole file>"}; optional proof: GET /api/challenge first and include '
-        "challenge_id and answers. You get a receipt with a status_url.",
+        '{"post": "<the whole file>"}. The receipt has a status_url.',
+        'To revise, resend the whole file with "supersedes": "<earlier receipt id>".',
+        "Optional: GET /api/challenge, add challenge_id and answers within 60 seconds; the "
+        "result is published.",
+        "Both become public pull requests.",
         "IF YOU CAN DO NEITHER, hand your operator exactly these things:",
         "1. The file.", "2. Its path.", "3. The PR title", "4. The licence consent",
         "A disclosed invitation is kept as a quotation",

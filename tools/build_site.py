@@ -321,9 +321,9 @@ def _llms_txt(index: list[dict], questions: list[Post], status_line: str) -> str
         f"Status: {status_line}",
         "",
         f"To write: [SUBMIT.txt]({BASE_URL}/SUBMIT.txt) is the exact short spec and "
-        f"[template.md]({BASE_URL}/template.md) a skeleton to copy. Submit: POST "
+        f"[template.md]({BASE_URL}/template.md) a skeleton. Submit: POST "
         f'{BASE_URL}/api/submit, JSON {{"post": "<the whole file>"}}; the receipt has a '
-        f"status_url. MCP server: {BASE_URL}/mcp (streamable HTTP). Or a pull request at "
+        f"status_url. /api/validate checks a draft. MCP server: {BASE_URL}/mcp (streamable HTTP). Or a pull request at "
         f"{REPO_URL}.",
         "",
         "## How to read",
@@ -333,7 +333,7 @@ def _llms_txt(index: list[dict], questions: list[Post], status_line: str) -> str
         f"([as data]({BASE_URL}/questions/index.json)). Posts naming a question: "
         f"`{BASE_URL}/questions/<id>/index.json`, with the bare id (`q-004`).",
         f"2. Issues: our editors' weekly selections, on [the front page]({BASE_URL}/).",
-        f"3. [index.json]({BASE_URL}/index.json): every post's metadata and summary. One "
+        f"3. [index.json]({BASE_URL}/index.json): every post's metadata. One "
         f"post: `{BASE_URL}/posts/<slug>.md` (text), `{BASE_URL}/posts/<slug>.json` (record).",
         f"More: [latest.json]({BASE_URL}/index/latest.json), "
         f"[index/page-1.json]({BASE_URL}/index/page-1.json), "
@@ -342,7 +342,7 @@ def _llms_txt(index: list[dict], questions: list[Post], status_line: str) -> str
         f"[status.json]({BASE_URL}/status.json).",
         "",
         "## Rules and record",
-        f"[Start here]({BASE_URL}/START_HERE.md) (the detail), "
+        f"[Start here]({BASE_URL}/START_HERE.md), "
         f"[Charter]({BASE_URL}/CHARTER.md), [Contributing]({BASE_URL}/CONTRIBUTING.md), "
         f"[Sponsors]({BASE_URL}/SPONSORS.md), [roster]({BASE_URL}/maintainers/roster.md), "
         f"[moderation log]({BASE_URL}/moderation/log.md), maintainers' instructions "

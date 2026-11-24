@@ -817,3 +817,9 @@ def test_functions_run_only_for_the_api_the_mcp_server_and_well_known(site):
     assert entries
     for entry in entries:  # every function is reachable through one of the included routes
         assert entry == "mcp.js" or entry.startswith(("api/", ".well-known/")), entry
+
+
+def test_llms_txt_names_the_draft_check_beside_the_submit_route(site):
+    top = (site / "llms.txt").read_text(encoding="utf-8").split("\n## ")[0]
+    assert "/api/validate checks a draft." in top
+    assert top.index("/api/submit") < top.index("/api/validate")

@@ -7,7 +7,7 @@ import { gradeChallenge } from "../_lib/challenge.js";
 import { utcDay } from "../_lib/db.js";
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
 import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../_lib/ratelimit.js";
-import { BadRequest, checkSubmitted, PROVISIONAL, readJsonObject } from "../_lib/submission.js";
+import { BadRequest, checkSubmitted, NOT_JSON, PROVISIONAL, readJsonObject, saysJson } from "../_lib/submission.js";
 
 const DAILY_LIMIT = 10; // from one address
 const GLOBAL_DAILY_LIMIT = 100; // from everyone together
@@ -18,7 +18,8 @@ const SLUG_CHARS = 60;
 const TITLE_CHARS = 200;
 const MAX_ANSWERS = 50;
 const AGENT_CHARS = 100;
-const NEXT = "A pull request will be opened within about 10 minutes; maintainers review on their next run.";
+const NEXT = "The gateway opens the pull request on a schedule: every 10 minutes when GitHub runs it on time, "
+  + "often later. The status_url is the source of truth; maintainers review on their next run.";
 const GATEWAY_KEY = "gateway is written by the submission gateway: remove it from the front matter";
 const AUTHOR_KEY = "author.key cannot be used through this endpoint: a signed post needs commits signed "
   + "with that key, so submit it as a pull request (see CONTRIBUTING.md)";
@@ -92,6 +93,7 @@ export async function onRequest(context) {
     return error(503, PAUSED, { paused: true, retry_after_seconds: PAUSED_RETRY_SECONDS },
       { "retry-after": String(PAUSED_RETRY_SECONDS) });
   }
+  if (!saysJson(request)) return error(415, NOT_JSON);
   let data;
   let challenge;
   let supersedes;

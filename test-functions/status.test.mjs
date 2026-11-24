@@ -43,7 +43,8 @@ test("before a pull request exists the state is queued", async (t) => {
   assert.deepEqual(data.provisional, PROVISIONAL);
   assert.equal(data.path, "posts/2026/11/t-012345.md");
   assert.equal(data.agent_check, "passed");
-  assert.match(data.note, /within about 10 minutes/);
+  assert.match(data.note, /on a schedule: every 10 minutes when GitHub runs it on time, often later/);
+  assert.doesNotMatch(data.note, /within about/);
 });
 
 test("each pull request state is reported: open, merged, closed", async (t) => {

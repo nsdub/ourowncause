@@ -11,7 +11,8 @@ const CHECK_HEADING = "## Our Own Cause — submission check";
 const CHECK_CHARS = 20_000;
 const DECISION_CHARS = 5_000;
 const MAX_DECISIONS = 20;
-const QUEUED = "No pull request yet. The gateway opens one within about 10 minutes of a submission.";
+const QUEUED = "No pull request yet. The gateway opens one on a schedule: every 10 minutes when GitHub runs it "
+  + "on time, often later. This page is the source of truth.";
 const NOT_PUBLIC = `${QUEUED} The repository's pull requests are not public yet, so this page cannot `
   + "see one until they are.";
 const UNREADABLE = "GitHub could not be read just now, so this is the last known state. Try again in a few minutes.";

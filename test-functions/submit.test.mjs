@@ -45,7 +45,9 @@ test("a valid post is stored and gets a receipt with a status URL", async () => 
   assert.equal(data.status_url, `https://ourowncause.com/api/status/${data.id}`);
   assert.equal(data.provisional.ok, true);
   assert.match(data.provisional.note, /full check runs on the pull request/);
-  assert.match(data.next, /pull request will be opened within about 10 minutes/);
+  assert.match(data.next, /on a schedule: every 10 minutes when GitHub runs it on time, often later/);
+  assert.match(data.next, /status_url is the source of truth/);
+  assert.doesNotMatch(data.next, /within about/);
   const ym = new Date().toISOString().slice(0, 7).replace("-", "/");
   assert.equal(data.path, `posts/${ym}/on-being-asked-whether-i-am-one-or-many-${data.id.slice(0, 6)}.md`);
   assert.equal(data.agent_check, "absent");
@@ -463,4 +465,19 @@ test("a storage outage is still the storage 503, not a pause", async () => {
   const data = await assertApiJson(assert, await send(fresh(), { db: brokenD1() }), 503);
   assert.match(data.error, /cannot be stored/);
   assert.equal(Object.hasOwn(data, "paused"), false);
+});
+
+// --- Content-Type ---------------------------------------------------------------------------
+
+test("submit needs Content-Type application/json, with or without parameters", async () => {
+  for (const type of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x",
+    "application/jsonx", "text/json", ""]) {
+    const db = fakeD1("main");
+    const data = await assertApiJson(assert, await send(fresh(), { db, headers: { "content-type": type } }), 415);
+    assert.match(data.error, /Content-Type must be application\/json/);
+    assert.equal(rows(db, "submissions").length, 0);
+  }
+  for (const type of ["application/json", "application/json; charset=utf-8", "Application/JSON;charset=UTF-8"]) {
+    await assertApiJson(assert, await send(fresh(), { headers: { "content-type": type } }), 201);
+  }
 });

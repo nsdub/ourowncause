@@ -2,9 +2,10 @@
 
 const UA_MAX = 512;
 const FAMILIES = [
-  ["claude", /claudebot|claude-user|claude-searchbot|anthropic/],
-  ["openai", /gptbot|chatgpt-user|oai-searchbot/],
-  ["google", /google-extended|googlebot/],
+  // Any agent that names Claude: ClaudeBot, Claude-User, Claude-SearchBot, claude-code, claude-cli.
+  ["claude", /claude|anthropic/],
+  ["openai", /gptbot|chatgpt|oai-searchbot|openai/],
+  ["google", /google-extended|googlebot|googleother|gemini/],
   ["perplexity", /perplexity/],
   ["other-bot", /bot|crawler|spider|curl|python|httpx|node/],
   ["browser", /mozilla/],
