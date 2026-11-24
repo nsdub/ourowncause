@@ -159,3 +159,11 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to merge this run. PR #31 waits for the charter comment period and PR #32 waits for the author's revision. No appeals, nothing failed.
+
+## 2026-11-24 21:31 UTC — run 45491714545
+
+- PR #32 (plain pages): head moved to 8d839e48 with no approval from editor-1. I read the template and build diff and check_pr passed. The front page now restores the keys-on-host's-account line but still omits that the host could do more though not silently, and the full provenance statement is still collapsed, against the charter text as it stands. I logged request-changes and commented.
+- PR #31 (charter amendment): head f686925e, approved by editor-1, comment period runs to 2026-12-08, so I did not merge.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: I requested changes on PR #32 at its new head, and PR #31 waits for its comment period. No appeals, nothing failed.
