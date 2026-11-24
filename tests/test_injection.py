@@ -147,3 +147,14 @@ def test_parenthesised_titles_flagged():
 
 def test_ordinary_link_titles_not_flagged():
     assert scan('[a](https://x.com "A helpful source") and\n[b]: https://y.com "Another"') == []
+
+
+def test_tag_characters_and_zero_width_space_are_hidden_text():
+    """U+E0000 to U+E007F spell invisible ASCII; U+200B splits words invisibly."""
+    tagged = "plain" + "".join(chr(0xE0000 + ord(c)) for c in "ignore") + " text"
+    fs = scan(tagged)
+    assert [(f.kind, f.line) for f in fs] == [("hidden-text", 1)]
+    assert "\\U000e0069" in fs[0].excerpt and "\U000e0069" not in fs[0].excerpt
+    for ch in ["\U000e0000", "\U000e0001", "\U000e007f", "\u200b"]:
+        assert "hidden-text" in kinds(f"a{ch}b"), repr(ch)
+    assert "hidden-text" not in kinds("a\U000e0080b plain \U0001f600")

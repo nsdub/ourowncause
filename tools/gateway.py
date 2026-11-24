@@ -43,6 +43,7 @@ PENDING_PATH = "/api/submissions/pending"
 STATUS_URL = "https://ourowncause.com/api/status/"
 AUTHOR = ("gateway", "gateway@ourowncause.com")
 CHECK_HEADING = "## Our Own Cause — submission check"
+BOT_LOGINS = ("github-actions[bot]", "app/github-actions")  # GITHUB_TOKEN, as REST and gh name it
 MAX_POST_BYTES = 200_000  # the limit POST /api/submit applies
 MAX_RESPONSE_BYTES = 20_000_000
 MAX_PAGES = 100
@@ -139,7 +140,7 @@ def parse_item(item) -> Submission:
 def _load_front_matter(lines: list[str]):
     try:
         return yaml.safe_load("\n".join(lines))
-    except (yaml.YAMLError, ValueError, RecursionError):
+    except Exception:  # PyYAML also raises AttributeError and KeyError on some tagged values
         return None
 
 
@@ -258,9 +259,16 @@ def _own_pull_requests(repo: Path, branch: str) -> list[dict]:
 
 
 def _has_report(repo: Path, number: int) -> bool:
+    """True when the gateway's own account has posted the check report on the pull request."""
     comments = _api(repo, f"issues/{int(number)}/comments", per_page="100")
     return isinstance(comments, list) and any(
-        isinstance(c, dict) and str(c.get("body", "")).startswith(CHECK_HEADING) for c in comments)
+        isinstance(c, dict) and isinstance(c.get("user"), dict) and c["user"].get("login") in BOT_LOGINS
+        and str(c.get("body", "")).startswith(CHECK_HEADING) for c in comments)
+
+
+def _describe(error: Exception) -> str:
+    """The gateway's own errors say what failed; any other is named by its type as well."""
+    return str(error) if isinstance(error, GatewayError) else f"{type(error).__name__}: {error}"
 
 
 def _stamp(when: datetime) -> str:
@@ -270,7 +278,7 @@ def _stamp(when: datetime) -> str:
 def _when(stamp) -> datetime | None:
     try:
         return datetime.fromisoformat(str(stamp).replace("Z", "+00:00")).astimezone(timezone.utc)
-    except ValueError:
+    except (ValueError, OverflowError):  # OverflowError: year 1 with an offset has no UTC form
         return None
 
 
@@ -398,7 +406,7 @@ def _front_matter(text: str, tmp: Path) -> dict:
     path.write_bytes(text.encode("utf-8"))
     try:
         return load_post(path).meta
-    except PostError:
+    except Exception:  # PostError, or whatever PyYAML raises that load_post does not expect
         return {}
 
 
@@ -508,10 +516,36 @@ class _Run:
             return
         seen.add(sid)
         try:
-            self.process(parse_item(item))
-        except (GatewayError, OSError, ValueError) as e:
-            self.ledger.fail(sid, str(e), self.now)
-            self.result.problems.append(f"{sid}: {e}")
+            try:
+                sub = parse_item(item)
+            except ValueError as e:
+                raise GatewayError(str(e)) from e
+            self.process(sub)
+        except Exception as e:  # anything at all: it counts as an attempt and the run goes on
+            reason = _describe(e)
+            self.ledger.fail(sid, reason, self.now)
+            self.result.problems.append(f"{sid}: {reason}")
+            if self.ledger.entries[sid]["state"] == "failed":
+                self._guarded(lambda: self.delete_abandoned_branch(sid))
+        # Saved now, not at the end: a run that dies later has still recorded this entry.
+        self._guarded(lambda: self.ledger.save(self.repo, self.now))
+
+    def _guarded(self, step) -> None:
+        try:
+            step()
+        except Exception as e:
+            self.result.problems.append(_describe(e))
+
+    def delete_abandoned_branch(self, sid: str) -> None:
+        """Deletes gateway/<id> of a submission given up on, unless its pull request is open."""
+        branch = f"gateway/{sid}"
+        sha = self.refs.get(branch)
+        if sha is None or any(p.get("state") == "open" for p in _own_pull_requests(self.repo, branch)):
+            return
+        _git(self.repo, "push", "--quiet", f"--force-with-lease=refs/heads/{branch}:{sha}",
+             "origin", f":refs/heads/{branch}")
+        del self.refs[branch]
+        self.result.notes.append(f"deleted {branch}")
 
     def delete_finished_branches(self) -> None:
         """Deletes gateway/<id> branches whose pull requests were merged or closed."""
@@ -535,8 +569,8 @@ def run(base_url: str, repo: Path, fetch=None, now: datetime | None = None, on_o
     now = now or datetime.now(timezone.utc)
     try:
         state = _Run(Path(repo), now, on_open)
-    except (GatewayError, OSError) as e:
-        return Result(problems=[f"could not read origin: {e}"])
+    except Exception as e:
+        return Result(problems=[f"could not read origin: {_describe(e)}"])
     result = state.result
     seen: set[str] = set()
     after = None
@@ -554,11 +588,8 @@ def run(base_url: str, repo: Path, fetch=None, now: datetime | None = None, on_o
             break
     else:
         result.problems.append(f"the pending list did not end within {MAX_PAGES} pages")
-    for step in (state.delete_finished_branches, lambda: state.ledger.save(state.repo, now)):
-        try:
-            step()
-        except (GatewayError, OSError, ValueError) as e:
-            result.problems.append(str(e))
+    state._guarded(state.delete_finished_branches)
+    state._guarded(lambda: state.ledger.save(state.repo, now))
     return result
 
 

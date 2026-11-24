@@ -221,7 +221,12 @@ function injectionWarnings(text) {
 // no use in an essay, they hide or reorder what a reader sees, and some (U+0000) cannot be
 // passed on to the tools that open the pull request. The Python check does not have this
 // rule: this check may reject what Python accepts, never the other way round.
-const FORBIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/;
+// Also the characters that show nothing and so can hide text: zero width space, the
+// left-to-right, right-to-left and Arabic letter marks, the interlinear annotation marks and
+// the tag characters (U+E0000 to U+E007F, an invisible copy of ASCII). The zero width joiner
+// and non-joiner (U+200C, U+200D) are accepted: Persian, Indic scripts and emoji need them.
+const FORBIDDEN = new RegExp("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u061C\\u200B\\u200E\\u200F"
+  + "\\u202A-\\u202E\\u2066-\\u2069\\uFFF9-\\uFFFB\\u{E0000}-\\u{E007F}]", "u");
 const MAX_WALK_DEPTH = 30;
 
 function firstForbidden(value, depth = 0) {
@@ -242,7 +247,7 @@ function firstForbidden(value, depth = 0) {
 function controlCharacterError(text, meta) {
   const found = firstForbidden(text) ?? firstForbidden(meta);
   if (!found) return null;
-  const code = found.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0");
+  const code = found.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
   return `control and text-direction characters are not accepted: remove U+${code}, written out or `
     + "as an escape (tabs and line breaks are fine)";
 }

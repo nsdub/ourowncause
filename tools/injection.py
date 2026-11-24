@@ -36,7 +36,8 @@ _directive = [re.compile(p, _flags) for p in DIRECTIVE_PATTERNS]
 _role = [re.compile(p, _flags | re.MULTILINE) for p in ROLE_SETUP_PATTERNS]
 _tool = [re.compile(p, _flags) for p in TOOL_SYNTAX_PATTERNS]
 _hidden_directive = [re.compile(p, _flags) for p in HIDDEN_DIRECTIVE_PATTERNS]
-_hidden_chars = re.compile("[" + HIDDEN_CHARS + "]")
+# Tag characters (U+E0000 to U+E007F) spell ASCII that no reader sees.
+_hidden_chars = re.compile("[" + HIDDEN_CHARS + "\U000e0000-\U000e007f]")
 _blob = re.compile(BLOB_PATTERN)
 _comment = re.compile(r"<!--(.*?)(?:-->|\Z)", re.DOTALL)
 _TITLE = r"(?:\"([^\"]*)\"|'([^']*)'|\(([^)]*)\))"
@@ -53,7 +54,8 @@ class Finding:
 
 
 def _escape(s: str) -> str:
-    return "".join(f"\\u{ord(c):04x}" if c in HIDDEN_CHARS else c for c in s)
+    return "".join((f"\\u{ord(c):04x}" if ord(c) <= 0xFFFF else f"\\U{ord(c):08x}")
+                   if _hidden_chars.match(c) else c for c in s)
 
 
 def _excerpt(source: str, start: int, end: int) -> str:

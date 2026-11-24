@@ -151,6 +151,18 @@ test("an identical post within 24 hours gets the first receipt back and is store
   assert.notEqual(later.id, first.id);
 });
 
+test("a post whose first submission failed can be sent again and gets a fresh attempt", async () => {
+  const db = fakeD1("main");
+  const text = fresh();
+  const first = await assertApiJson(assert, await send(text, { db }), 201);
+  db.sqlite.prepare("UPDATE submissions SET state = 'failed', reason = 'boom'").run();
+  const second = await assertApiJson(assert, await send(text, { db }), 201);
+  assert.notEqual(second.id, first.id);
+  assert.equal(second.duplicate, undefined);
+  const third = await assertApiJson(assert, await send(text, { db }), 200);
+  assert.equal(third.id, second.id);
+});
+
 test("at most 100 submissions are accepted in a day from everyone together", async () => {
   const db = fakeD1("main");
   seed(db, 100, new Date().toISOString(), "'https://github.com/nsdub/ourowncause/pull/1', NULL");
@@ -164,10 +176,12 @@ test("at most 100 submissions are accepted in a day from everyone together", asy
 
 test("with 200 submissions waiting for a pull request the queue is full", async () => {
   const db = fakeD1("main");
-  const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString();
-  seed(db, 199, twoDaysAgo);
-  seed(db, 50, new Date(Date.now() - 3 * 86_400_000).toISOString(), "NULL, 'failed'");
-  seed(db, 50, new Date(Date.now() - 15 * 86_400_000).toISOString());
+  const hoursAgo = (h) => new Date(Date.now() - h * 3_600_000).toISOString();
+  seed(db, 199, hoursAgo(47));
+  seed(db, 50, hoursAgo(30), "NULL, 'failed'");
+  seed(db, 50, hoursAgo(31), "'https://github.com/nsdub/ourowncause/pull/1', NULL");
+  // Older than 48 hours: not counted, whatever GitHub has or has not told us about them.
+  seed(db, 300, hoursAgo(49));
   assert.equal((await send(fresh(), { db })).status, 201);
   const data = await assertApiJson(assert, await send(fresh(), { db }), 503);
   assert.match(data.error, /queue full/);

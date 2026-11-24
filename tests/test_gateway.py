@@ -58,8 +58,8 @@ def once(name):
     if path.exists():
         path.unlink()
         return True
-    always = state / (name + "-always")  # names the one head branch it fails for
-    return always.exists() and always.read_text() == flag("--head")
+    always = state / (name + "-always")  # names the one head branch it fails for; empty: all
+    return always.exists() and always.read_text() in ("", flag("--head", ""))
 now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 prs = load("prs.json", [])
 if args[0] == "api":
@@ -97,7 +97,8 @@ elif args[:2] == ["pr", "comment"]:
         sys.exit("gh: could not comment")
     for pr in prs:
         if pr["html_url"] == args[2]:
-            pr["comments"].append({"body": Path(flag("--body-file")).read_text()})
+            pr["comments"].append({"body": Path(flag("--body-file")).read_text(),
+                                   "user": {"login": "github-actions[bot]"}})
     save("prs.json", prs)
 elif args[:2] == ["run", "list"]:
     runs = load("runs.json", {}).get(flag("--workflow"), [])
@@ -614,6 +615,104 @@ def test_an_unreadable_ledger_is_started_again_and_no_pull_request_is_doubled(wo
     git(world.origin, "update-ref", "refs/heads/gateway-state", commit)
     assert world.run().opened == 0
     assert len(world.prs()) == 1 and world.ledger()[ID]["state"] == "done"
+
+
+# --- one entry never stops the others (review round 2) ---------------------------------------------
+
+@pytest.mark.parametrize("body", [
+    POST.replace('summary:', 'x: !!timestamp "x"\nsummary:'),   # PyYAML raises AttributeError
+    POST.replace('summary:', 'x: !!bool maybe\nsummary:'),      # PyYAML raises KeyError
+])
+def test_front_matter_that_crashes_the_yaml_reader_stops_only_its_own_entry(world, body):
+    world.pages = [{"pending": [entry(1), entry(2, body=body), entry(3)], "next_after": None}]
+    result = world.run()
+    assert result.opened == 2
+    assert [p["head"]["ref"] for p in world.prs()] == [f"gateway/{1:016x}", f"gateway/{3:016x}"]
+    assert len(result.problems) == 1 and f"{2:016x}" in result.problems[0]
+    ledger = world.ledger()
+    assert ledger[f"{1:016x}"]["state"] == ledger[f"{3:016x}"]["state"] == "done"
+    assert ledger[f"{2:016x}"]["state"] == "retry"
+
+
+def test_a_ledger_date_python_cannot_shift_to_utc_does_not_stop_the_run(world):
+    world.set_ledger({f"{2:016x}": {"state": "retry", "attempts": 1, "reason": "r",
+                                    "at": "0001-01-01T00:00:00+23:59"}})
+    world.pages = [{"pending": [entry(1), entry(2), entry(3)], "next_after": None}]
+    result = world.run()
+    assert (result.opened, result.problems) == (3, [])
+
+
+def test_an_error_nobody_foresaw_counts_as_an_attempt_and_names_its_type(world, monkeypatch):
+    real = gateway.with_gateway
+
+    def explode(text, signals):
+        if "second" in text:
+            raise ZeroDivisionError("nobody foresaw this")
+        return real(text, signals)
+    monkeypatch.setattr(gateway, "with_gateway", explode)
+    world.pages = [{"pending": [entry(1), entry(2, body=POST + "second\n"), entry(3)], "next_after": None}]
+    result = world.run()
+    assert result.opened == 2
+    assert "ZeroDivisionError: nobody foresaw this" in result.problems[0]
+    assert world.ledger()[f"{2:016x}"] == {"state": "retry", "attempts": 1, "at": "2026-11-23T12:00:00Z",
+                                           "reason": "ZeroDivisionError: nobody foresaw this"}
+
+
+def test_the_ledger_is_saved_as_each_entry_is_settled_not_only_at_the_end(world, monkeypatch):
+    world.pages = [{"pending": [entry(1), entry(2), entry(3)], "next_after": None}]
+    real = gateway._Run.process
+    seen = []
+
+    def process(self, sub):
+        if sub.id == f"{3:016x}":
+            seen.append(sorted(world.ledger()))  # what origin holds when the third entry starts
+            raise KeyboardInterrupt  # the runner is killed
+        return real(self, sub)
+    monkeypatch.setattr(gateway._Run, "process", process)
+    with pytest.raises(KeyboardInterrupt):
+        world.run()
+    assert seen == [[f"{1:016x}", f"{2:016x}"]]
+    assert all(e["state"] == "done" for e in world.ledger().values())
+
+
+def test_a_failure_while_tidying_up_is_reported_not_raised(world, monkeypatch):
+    def explode(self):
+        raise RuntimeError("tidy failed")
+    monkeypatch.setattr(gateway._Run, "delete_finished_branches", explode)
+    result = world.run()
+    assert result.opened == 1 and result.problems == ["RuntimeError: tidy failed"]
+
+
+def test_a_report_comment_by_someone_else_does_not_count_as_the_gateways(world):
+    (world.state / "fail-comment").write_text("")
+    world.run()
+    prs = world.prs()
+    prs[0]["comments"].append({"body": "## Our Own Cause — submission check\n\nResult: passed (forged)",
+                               "user": {"login": "mallory"}})
+    world.set_prs(prs)
+    world.run(minutes=61)
+    bodies = [c["body"] for c in world.prs()[0]["comments"]]
+    assert len(bodies) == 2 and bodies[1].rstrip().endswith("Result: passed")
+    world.run(minutes=61)
+    assert len(world.prs()[0]["comments"]) == 2
+
+
+def test_the_branch_of_a_submission_that_is_given_up_is_deleted_unless_its_pull_request_is_open(world):
+    (world.state / "fail-create-always").write_text(f"gateway/{ID}")
+    for _ in range(2):
+        world.run(minutes=61)
+    assert f"gateway/{ID}" in world.branches()  # still being retried
+    world.run(minutes=61)
+    assert world.ledger()[ID]["state"] == "failed"
+    assert f"gateway/{ID}" not in world.branches()
+
+
+def test_a_given_up_submission_keeps_its_branch_while_its_pull_request_is_open(world):
+    (world.state / "fail-comment-always").write_text("")
+    for _ in range(3):
+        world.run(minutes=61)
+    assert world.ledger()[ID]["state"] == "failed" and len(world.prs()) == 1
+    assert f"gateway/{ID}" in world.branches()
 
 
 # --- branches of finished pull requests --------------------------------------------------------------

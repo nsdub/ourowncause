@@ -4,14 +4,14 @@
 // Optional: "challenge_id" and "answers" from GET /api/challenge.
 import { gradeChallenge } from "../_lib/challenge.js";
 import { utcDay } from "../_lib/db.js";
-import { expiryCutoff } from "../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
 import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../_lib/ratelimit.js";
 import { BadRequest, checkSubmitted, PROVISIONAL, readJsonObject } from "../_lib/submission.js";
 
 const DAILY_LIMIT = 10; // from one address
 const GLOBAL_DAILY_LIMIT = 100; // from everyone together
-const QUEUE_LIMIT = 200; // submissions waiting for a pull request
+const QUEUE_LIMIT = 200; // submissions from the last 48 hours still waiting for a pull request
+const QUEUE_WINDOW_MS = 48 * 3_600_000;
 const DEDUPE_MS = 86_400_000;
 const SLUG_CHARS = 60;
 const TITLE_CHARS = 200;
@@ -97,11 +97,12 @@ export async function onRequest(context) {
     const db = context.env && context.env.DB;
     if (!db) throw new Error("no DB binding");
 
-    // The same post sent again within a day gets its first receipt, and is not stored twice.
+    // The same post sent again within a day gets its first receipt, and is not stored twice,
+    // unless the gateway gave up on that first one: then this is a fresh attempt.
     const bodyHash = await sha256(text);
     const earlier = await db.prepare(
       "SELECT id, path, provisional, agent_check, signed_agent FROM submissions "
-      + "WHERE body_hash = ? AND created >= ? ORDER BY created LIMIT 1",
+      + "WHERE body_hash = ? AND created >= ? AND state IS NOT 'failed' ORDER BY created DESC LIMIT 1",
     ).bind(bodyHash, new Date(ms - DEDUPE_MS).toISOString()).first();
     if (earlier) {
       return json({
@@ -117,10 +118,12 @@ export async function onRequest(context) {
       return error(429, `rate limit: at most ${DAILY_LIMIT} submissions per day from one address; `
         + "the count starts again at 00:00 UTC", { retry_after_seconds: wait }, { "retry-after": String(wait) });
     }
+    // The queue is counted over 48 hours only. Whether a pull request has been recorded
+    // depends on reading GitHub; when that fails, old entries must not fill the queue for good.
     const load = await db.prepare(
       "SELECT (SELECT COUNT(*) FROM submissions WHERE created >= ?) AS today, "
       + "(SELECT COUNT(*) FROM submissions WHERE pr IS NULL AND state IS NULL AND created >= ?) AS waiting",
-    ).bind(`${day}T00:00:00.000Z`, expiryCutoff(ms)).first();
+    ).bind(`${day}T00:00:00.000Z`, new Date(ms - QUEUE_WINDOW_MS).toISOString()).first();
     if (load.today >= GLOBAL_DAILY_LIMIT) {
       const wait = secondsToMidnight(ms);
       return error(503, "daily limit reached, retry tomorrow: this endpoint accepts "
