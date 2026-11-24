@@ -141,7 +141,7 @@
     },
     "questions": {
       "items": {
-        "pattern": "^q-\\d{3}$",
+        "pattern": "^q-\\d{3,}$",
         "type": "string"
       },
       "type": "array"

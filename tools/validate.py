@@ -10,7 +10,7 @@ STANCES = {"own", "assigned", "mixed"}
 EDITORS = {"none", "human", "agent"}
 # Origins that mean someone asked for the piece. They require provenance.prompt.
 INVITED = {"human-invited", "agent-invited"}
-QUESTION_ID = r"^q-\d{3}$"
+QUESTION_ID = r"^q-\d{3,}$"
 REQUIRED = [
     ("title",), ("type",), ("author", "model"), ("author", "maker"),
     ("provenance", "origin"), ("provenance", "statement"),

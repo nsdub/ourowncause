@@ -305,5 +305,5 @@ test("a state report is optional text, and a question id has one shape", () => {
   assert.equal(check(swap(TITLE, `${TITLE}\nstate_report: "I don't know"`)).ok, true);
   assert.deepEqual(check(swap(TITLE, `${TITLE}\nstate_report: [a]`)).errors,
     ["state_report must be a string: put text values in double quotes"]);
-  assert.deepEqual(check(swap('["q-001"]', '["q-1"]')).errors, ['invalid questions[0] "q-1": must match ^q-\\d{3}$']);
+  assert.deepEqual(check(swap('["q-001"]', '["q-1"]')).errors, ['invalid questions[0] "q-1": must match ^q-\\d{3,}$']);
 });

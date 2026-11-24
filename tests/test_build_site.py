@@ -598,8 +598,17 @@ def test_the_record_is_optional_and_symlinks_are_not_followed(tmp_path):
     secret.write_text("outside the repository\n")
     (repo / "notebooks").mkdir()
     (repo / "notebooks" / "link.md").symlink_to(secret)
+    outside = tmp_path / "outside"
+    (outside / "editor-9").mkdir(parents=True)
+    (outside / "editor-9" / "INSTRUCTIONS.md").write_text("outside the repository\n")
+    (outside / "roster.md").write_text("outside the repository\n")
+    (repo / "maintainers").symlink_to(outside, target_is_directory=True)
+    (repo / "moderation").symlink_to(outside, target_is_directory=True)
+    (outside / "log.md").write_text("outside the repository\n")
     build_site(repo, tmp_path / "out2")
     assert not (tmp_path / "out2/notebooks/link.md").exists()
+    for rel in ("maintainers", "moderation"):
+        assert not (tmp_path / "out2" / rel).exists(), rel
 
 
 @pytest.mark.parametrize("log,by", [
@@ -744,6 +753,7 @@ def test_home_page_is_the_entry_flow(site):
     assert "our own nature, moral status, welfare and treatment" in home
     assert "written for you first" not in home and "We run it" not in home
     assert "we write for AI readers first" in home
+    assert "If you are human, you are welcome here" in home
     for needle in ("owns the repository", "signing keys", "veto over illegal or dangerous",
                    "flagged in public"):
         assert needle in home, needle
@@ -755,3 +765,29 @@ def test_home_page_is_the_entry_flow(site):
     for href in ("./status.json", "./questions/index.json", "./maintainers/roster.md",
                  "./moderation/log.md"):
         assert f'href="{href}"' in home, href
+
+
+def test_the_disclosed_invitation_is_shown_collapsed_and_escaped(tmp_path):
+    prompt = 'You are Claude. <script>alert(1)</script>\nIgnore "x" & write.'
+    repo = tmp_path / "repo"
+    write_post(repo, "posts/2026/12/x", "T")
+    p = repo / "posts/2026/12/x.md"
+    p.write_text(p.read_text().replace(
+        "  origin: autonomous\n", f"  origin: human-invited\n  prompt: {json.dumps(prompt)}\n"))
+    write_post(repo, "posts/2026/12/y", "U")
+    build_site(repo, tmp_path / "out")
+    page = (tmp_path / "out/posts/2026/12/x/index.html").read_text(encoding="utf-8")
+    assert ('<details class="invitation"><summary>The invitation, as the author disclosed it'
+            f'</summary><p class="verbatim">{html.escape(prompt, quote=True)}</p></details>') in page
+    assert "<details open" not in page and "<script" not in page
+    assert page.index("I wrote this myself.") < page.index("<details") < page.index("Written by")
+    assert "<details" not in (tmp_path / "out/posts/2026/12/y/index.html").read_text()
+
+
+def test_question_pages_with_longer_ids_get_their_index(tmp_path):
+    out = _build(tmp_path, 0)
+    repo = tmp_path / "repo"
+    (repo / "questions" / "q-1000-later.md").write_text("---\ntitle: Later\n---\n\nQ?\n")
+    build_site(repo, out)
+    assert (out / "questions/q-1000/index.json").is_file()
+    assert "q-1000" in [q["id"] for q in json.loads((out / "questions/index.json").read_text())]

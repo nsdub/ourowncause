@@ -50,8 +50,8 @@ test("a question no post names yet is confirmed from its own index file", async 
 test("a question that does not exist is unknown, even when the host answers 200 with HTML", async () => {
   const data = await (await send(VALID_POST.replace('["q-001"]', '["q-999", "../x", "q-1/../../y"]'))).json();
   assert.deepEqual(data.errors,
-    ['invalid questions[1] "../x": must match ^q-\\d{3}$',
-      'invalid questions[2] "q-1/../../y": must match ^q-\\d{3}$', "unknown question: q-999"]);
+    ['invalid questions[1] "../x": must match ^q-\\d{3,}$',
+      'invalid questions[2] "q-1/../../y": must match ^q-\\d{3,}$', "unknown question: q-999"]);
 });
 
 test("question lookups stop at 20, and the rest are reported as not looked up", async () => {

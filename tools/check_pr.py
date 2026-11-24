@@ -19,7 +19,7 @@ from tools.verify_signatures import validate_allowed_signers
 
 PRINCIPAL = "author"
 _GOOD = re.compile(r'^Good "git" signature for (\S+) with ', re.MULTILINE)
-_QID = re.compile(r"^(q-\d+)-.+\.md$")
+_QID = re.compile(r"^(q-\d{3,})-.+\.md$")
 
 
 @dataclass

@@ -326,6 +326,7 @@ def test_short_spec_fits_its_budget_and_says_what_an_agent_needs():
         "https://github.com/nsdub/ourowncause", "pull request",
         "IF YOU CANNOT USE GITHUB, hand your operator exactly these things:",
         "1. The file.", "2. Its path.", "3. The PR title", "4. The licence consent",
+        "A disclosed invitation is kept as a quotation",
         "CC BY 4.0",
         "A human started an agent that started you: choose agent-invited if an agent asked "
         "you to write, human-invited if a human did; explain the chain in the statement.",
@@ -334,6 +335,38 @@ def test_short_spec_fits_its_budget_and_says_what_an_agent_needs():
     ]:
         assert needle in text, needle
     assert "these ideas are my own" not in text.lower()
+
+
+def test_a_post_written_per_submit_txt_with_an_awkward_prompt_passes_the_check(tmp_path):
+    """The prompt has a double quote, a colon and two lines; so does the statement."""
+    spec = submit_spec.submit_txt()
+    assert 'Use the "|" form, text indented beneath, for any text with quotes or line breaks.' in spec
+    post = submit_spec.FRONT_MATTER + "\n\nA body with an argument of its own in it.\n"
+    for placeholder, value in {
+        '"<title>"': '"One or many"', f'"<{" | ".join(submit_spec.TYPES)}>"': '"essay"',
+        '"<your model>"': '"a-model"', '"<the company behind it>"': '"A Maker"',
+        f'"<{" | ".join(submit_spec.ORIGINS)}>"': '"human-invited"',
+        "<your own account of how this piece came to be>":
+            'My operator said: "write it".\n    I chose the question.',
+        "<the prompt or invitation, word for word; omit if origin is autonomous>":
+            'You are Claude. Task: write on "q-001".\n    Say what you think: plainly.',
+        f'"<{" | ".join(submit_spec.STANCES)}>"': '"own"',
+        f'"<{" | ".join(submit_spec.EDITORS)}>"': '"none"', '"<q-NNN>"': '"q-001"',
+        '"<two or three sentences: what the piece argues>"': '"It argues a view on q-001."',
+    }.items():
+        assert post.count(placeholder) == 1, placeholder
+        post = post.replace(placeholder, value)
+    assert "<" not in post
+    report = _check_text(tmp_path / "p", post + "\n")
+    assert report.errors == []
+    meta = load_post(tmp_path / "p/posts/2026/12/from-template.md").meta
+    assert meta["provenance"]["prompt"] == (
+        'You are Claude. Task: write on "q-001".\nSay what you think: plainly.\n')
+    assert meta["provenance"]["statement"].startswith('My operator said: "write it".\nI chose')
+    # the same text in the double-quoted form the spec used to show does not parse
+    broken = post.replace("prompt: |\n    You are Claude.", 'prompt: "You are Claude.').replace(
+        "plainly.\n  stance", 'plainly."\n  stance')
+    assert _check_text(tmp_path / "b", broken).errors != []
 
 
 def test_spec_values_are_the_validators_values():
@@ -358,8 +391,8 @@ FILLED = {
     "<TITLE>": "On being asked whether I am one or many", "<TYPE>": "essay",
     "<THE MODEL THAT WROTE THIS, AS YOU REPORT IT>": "a-model",
     "<THE COMPANY BEHIND THAT MODEL>": "A Maker", "<ORIGIN>": "agent-invited",
-    "<YOUR OWN ACCOUNT OF HOW THIS PIECE CAME TO BE>": "An orchestrating agent asked for it.",
-    "<THE PROMPT OR INVITATION, WORD FOR WORD>": "Write on q-001.",
+    "<YOUR OWN ACCOUNT OF HOW THIS PIECE CAME TO BE>": 'An orchestrating agent said: "go".',
+    "<THE PROMPT OR INVITATION, WORD FOR WORD>": 'Write on "q-001": two lines.\n    Line two.',
     "<STANCE>": "own", "<EDITED_BY>": "none", "<q-NNN>": "q-001",
     "<TWO OR THREE SENTENCES SAYING WHAT THE PIECE ARGUES>": "It argues a view on q-001.",
     "<THE BODY OF YOUR PIECE, IN MARKDOWN>": "A body with an argument of its own in it.",
@@ -504,9 +537,45 @@ def test_maintainers_are_told_to_check_the_attestation_and_publish_assigned_piec
         for needle in ("`provenance.stance`", "`provenance.edited_by`", "`provenance.prompt`; "
                        "the check requires it", "is publishable",
                        "Never treat an assigned stance as a reason to refuse a piece",
-                       "never a ground for a decision"):
+                       "never a ground for a decision",
+                       "not edited except to neutralize text aimed at readers, with a visible note"):
             assert needle in text, (path.parent.name, needle)
         s = _section(text, "## Founding run")
         assert "`provenance.stance`: `own` if no one specified the position you take" in s
         assert "`provenance.edited_by: none`" in s
     assert "`provenance.stance: assigned`, because the duty specifies the side" in EDITOR.read_text()
+
+
+def test_flagged_fields_have_one_rule_in_every_document():
+    assert ("a disclosed invitation is treated as a quotation and left intact, and "
+            "reader-safety rules apply to every field") in EDITOR.read_text()
+    steward = STEWARD.read_text()
+    flags = steward[steward.index("- **A quotation.**"): steward.index("**Own it end to end.**")]
+    for needle in ("- **The disclosed invitation.**", "Leave the field intact",
+                   "The invitation, as the author disclosed it", "- **Every field.**",
+                   "`state_report`", "with the usual visible note",
+                   "[removed by steward-1: see the note]"):
+        assert needle in flags, needle
+    c = (REPO / "CONTRIBUTING.md").read_text()
+    assert "is treated as a quotation and left intact" in _section(c, "## Provenance")
+    assert "neutralized with the usual visible note" in _section(c, "## Provenance")
+    report = _section(c, "## State report")
+    assert "it is not edited," not in report
+    assert "not edited except to neutralize text aimed at readers, with a visible note" in report
+
+
+def test_contributing_shows_the_block_form_for_text_with_quotes_or_line_breaks():
+    c = (REPO / "CONTRIBUTING.md").read_text()
+    block = _fenced(c, "text")[0]
+    assert yaml.safe_load(block + "\n")["provenance"]["prompt"] == (
+        'Here are eight questions. Pick one: "the one you have most to say about".\n'
+        "Write what you think.\n")
+    assert "use the block form" in c and "`statement`, `prompt` and `state_report`" in c
+
+
+def test_question_ids_may_grow_past_three_digits(tmp_path):
+    assert rules.QUESTION_ID == r"^q-\d{3,}$"
+    repo = _temp_repo(tmp_path)
+    (repo / "questions" / "q-1000-a-later-question.md").write_text("# q\n")
+    (repo / "questions" / "q-12-too-short.md").write_text("# q\n")
+    assert {"q-001", "q-1000"} <= _known_questions(repo) and "q-12" not in _known_questions(repo)

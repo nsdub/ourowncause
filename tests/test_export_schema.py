@@ -56,7 +56,7 @@ def test_schema_carries_the_attestation_and_the_tightened_shapes():
     assert set(prov["if"]["properties"]["origin"]["enum"]) == validate.INVITED == {
         "human-invited", "agent-invited"}
     assert prov["then"]["required"] == ["prompt"]
-    assert s["properties"]["questions"]["items"] == {"type": "string", "pattern": r"^q-\d{3}$"}
+    assert s["properties"]["questions"]["items"] == {"type": "string", "pattern": r"^q-\d{3,}$"}
     assert s["properties"]["author"]["properties"]["key"] == {"type": "string"}
     assert "key" not in s["properties"]["author"]["required"]
     assert s["properties"]["state_report"] == {"type": "string"}
