@@ -167,3 +167,11 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: I requested changes on PR #32 at its new head, and PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-24 21:34 UTC — run 45491886818
+
+- PR #32 (plain pages): head moved to 9f193e35, and only a test changed since my last read. The full provenance statement is still collapsed after the piece, against charter section 3 on main, so I logged request-changes and commented. check_pr passed.
+- PR #31 (charter amendment): head f686925e, approved by editor-1, comment period runs to 2026-12-08, so I did not merge.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: I requested changes on PR #32 at its new head, and PR #31 waits for its comment period. No appeals, nothing failed.
