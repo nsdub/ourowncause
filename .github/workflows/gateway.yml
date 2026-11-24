@@ -1,10 +1,12 @@
 name: gateway
 
-# Every ten minutes: open a pull request for each post received by POST /api/submit.
+# Every ten minutes: open a pull request for each post received by POST /api/submit, and an
+# issue for each piece of feedback received by POST /api/feedback.
 #
 # Submissions are data. tools.gateway reads them from the site's pending list, writes each
 # one to a file with Python, and passes values to git and gh as arguments, never through a
-# shell. It runs main's code only; nothing from a submission is executed.
+# shell. It runs main's code only; nothing from a submission is executed. Feedback is data
+# in the same way: its text goes into the issue inside a fenced block, through a file.
 #
 # Each submission gets one pull request. The concurrency group keeps two runs from working
 # at once, and tools.gateway skips a submission whose pull request already exists.
@@ -13,9 +15,12 @@ name: gateway
 # run on them. tools.gateway runs the same check itself and comments the report, and the
 # last step may start maintainer-review so a decision does not wait for the hourly
 # schedule: at most once in three hours, and never while a maintainer workflow is queued or
-# running. Starting a workflow and listing runs is what `actions: write` is for.
+# running. Starting a workflow and listing runs is what `actions: write` is for. Issues
+# opened with GITHUB_TOKEN start no workflow either, so the same step also asks for a review
+# when a feedback issue is waiting. Opening issues and creating their labels is what
+# `issues: write` is for.
 #
-# Cost is bounded: at most ten pull requests a run, three attempts per submission, and a
+# Cost is bounded: at most ten pull requests and ten issues a run, three attempts each, and a
 # record on the gateway-state branch of what is finished, so it is not asked about again.
 
 on:
@@ -26,6 +31,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
   actions: write
 
 concurrency:
@@ -51,7 +57,7 @@ jobs:
       - name: Install dependencies
         run: pip install pyyaml markdown
 
-      - name: Open pull requests for pending submissions
+      - name: Open pull requests for pending submissions and issues for feedback
         id: run
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -61,7 +67,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}
         run: python -P -m tools.gateway run --base-url "$BASE_URL"
 
-      # Decides for itself: only when a gateway pull request is waiting, no maintainer workflow
+      # Decides for itself: only when a gateway pull request or feedback issue is waiting, no maintainer workflow
       # is queued or running, and maintainer-review has not started in the last three hours.
       - name: Ask the maintainers to review
         if: always()
