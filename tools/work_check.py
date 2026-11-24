@@ -8,6 +8,8 @@ runs first, without Claude, and writes `go=true` or `go=false` to $GITHUB_OUTPUT
 
 - Started by hand (workflow_dispatch): always go, unless the input trigger is `timer`;
   the timer's dispatches are judged like a schedule.
+- More than 24 runs of the workflow started Claude in the last 24 hours: no go, whatever
+  started it, except a dispatch with trigger `owner`, which always goes.
 - No earlier successful run of the same workflow: go.
 - review: go when any pull request or issue was updated since the last successful run
   started.
@@ -19,10 +21,28 @@ that waits.
 import argparse
 import json
 import os
+from datetime import datetime, timedelta, timezone
 import subprocess
 import sys
 
 KINDS = ("review", "questions", "issue")
+DAILY_CAP = 24          # runs that started Claude in the last 24 hours, per workflow
+CLAUDE_RUN_MINUTES = 2  # a run that skipped Claude finishes well inside this
+
+
+def claude_runs_in_last_day(runs: list, now: datetime) -> int:
+    """How many of these runs started Claude in the 24 hours before now. A run that skipped
+    Claude ends within seconds of starting, so a run that lasted at least two minutes counts."""
+    count = 0
+    for r in runs:
+        try:
+            start = datetime.fromisoformat(str(r["createdAt"]).replace("Z", "+00:00"))
+            end = datetime.fromisoformat(str(r["updatedAt"]).replace("Z", "+00:00"))
+        except (KeyError, ValueError, TypeError):
+            continue
+        if now - start <= timedelta(days=1) and end - start >= timedelta(minutes=CLAUDE_RUN_MINUTES):
+            count += 1
+    return count
 
 
 def effective_event(event: str, trigger: str | None) -> str:
@@ -30,14 +50,21 @@ def effective_event(event: str, trigger: str | None) -> str:
     only when something changed. Any other dispatch is someone asking, and always goes."""
     if event == "workflow_dispatch" and trigger == "timer":
         return "schedule"
+    if event == "workflow_dispatch" and trigger == "owner":
+        return "owner"
     return event
 
 
 def decide(kind: str, event: str, last_success: str | None,
-           changed_items: int, post_commits: int) -> tuple[bool, str]:
+           changed_items: int, post_commits: int, over_cap: bool = False) -> tuple[bool, str]:
     """The decision alone, from facts gathered elsewhere. Returns (go, reason)."""
     if kind not in KINDS:
         raise ValueError(f"unknown kind {kind!r}; use one of {', '.join(KINDS)}")
+    if event == "owner":
+        return True, "started by the owner with trigger=owner"
+    if over_cap:
+        return False, (f"{DAILY_CAP} runs of this workflow started Claude in the last 24 hours; "
+                       "the next waits until that count drops (trigger=owner overrides)")
     if event == "workflow_dispatch":
         return True, "started by hand"
     if last_success is None:
@@ -61,6 +88,12 @@ def _last_success(workflow: str) -> str | None:
     return rows[0]["createdAt"] if rows else None
 
 
+def _over_cap(workflow: str) -> bool:
+    rows = json.loads(_run(["gh", "run", "list", "--workflow", workflow, "--status", "completed",
+                            "--limit", "100", "--json", "createdAt,updatedAt"]))
+    return claude_runs_in_last_day(rows, datetime.now(timezone.utc)) >= DAILY_CAP
+
+
 def _changed_items(since: str) -> int:
     total = 0
     for what in ("pr", "issue"):
@@ -82,10 +115,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     event = effective_event(os.environ.get("GITHUB_EVENT_NAME", ""), os.environ.get("TRIGGER"))
     try:
-        since = None if event == "workflow_dispatch" else _last_success(args.workflow)
+        since = None if event in ("workflow_dispatch", "owner") else _last_success(args.workflow)
         changed = _changed_items(since) if since and args.kind == "review" else 0
         posts = _post_commits(since) if since and args.kind != "review" else 0
-        go, reason = decide(args.kind, event, since, changed, posts)
+        over_cap = event != "owner" and _over_cap(args.workflow)
+        go, reason = decide(args.kind, event, since, changed, posts, over_cap=over_cap)
     except (subprocess.SubprocessError, OSError, ValueError, KeyError, IndexError) as e:
         go, reason = True, f"could not check ({type(e).__name__}), so running"
     line = f"go={'true' if go else 'false'}"
