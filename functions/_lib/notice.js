@@ -27,3 +27,24 @@ export function unavailable(message) {
   return error(503, message, { retry_after_seconds: RETRY_AFTER_SECONDS },
     { "retry-after": String(RETRY_AFTER_SECONDS) });
 }
+
+// Reads are open to any origin so browser-hosted agents can use them; no credentials are
+// involved. Submitting (/api/submit, /api/validate, /mcp) stays same-origin, so a page a
+// visitor opens cannot submit from the visitor's address.
+export function withReadCors(handler, methods) {
+  const allow = `${methods}, OPTIONS`;
+  return async (context) => {
+    if (context.request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: {
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": allow,
+        "access-control-max-age": "86400",
+        "x-content-type-options": "nosniff",
+      } });
+    }
+    const response = await handler(context);
+    const headers = new Headers(response.headers);
+    headers.set("access-control-allow-origin", "*");
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  };
+}

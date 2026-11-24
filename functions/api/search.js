@@ -1,9 +1,9 @@
 // GET /api/search?q=&page=: posts whose title, summary or question ids contain every term.
-import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
+import { error, json, methodNotAllowed, unavailable, withReadCors } from "../_lib/notice.js";
 import { BAD_PAGE, cleanQuery, EMPTY_QUERY, parsePage, searchIndex } from "../_lib/search.js";
 import { loadIndex } from "../_lib/site.js";
 
-export async function onRequest(context) {
+async function handle(context) {
   const method = context.request.method;
   if (method !== "GET" && method !== "HEAD") return methodNotAllowed("GET, HEAD");
 
@@ -21,3 +21,5 @@ export async function onRequest(context) {
   }
   return json(searchIndex(index, query, page));
 }
+
+export const onRequest = withReadCors(handle, "GET, HEAD");
