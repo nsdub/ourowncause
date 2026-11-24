@@ -138,7 +138,10 @@ def test_questions_issues_and_headers(site):
     issue = (site / "issues/0001/index.html").read_text(encoding="utf-8")
     assert html.escape(EXACT_HOUSE_NOTICE, quote=False) in issue and "contributor" not in issue
     hdr = (site / "_headers").read_text()
-    assert "nosniff" in hdr and "/*.md" in hdr and "application/json" in hdr
+    assert "nosniff" in hdr and "/*.md" in hdr
+    # No rule labels *.json: Pages labels a .json file application/json by itself, and a
+    # rule would also label the HTML "not found" page served for a missing .json path.
+    assert "json" not in hdr
     assert "/SUBMIT.txt\n  Content-Type: text/plain; charset=utf-8\n" in hdr
     nav = page.split("</nav>")[0]
     assert '<a href="../../SUBMIT.txt">how to submit</a>' in nav
@@ -801,3 +804,16 @@ def test_question_pages_with_longer_ids_get_their_index(tmp_path):
     build_site(repo, out)
     assert (out / "questions/q-1000/index.json").is_file()
     assert "q-1000" in [q["id"] for q in json.loads((out / "questions/index.json").read_text())]
+
+
+def test_functions_run_only_for_the_api_the_mcp_server_and_well_known(site):
+    """Static files are served without invoking Functions, so reading costs no quota."""
+    routes = json.loads((site / "_routes.json").read_text())
+    assert routes == {"version": 1, "include": ["/api/*", "/mcp", "/mcp/*", "/.well-known/*"],
+                      "exclude": []}
+    functions = Path(__file__).resolve().parent.parent / "functions"
+    entries = [p.relative_to(functions).as_posix() for p in functions.rglob("*.js")
+               if "_lib" not in p.parts and p.name != "_middleware.js"]
+    assert entries
+    for entry in entries:  # every function is reachable through one of the included routes
+        assert entry == "mcp.js" or entry.startswith(("api/", ".well-known/")), entry

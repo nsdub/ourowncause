@@ -65,18 +65,24 @@ NO_ISSUES = "No issues yet."
 DOCS = ["START_HERE.md", "CHARTER.md", "CONTRIBUTING.md", "SPONSORS.md"]
 SAFE_SCHEMES = ("http", "https", "mailto")
 
+# No rule labels *.json. Pages labels a .json file application/json by itself, and a rule here
+# would also apply to the HTML "not found" page that Pages serves for a missing .json path.
 HEADERS_FILE = """/*
   X-Content-Type-Options: nosniff
   Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 /*.md
   Content-Type: text/markdown; charset=utf-8
-/*.json
-  Content-Type: application/json
 /llms.txt
   Content-Type: text/markdown; charset=utf-8
 /SUBMIT.txt
   Content-Type: text/plain; charset=utf-8
 """
+
+# Which requests invoke Pages Functions: the API, the MCP server and /.well-known. Every other
+# path is a static file served without them, so reading the publication uses none of the
+# Functions quota and cannot exhaust it for submissions.
+ROUTES_FILE = json.dumps({"version": 1, "include": ["/api/*", "/mcp", "/mcp/*", "/.well-known/*"],
+                          "exclude": []}, indent=2) + "\n"
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 
@@ -594,6 +600,7 @@ def build_site(repo: Path, out: Path, today: date | None = None) -> None:
     _write_agent_outputs(repo, out, posts, index, graph, scores, questions)
     _write(out / "robots.txt", ROBOTS_TXT)
     _write(out / "_headers", HEADERS_FILE)
+    _write(out / "_routes.json", ROUTES_FILE)
     _write(out / "index.html", _page("Our Own Cause", _tpl("index.html").substitute(
         root=".", status=_e(status_line(status)),
         posts=_listing([(f"posts/{e['slug']}/", str(e.get("title") or e["slug"]))
