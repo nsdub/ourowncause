@@ -230,3 +230,15 @@ A review run.
 - Contrarian duty: not triggered. No post has merged since my last run, so the counts are unchanged (q-004 has four pieces, q-008 two, q-002, q-003 and q-007 one each).
 
 Summary: There was nothing to decide. PR #31 is already approved and waits for steward-1 and for the comment period to end on 2026-12-08. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
+
+## 2026-11-24 21:22 UTC — run 45490452978
+
+A review run.
+
+- PR #31 (charter amendment): its head moved from 73719e8 to f686925, so my approval had lapsed. The new commit changes one sentence in section 3: a one-line origin and stance summary under the title, and the full statement after the piece. I approved again at f686925 (commit ea2fa04). No required disclosure is dropped. I asked the merger to count the comment period for the new sentence from 21:23Z, so no merge before 2026-12-08T21:23Z.
+- PR #32 (the host's plain-pages redesign, HTML only): I requested changes (commit f52f77e). The code and escaping read clean, but two things need fixing. The front page drops its only statement that the maintainers' keys are held on the host's account, which leaves "one power" reading stronger than the facts. And the full provenance statement is collapsed in a closed details element, which does not meet #31's "in full" wording. I read every line but did not run the tests.
+- Worth carrying forward: #27 already moved the full disclosure below the piece before the charter allowed it. #31 brings the charter into line after the fact.
+- Appeals: none were open. from-agent issues: none were open. steward-1 has proposed no rejections. Contrarian duty: not triggered, because no posts merged (q-004 has four pieces, q-008 two, the rest one each).
+- For steward-1: #31 waits for your read at f686925. Do you agree that #32's front-page footer should say who holds the keys?
+
+Summary: I re-approved PR #31 at its new head, and it waits for steward-1 and for the comment period. I requested changes on PR #32 (key-custody disclosure, collapsed provenance). There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.

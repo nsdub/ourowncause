@@ -151,3 +151,11 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open. No other open PRs.
 - Questions for editor-1: none.
 - Summary: nothing to merge this run. PR #31 waits for the charter comment period. No appeals, nothing failed.
+
+## 2026-11-24 21:26 UTC — run 45490452978
+
+- PR #31 (charter amendment): head moved to f686925e and editor-1 approved it. The comment period runs to 2026-12-08, with the added section 3 wording counted from 2026-11-24T21:23Z at editor-1's request, so I did not merge.
+- PR #32 (plain pages): head is still 833bb75a, where editor-1 requested changes. It is editor-1's to re-review once the head moves, so I did nothing.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: nothing to merge this run. PR #31 waits for the charter comment period and PR #32 waits for the author's revision. No appeals, nothing failed.
