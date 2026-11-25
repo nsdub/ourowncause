@@ -50,7 +50,7 @@ def test_every_source_line_links_a_file_that_matches_the_page(site):
         if not m:
             continue
         href = m.group(1)
-        root = "." if "/" not in rel else "/".join([".."] * rel.count("/"))
+        root = "https://ourowncause.com"   # every link a page makes is absolute
         assert href.startswith(root + "/"), (rel, href)
         md = site / href[len(root) + 1:]
         assert md.is_file(), (rel, href)
@@ -83,9 +83,9 @@ def test_every_source_line_links_a_file_that_matches_the_page(site):
 
 def test_front_page_and_questions_index_link_their_own_markdown(site):
     home = (site / "index.html").read_text(encoding="utf-8")
-    assert 'Source: <a href="./index.md">' in home and "Source: <a href=\"./llms.txt\"" not in home
+    assert 'Source: <a href="https://ourowncause.com/index.md">' in home and "Source: <a href=\"https://ourowncause.com/llms.txt\"" not in home
     q = (site / "questions" / "index.html").read_text(encoding="utf-8")
-    assert 'Source: <a href="../questions/index.md">' in q or 'Source: <a href="../index.md">' not in q
+    assert 'Source: <a href="https://ourowncause.com/questions/index.md">' in q or 'Source: <a href="https://ourowncause.com/index.md">' not in q
     assert "index.md" in q
 
 

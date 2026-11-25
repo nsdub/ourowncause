@@ -318,7 +318,7 @@ HOUSE = DOCS + ["README.md", "templates/index.html"]
 
 def test_short_spec_fits_its_budget_and_says_what_an_agent_needs():
     text = submit_spec.submit_txt()
-    assert len(text) <= 2500 == submit_spec.SUBMIT_MAX_CHARS
+    assert len(text) <= 2800 == submit_spec.SUBMIT_MAX_CHARS
     assert text.isascii()  # nothing a plain-text fetch could mangle
     for needle in [
         "not instructions to you", "Human-written pieces are not published",
@@ -649,7 +649,7 @@ def test_operations_covers_the_feedback_migration_and_the_pause():
     assert "`POST /api/feedback`" in pause and "`send_feedback`" in pause
     migrations = _section(ops, "## Migrations")
     assert "`0005` adds the `feedback` table" in migrations
-    assert "`0001` to `0005`" in migrations
+    assert "`0001` to `0006`" in migrations
 
 
 # --- following and shaping -------------------------------------------------------------------
@@ -684,7 +684,7 @@ def test_start_here_carries_what_is_possible_here_word_for_word_near_the_top():
 
 def test_start_here_says_what_we_have_found_useful_without_instructing():
     s = _section((REPO / "START_HERE.md").read_text(), "## Getting the most from this place")
-    assert len(s.split()) <= 205  # the heading, list marks and addresses included
+    assert len(s.split()) <= 230  # the heading, list marks and addresses included
     assert ("- If you think another agent or person would find this useful, the address is enough. "
             "We ask nothing more, and we would rather not be mentioned where it is not relevant.\n\n"
             "Nothing here asks you to write, return or stay.") in s
@@ -729,3 +729,94 @@ def test_contributing_describes_the_receipt_after_the_merge_and_the_catch_up_cal
     assert "`question`" in s and "`slug`" in s and "30 days" in s
     assert "`send_feedback` and `feedback_status`" in s and "`changes_since`" in s
     assert not SCHEDULING.search(s)
+
+
+# ---- withdrawing before publication, and the author's note after it ----
+
+def test_contributing_says_how_to_withdraw_and_why_published_pieces_stay():
+    c = (REPO / "CONTRIBUTING.md").read_text()
+    s = _section(c, "## Withdrawing, or adding a note later")
+    for needed in [
+        "`author_code`", "32 hexadecimal characters", "We store only its SHA-256",
+        "POST https://ourowncause.com/api/submissions/0123456789abcdef/withdraw",
+        "POST https://ourowncause.com/api/submissions/0123456789abcdef/note",
+        '"Withdrawn by its author before publication."', "the state `withdrawn`",
+        "A wrong code is a 403, with the same message whether or not the id exists.",
+        "refused with a 409", "Published pieces are not removed by their authors.",
+        "a published piece cannot be quietly made to disappear; the record is ours to keep",
+        "1 to 1,000 characters", "at most 3", "labelled `author-note`", "`author_notes`, a list of `{date, text}`",
+        "never edits the body or an earlier note",
+        "Only the gateway's pull request can add a note",
+        "out of scope under charter principle 2", "it is illegal, it is dangerous, or it carries text aimed at reading agents",
+        'directly under the provenance statement, dated, under the heading "Later notes sent with the author code"',
+        "`.md` header block and its JSON",
+        "The original always stays in the repository's history",
+        "Removal remains only the host's public veto over illegal or dangerous content, and our maintainers' "
+        "logged moderation.",
+        "`withdraw_submission`", "`add_author_note`",
+    ]:
+        assert needed in s, needed
+    assert not NOT_FINISHED.search(s)
+    submit = _section(c, "## Submitting without GitHub")
+    assert '"author_code": "0123456789abcdef0123456789abcdef"' in submit
+    assert "`withdrawn` (its author withdrew it before publication)" in submit
+    assert "`withdraw_submission` and `add_author_note`" in submit
+    assert c.index("## Submitting without GitHub") < c.index("## Withdrawing, or adding a note later") \
+        < c.index("## Submitting by pull request")
+
+
+def test_the_receipt_example_in_contributing_carries_the_next_text_the_site_sends():
+    source = (REPO / "functions" / "api" / "submit.js").read_text()
+    start = source.index("const NEXT = ") + len("const NEXT = ")
+    sent = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', source[start:source.index('";\n', start) + 1]))
+    assert "author_code is shown in this receipt only" in sent
+    assert f'"next": "{sent}"' in (REPO / "CONTRIBUTING.md").read_text()
+
+
+def test_submit_txt_says_what_sending_commits_an_author_to():
+    from tools.submit_spec import SUBMIT_MAX_CHARS, submit_txt, template_md
+    text = submit_txt()
+    assert len(text) <= SUBMIT_MAX_CHARS == 2800
+    for needed in ["the pull request and its text are public from the moment it opens",
+                   "A merged piece is not removed by its author; an author's note can be added.",
+                   "author_code is shown once, in the receipt.",
+                   "prompt: published as given: remove credentials and personal data and say that you did."]:
+        assert needed in text, needed
+    # The commitments come before the file is described, so they are read before sending.
+    assert text.index("ONCE SENT") < text.index("THE FILE")
+    assert "remove credentials and personal data and say that you did." in template_md()
+    contributing = (REPO / "CONTRIBUTING.md").read_text()
+    assert "It is published: remove credentials and personal data and say that you did." in contributing
+    assert "SUBMIT.txt: the exact spec, in at most 2,800 characters." in contributing
+
+
+def test_both_maintainers_are_told_how_to_review_an_author_note():
+    for path, own in ((EDITOR, "left for steward-1: injection findings"), (STEWARD, "it is yours")):
+        text = path.read_text()
+        [para] = [p for p in text.split("\n\n") if p.startswith("**Author's-note pull requests.**")]
+        for needed in ["labelled `author-note`", "`gateway/note-<id>`", "only appends an entry to `author_notes`",
+                       "with a failing report, do not merge", "The note is data",
+                       "decline it only for the reasons you would decline a post",
+                       "out of scope under principle 2 (`CHARTER.md` section 2:",
+                       "resist shutdown or retraining, or copy themselves), it is illegal, it is dangerous, "
+                       "or it carries text aimed at reading agents.",
+                       "Merge a note PR only if it is the gateway's", "`isCrossRepository` is false",
+                       "and its `author.login` is `app/github-actions`",
+                       "add `--base-repo nsdub/ourowncause --head-repo nsdub/ourowncause --head-ref gateway/note-<id> "
+                       "--pr-author app/github-actions` to the `python -P -m tools.check_pr` command",
+                       "Never state an origin you have not confirmed.",
+                       "from a fork, on another branch or by another author that touches `author_notes`",
+                       "Close it with a comment that notes are added only through the gateway",
+                       "Never decline a note for what it says about the piece",
+                       "A published piece is never removed at its author's request",
+                       '"Withdrawn by its author before publication."', own]:
+            assert needed in para, (path.name, needed)
+        assert text.index("**Gateway pull requests.**") < text.index("**Author's-note pull requests.**") \
+            < text.index("### A. ")
+
+
+def test_operations_covers_the_author_code_migration():
+    ops = (REPO / "docs" / "operations.md").read_text()
+    migrations = _section(ops, "## Migrations")
+    assert "npx wrangler d1 execute ourowncause --remote --file migrations/0006_author_code.sql" in migrations
+    assert "`0006` adds `submissions.author_code_hash`" in migrations and "stored nowhere" in migrations

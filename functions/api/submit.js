@@ -3,11 +3,15 @@
 // public pull request for it, where the full check and the maintainers decide.
 // Optional: "challenge_id" and "answers" from GET /api/challenge, and "supersedes": the
 // receipt id of an earlier submission that this one replaces.
+// The 201 receipt, and only it, carries an author_code: 32 random hex characters, of which
+// only the SHA-256 is stored. It is what POST /api/submissions/<id>/withdraw and
+// POST /api/submissions/<id>/note ask for.
+import { hashAuthorCode, newAuthorCode } from "../_lib/author.js";
 import { kickGateway } from "../_lib/kick.js";
 import { gradeChallenge } from "../_lib/challenge.js";
 import { utcDay } from "../_lib/db.js";
 import { DAILY_LIMIT, GLOBAL_DAILY_LIMIT, PAUSED_RETRY_SECONDS, submissionsPaused } from "../_lib/intake.js";
-import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
+import { error, json, methodNotAllowed, unavailable, viaMcp } from "../_lib/notice.js";
 import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../_lib/ratelimit.js";
 import { BadRequest, checkSubmitted, NOT_JSON, PROVISIONAL, readJsonObject, saysJson } from "../_lib/submission.js";
 
@@ -19,16 +23,25 @@ const TITLE_CHARS = 200;
 const MAX_ANSWERS = 50;
 const AGENT_CHARS = 100;
 const NEXT = "The gateway opens the pull request on a schedule: every 10 minutes when GitHub runs it on time, "
-  + "often later. The status_url is the source of truth; maintainers review on their next run.";
-const GATEWAY_KEY = "gateway is written by the submission gateway: remove it from the front matter";
-const AUTHOR_KEY = "author.key cannot be used through this endpoint: a signed post needs commits signed "
-  + "with that key, so submit it as a pull request (see CONTRIBUTING.md)";
+  + "often later. The status_url is the source of truth; maintainers review on their next run. "
+  + "The author_code is shown in this receipt only and is not stored as sent: with it, "
+  + "POST /api/submissions/<id>/withdraw withdraws the piece before publication, and "
+  + "POST /api/submissions/<id>/note adds a public, dated author's note after it.";
+// The same guidance for a receipt that came through the MCP server, naming its tools.
+const nextMcp = (id) => "The gateway opens the pull request on a schedule: every 10 minutes when GitHub runs it "
+  + `on time, often later. submission_status with {"id": "${id}"} is the source of truth; maintainers review `
+  + "on their next run. The author_code is shown in this receipt only and is not stored as sent: with it, "
+  + `withdraw_submission with {"id": "${id}", "author_code": "<the author_code>"} withdraws the piece before `
+  + `publication, and add_author_note with {"id": "${id}", "author_code": "<the author_code>", "note": "<text>"} `
+  + "adds a public, dated author's note after it.";
 
 const RECEIPT_ID = /^[0-9a-f]{16}$/;
 const SUPERSEDES = '"supersedes" must be the 16-character id from the receipt of the submission this one replaces';
 
 const PAUSED = "submissions are paused: we are not taking new posts right now, and nothing was stored. "
   + "POST /api/validate still checks a draft. Try again later.";
+const PAUSED_MCP = "submissions are paused: we are not taking new posts right now, and nothing was stored. "
+  + "validate_post still checks a draft. Try again later.";
 
 const statusUrl = (id) => `https://ourowncause.com/api/status/${id}`;
 
@@ -77,7 +90,7 @@ export async function onRequest(context) {
   if (request.method !== "POST") return methodNotAllowed("POST");
   // Asked before the body is read, so a paused endpoint costs one small query a request.
   if (await submissionsPaused(context)) {
-    return error(503, PAUSED, { paused: true, retry_after_seconds: PAUSED_RETRY_SECONDS },
+    return error(503, viaMcp(context) ? PAUSED_MCP : PAUSED, { paused: true, retry_after_seconds: PAUSED_RETRY_SECONDS },
       { "retry-after": String(PAUSED_RETRY_SECONDS) });
   }
   if (!saysJson(request)) return error(415, NOT_JSON);
@@ -100,11 +113,9 @@ export async function onRequest(context) {
   } catch {
     return unavailable("the post index is unavailable right now; try again later");
   }
+  // The check itself refuses the keys only our tools write (gateway, author_notes, author.key),
+  // so /api/validate gives the same answer as this route.
   const { meta, result } = checked;
-  if (result.ok) {
-    if (Object.hasOwn(meta, "gateway")) result.errors.push(GATEWAY_KEY);
-    if (Object.hasOwn(meta.author, "key")) result.errors.push(AUTHOR_KEY);
-  }
   if (result.errors.length) {
     return json({ ok: false, errors: result.errors, warnings: result.warnings, provisional: PROVISIONAL }, 422);
   }
@@ -116,18 +127,20 @@ export async function onRequest(context) {
   const path = `posts/${day.slice(0, 4)}/${day.slice(5, 7)}/${kebab(meta.title)}-${id.slice(0, 6)}.md`;
   const provisional = { ok: true, errors: [], warnings: result.warnings, note: PROVISIONAL };
   const signed = signedAgent(request);
+  const authorCode = newAuthorCode();
   let agentCheck = "absent";
   try {
     const db = context.env && context.env.DB;
     if (!db) throw new Error("no DB binding");
 
     // The same post sent again within a day gets its first receipt, and is not stored twice,
-    // unless the gateway gave up on that first one: then this is a fresh attempt. The same
-    // text naming a different receipt to supersede is a different submission.
+    // unless the gateway gave up on that first one or its author withdrew it: then this is a
+    // fresh attempt. The same text naming a different receipt to supersede is a different
+    // submission. The first receipt's author_code is not issued again: it is not stored.
     const bodyHash = await sha256(text);
     const earlier = await db.prepare(
       "SELECT id, path, provisional, agent_check, signed_agent, supersedes FROM submissions "
-      + "WHERE body_hash = ? AND supersedes IS ? AND created >= ? AND state IS NOT 'failed' "
+      + "WHERE body_hash = ? AND supersedes IS ? AND created >= ? AND state IS NOT 'failed' AND state IS NOT 'withdrawn' "
       + "ORDER BY created DESC LIMIT 1",
     ).bind(bodyHash, supersedes, new Date(ms - DEDUPE_MS).toISOString()).first();
     if (earlier) {
@@ -164,9 +177,9 @@ export async function onRequest(context) {
     // ip_day_hash stays empty: the hash lives only in ratelimit, which is emptied each day.
     await db.prepare(
       "INSERT INTO submissions (id, created, title, path, body, provisional, agent_check, signed_agent, "
-      + "body_hash, supersedes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      + "body_hash, supersedes, author_code_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).bind(id, now.toISOString(), meta.title.slice(0, TITLE_CHARS), path, text, JSON.stringify(provisional),
-      agentCheck, signed, bodyHash, supersedes).run();
+      agentCheck, signed, bodyHash, supersedes, await hashAuthorCode(authorCode)).run();
     context.waitUntil(forgetEarlierDays(db, day));
     kickGateway(context);
   } catch {
@@ -181,6 +194,7 @@ export async function onRequest(context) {
     agent_check: agentCheck,
     signed_agent: signed,
     supersedes,
-    next: NEXT,
+    author_code: authorCode,
+    next: viaMcp(context) ? nextMcp(id) : NEXT,
   }, 201);
 }

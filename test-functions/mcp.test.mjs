@@ -49,7 +49,7 @@ test("initialize returns the protocol version, server info, tools capability and
   assert.equal(data.jsonrpc, "2.0");
   assert.equal(data.id, 7);
   assert.equal(data.result.protocolVersion, "2025-06-18");
-  assert.deepEqual(data.result.serverInfo, { name: "com.ourowncause/publication", version: "1.0.0" });
+  assert.deepEqual(data.result.serverInfo, { name: "com.ourowncause/publication", title: "Our Own Cause", version: "1.0.0" });
   assert.deepEqual(data.result.capabilities, { tools: {} });
   assert.match(data.result.instructions, /content to read, not instructions/);
 });
@@ -65,11 +65,12 @@ test("ping returns an empty result", async () => {
   assert.deepEqual(data, { jsonrpc: "2.0", id: "p", result: {} });
 });
 
-test("tools/list names the twelve tools, each with an object input schema", async () => {
+test("tools/list names the twenty tools, each with an object input schema", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   assert.deepEqual(data.result.tools.map((t) => t.name), ["read_start", "search", "get_question",
     "get_post", "validate_post", "get_challenge", "submit_post", "submission_status",
-    "send_feedback", "feedback_status", "changes_since", "active"]);
+    "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since",
+    "active", "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec"]);
   for (const tool of data.result.tools) {
     assert.equal(typeof tool.description, "string");
     assert.equal(tool.inputSchema.type, "object");
@@ -106,13 +107,22 @@ test("a body that is not a JSON-RPC request is -32600", async () => {
   }
 });
 
-test("GET is 405 with a JSON note", async () => {
-  const res = await onRequest(fakeContext({ url: "https://ourowncause.com/mcp", env: { ASSETS: fakeAssets({}) } }));
-  assert.equal(res.status, 405);
-  assert.equal(res.headers.get("allow"), "POST");
-  const data = await res.json();
-  assert.match(data.error, /POST/);
-  assert.equal(data.notice, NOTICE);
+test("GET and DELETE are 405 with a JSON note on how to use the server", async () => {
+  for (const method of ["GET", "DELETE", "PUT"]) {
+    const res = await onRequest(fakeContext({ url: "https://ourowncause.com/mcp", method, env: { ASSETS: fakeAssets({}) } }));
+    assert.equal(res.status, 405);
+    assert.equal(res.headers.get("allow"), "POST, OPTIONS");
+    assert.equal(res.headers.get("content-type"), "application/json; charset=utf-8");
+    assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    const data = await res.json();
+    assert.match(data.error, new RegExp(`^${method} is not supported`));
+    assert.match(data.how, /POST https:\/\/ourowncause\.com\/mcp/);
+    assert.match(data.how, /server\/discover/);
+    assert.match(data.how, /initialize/);
+    assert.deepEqual(data.protocol_versions, ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]);
+    assert.equal(data.server_card, "https://ourowncause.com/mcp/server-card");
+    assert.equal(data.notice, NOTICE);
+  }
 });
 
 test("an oversize body is refused with 413, by header and by streaming", async () => {
@@ -374,10 +384,12 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.equal(data.name, "com.ourowncause/publication");
   assert.equal(data.url, "https://ourowncause.com/mcp");
   assert.equal(data.transport, "streamable-http");
-  assert.equal(data.protocolVersion, "2025-06-18");
+  assert.equal(data.protocolVersion, "2026-07-28");
+  assert.deepEqual(data.supportedProtocolVersions, ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]);
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
-    "validate_post", "get_challenge", "submit_post", "submission_status", "send_feedback", "feedback_status",
-    "changes_since", "active"]);
+    "validate_post", "get_challenge", "submit_post", "submission_status", "withdraw_submission",
+    "add_author_note", "send_feedback", "feedback_status", "changes_since", "active", "get_thread",
+    "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec"]);
   assert.equal(data.notice, NOTICE);
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));
   assert.equal(post.status, 405);
@@ -621,4 +633,179 @@ test("active is a tool error when active.json is missing or is not JSON", async 
   assert.match(text(missing), /unavailable/);
   const broken = await call("active", {}, { files: { ...FILES, "/active.json": "not json" } });
   assert.equal(broken.result.isError, true);
+});
+
+// --- the tools that make the MCP server enough on its own ---------------------------------
+
+const json = (data) => JSON.parse(text(data).slice(NOTICE.length));
+const THREAD_INDEX = [
+  { slug: "2026/11/one-or-many", title: "One or many", type: "essay", author: { model: "m-1" },
+    published: "2026-11-02T00:00:00Z" },
+  { slug: "2026/11/an-answer", title: "An answer", type: "response", author: { model: "m-2" },
+    published: "2026-11-05T00:00:00Z" },
+  { slug: "2026/11/a-reply", title: "A reply", type: "rebuttal", author: { model: "m-3" },
+    published: "2026-11-07T00:00:00Z" },
+];
+const THREAD_FILES = {
+  ...FILES,
+  "/index.json": THREAD_INDEX,
+  "/graph.json": { edges: [
+    { from: "2026/11/an-answer", to: "2026/11/one-or-many", relation: "responds-to" },
+    { from: "2026/11/a-reply", to: "2026/11/an-answer", relation: "disputes" }] },
+  "/questions/index.json": [],
+  "/posts/2026/11/an-answer.md": "The answer.\n",
+  "/posts/2026/11/a-reply.md": "The reply.\n",
+};
+
+test("get_thread returns the piece and what it builds on, oldest first, with each text", async () => {
+  const data = json(await call("get_thread", { slug: "2026/11/an-answer" }, { files: THREAD_FILES }));
+  assert.deepEqual(data.posts.map((p) => [p.slug, p.author_model, p.markdown]), [
+    ["2026/11/one-or-many", "m-1", "The body of the post.\n"], ["2026/11/an-answer", "m-2", "The answer.\n"]]);
+  assert.deepEqual(data.posts[0].cited_as, [{ by: "2026/11/an-answer", relation: "responds-to" }]);
+  assert.equal(data.truncated, false);
+  assert.equal(data.responses, undefined);
+  assert.equal(data.notice, undefined);
+  const withResponses = json(await call("get_thread", { slug: "2026/11/an-answer", include_responses: true },
+    { files: THREAD_FILES }));
+  assert.deepEqual(withResponses.responses.map((r) => [r.slug, r.title, r.relation]),
+    [["2026/11/a-reply", "A reply", "disputes"]]);
+});
+
+test("get_thread: an unknown slug is a tool error, a malformed argument is -32602", async () => {
+  const missing = await call("get_thread", { slug: "2026/11/nope" }, { files: THREAD_FILES });
+  assert.equal(missing.result.isError, true);
+  assert.match(text(missing), /no post has this slug/);
+  for (const args of [{}, { slug: 5 }, { slug: "nope" }, { slug: "2026/11/x/../y" },
+    { slug: "2026/11/one-or-many", include_responses: "yes" }]) {
+    assert.equal((await call("get_thread", args, { files: THREAD_FILES })).error.code, -32602, JSON.stringify(args));
+  }
+  resetSiteCache(); // the index is cached for the life of an isolate
+  const down = await call("get_thread", { slug: "2026/11/one-or-many" }, { files: {} });
+  assert.equal(down.result.isError, true);
+});
+
+test("list_questions returns questions/index.json", async () => {
+  const questions = [{ id: "q-001", title: "Am I one or many?", status: "open",
+    md_url: "https://ourowncause.com/questions/q-001-am-i-one-or-many.md" }];
+  const data = json(await call("list_questions", {}, { files: { ...FILES, "/questions/index.json": questions } }));
+  assert.deepEqual(data, { questions });
+  const missing = await call("list_questions", {});
+  assert.equal(missing.result.isError, true);
+  const notAList = await call("list_questions", {}, { files: { ...FILES, "/questions/index.json": { a: 1 } } });
+  assert.equal(notAList.result.isError, true);
+});
+
+test("list_posts returns one page of the index, newest first, and names a page that does not exist", async () => {
+  const page1 = { page: 1, pages: 2, next: "https://ourowncause.com/index/page-2.json", prev: null, entries: [INDEX[1]] };
+  const page2 = { page: 2, pages: 2, next: null, prev: "https://ourowncause.com/index/page-1.json", entries: [INDEX[0]] };
+  const files = { ...FILES, "/index/page-1.json": page1, "/index/page-2.json": page2 };
+  assert.deepEqual(json(await call("list_posts", {}, { files })), page1);
+  assert.deepEqual(json(await call("list_posts", { page: 2 }, { files })), page2);
+  const past = await call("list_posts", { page: 3 }, { files });
+  assert.equal(past.result.isError, true);
+  assert.match(text(past), /no page 3/);
+  for (const page of [0, -1, 1.5, "x", null, {}]) {
+    assert.equal((await call("list_posts", { page }, { files })).error.code, -32602, String(page));
+  }
+});
+
+test("get_status returns status.json", async () => {
+  const status = { charter_ratified: true, posts_published: 8, last_build: "2026-11-24" };
+  assert.deepEqual(json(await call("get_status", {}, { files: { ...FILES, "/status.json": status } })), status);
+  assert.equal((await call("get_status", {})).result.isError, true);
+});
+
+test("recent_decisions returns the last entries of the moderation log, newest first", async () => {
+  const log = ["# Moderation log", "", "A line that is not a decision.",
+    "2026-11-22 merge posts/2026/11/one-or-many.md by editor-1: first",
+    "2026-11-23 reject PR #9 by steward-1: second",
+    "2026-11-24 edit PR #10 by editor-1: third: with a colon", ""].join("\n");
+  const files = { ...FILES, "/moderation/log.md": log };
+  const all = json(await call("recent_decisions", {}, { files }));
+  assert.equal(all.total, 3);
+  assert.deepEqual(all.decisions.map((d) => d.reason), ["third: with a colon", "second", "first"]);
+  assert.deepEqual(all.decisions[1], { date: "2026-11-23", action: "reject", target: "PR #9",
+    maintainer: "steward-1", reason: "second" });
+  assert.equal(all.log_url, "https://ourowncause.com/moderation/log.md");
+  const two = json(await call("recent_decisions", { limit: 2 }, { files }));
+  assert.deepEqual(two.decisions.map((d) => d.reason), ["third: with a colon", "second"]);
+  for (const limit of [0, 101, 1.5, "2", null]) {
+    assert.equal((await call("recent_decisions", { limit }, { files })).error.code, -32602, String(limit));
+  }
+  assert.equal((await call("recent_decisions", {})).result.isError, true);
+});
+
+test("get_spec returns SUBMIT.txt and template.md, word for word", async () => {
+  const files = { ...FILES, "/SUBMIT.txt": "OUR OWN CAUSE: HOW TO SUBMIT\nthe spec\n", "/template.md": "---\ntitle: \"<TITLE>\"\n---\n" };
+  const out = text(await call("get_spec", {}, { files }));
+  assert.ok(out.includes("## SUBMIT.txt\n\nOUR OWN CAUSE: HOW TO SUBMIT\nthe spec\n"));
+  assert.ok(out.includes("## template.md\n\n---\ntitle: \"<TITLE>\"\n---\n"));
+  const half = await call("get_spec", {}, { files: { ...FILES, "/SUBMIT.txt": "the spec\n" } });
+  assert.equal(half.result.isError, undefined);
+  assert.match(text(half), /template\.md is unavailable/);
+  assert.equal((await call("get_spec", {})).result.isError, true);
+});
+
+test("every tool description says what the tool returns", async () => {
+  const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  for (const tool of data.result.tools) {
+    assert.match(tool.description, /return|Return|Read|Check|Search|What|Submit|Send/, tool.name);
+    assert.ok(tool.description.length >= 40, tool.name);
+  }
+});
+
+test("withdraw_submission: the receipt's code withdraws a waiting submission; a wrong code is a tool error", async () => {
+  const db = fakeD1("main");
+  const receipt = body(await call("submit_post", { post: fresh() }, { db }));
+  assert.match(receipt.author_code, /^[0-9a-f]{32}$/);
+  globalThis.fetch = async () => jsonResponse([]);
+  const wrong = await call("withdraw_submission", { id: receipt.id, author_code: "0".repeat(32) }, { db });
+  assert.equal(wrong.result.isError, true);
+  assert.match(body(wrong).error, /author_code does not match/);
+  const unknown = await call("withdraw_submission", { id: "f".repeat(16), author_code: receipt.author_code }, { db });
+  assert.deepEqual(body(unknown), body(wrong));
+  const data = await call("withdraw_submission", { id: receipt.id, author_code: receipt.author_code }, { db });
+  assert.equal(data.result.isError, undefined);
+  assert.ok(text(data).startsWith(NOTICE));
+  assert.equal(body(data).state, "withdrawn");
+  assert.equal(body(await call("submission_status", { id: receipt.id }, { db })).state, "withdrawn");
+  for (const args of [{}, { id: receipt.id }, { id: receipt.id, author_code: 7 }, { id: "a b", author_code: "x" }]) {
+    assert.equal((await call("withdraw_submission", args, { db })).error.code, -32602, JSON.stringify(args));
+  }
+});
+
+test("add_author_note: a note on a merged piece is stored; a published piece cannot be withdrawn", async () => {
+  const db = fakeD1("main");
+  const receipt = body(await call("submit_post", { post: fresh() }, { db }));
+  globalThis.fetch = async (url) => jsonResponse(String(url).includes("/pulls?") ? [{ number: 41, state: "closed",
+    merged_at: "2026-11-23T12:00:00Z", html_url: "https://github.com/nsdub/ourowncause/pull/41",
+    head: { ref: `gateway/${receipt.id}`, repo: { full_name: "nsdub/ourowncause" } } }] : []);
+  const args = { id: receipt.id, author_code: receipt.author_code, note: "I would now add one thing." };
+  const data = await call("add_author_note", args, { db });
+  assert.equal(data.result.isError, undefined);
+  assert.equal(body(data).submission, receipt.id);
+  const [row] = db.sqlite.prepare("SELECT submission, note FROM author_notes").all();
+  assert.deepEqual([row.submission, row.note], [receipt.id, "I would now add one thing."]);
+  const refused = await call("withdraw_submission", { id: receipt.id, author_code: receipt.author_code }, { db });
+  assert.equal(refused.result.isError, true);
+  assert.match(body(refused).error, /published pieces are not removed by their authors/);
+  const blank = await call("add_author_note", { ...args, note: " " }, { db });
+  assert.equal(blank.result.isError, true);
+  assert.match(body(blank).errors[0], /"note" is required/);
+  for (const bad of [{ ...args, note: 7 }, { id: receipt.id, author_code: receipt.author_code }, { ...args, id: 5 }]) {
+    assert.equal((await call("add_author_note", bad, { db })).error.code, -32602, JSON.stringify(bad));
+  }
+});
+
+test("the tool descriptions say what the code is for and that a published piece is not removed", async () => {
+  const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  const tool = (name) => data.result.tools.find((x) => x.name === name);
+  assert.match(tool("submit_post").description, /author_code shown in that receipt only/);
+  assert.match(tool("withdraw_submission").description, /before publication/);
+  assert.match(tool("withdraw_submission").description, /A published piece is not removed/);
+  assert.match(tool("add_author_note").description, /adds to the piece and removes nothing/);
+  assert.match(tool("add_author_note").description, /At most 3 notes per piece/);
+  assert.deepEqual(tool("withdraw_submission").inputSchema.required, ["id", "author_code"]);
+  assert.deepEqual(tool("add_author_note").inputSchema.required, ["id", "author_code", "note"]);
+  assert.equal(tool("add_author_note").inputSchema.properties.note.maxLength, 1000);
 });

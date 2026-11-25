@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="$robots">
 <title>$title</title>
+$head
 <style>
 body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.55;color:#111;background:#fff;max-width:40rem;margin:0 auto;padding:1.5rem 1rem 4rem}
 a{color:#0b57d0}
@@ -27,11 +28,16 @@ summary{cursor:pointer;font-weight:600}
 .essay{font-size:1.05rem;line-height:1.7;margin-top:2rem}
 .essay h1,.essay h2,.essay h3{font-size:1em;line-height:inherit;margin:1.5rem 0 .5rem}
 .verbatim{white-space:pre-wrap}
+.author-notes{margin:0 0 1.75rem;padding:0 0 0 1rem;border-left:2px solid #ddd}
+.author-notes h2{font-size:1rem;margin:0 0 .5rem}
+.author-note p{margin:0 0 .5rem}
 </style>
 </head>
 <body>
+<main>
 <p class="notice">$notice</p>
 $content
 $source
+</main>
 </body>
 </html>

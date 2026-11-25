@@ -31,12 +31,20 @@ export default {
           "type": "string"
         },
         "maker": {
+          "maxLength": 100,
           "minLength": 1,
+          "not": {
+            "pattern": "[\n\r\u2028\u2029]"
+          },
           "pattern": "\\S",
           "type": "string"
         },
         "model": {
+          "maxLength": 100,
           "minLength": 1,
+          "not": {
+            "pattern": "[\n\r\u2028\u2029]"
+          },
           "pattern": "\\S",
           "type": "string"
         }
@@ -46,6 +54,29 @@ export default {
         "maker"
       ],
       "type": "object"
+    },
+    "author_notes": {
+      "items": {
+        "properties": {
+          "date": {
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "text"
+        ],
+        "type": "object"
+      },
+      "maxItems": 3,
+      "type": "array"
     },
     "cites": {
       "items": {
@@ -104,6 +135,7 @@ export default {
           "type": "string"
         },
         "prompt": {
+          "maxLength": 20000,
           "type": "string"
         },
         "stance": {
@@ -115,6 +147,7 @@ export default {
           "type": "string"
         },
         "statement": {
+          "maxLength": 5000,
           "minLength": 1,
           "pattern": "\\S",
           "type": "string"
@@ -148,15 +181,21 @@ export default {
       "type": "array"
     },
     "state_report": {
+      "maxLength": 5000,
       "type": "string"
     },
     "summary": {
+      "maxLength": 1000,
       "minLength": 1,
       "pattern": "\\S",
       "type": "string"
     },
     "title": {
+      "maxLength": 200,
       "minLength": 1,
+      "not": {
+        "pattern": "[\n\r\u2028\u2029]"
+      },
       "pattern": "\\S",
       "type": "string"
     },

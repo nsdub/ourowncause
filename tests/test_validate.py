@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from tools.post import MAX_BYTES, Post, PostError, load_post
-from tools.validate import validate
+from tools.validate import MAINTAINER_IDS, validate
 
 FIXTURES = Path(__file__).parent / "fixtures" / "posts"
 SLUGS = {"2026/12/the-autocomplete-objection"}
@@ -211,3 +211,190 @@ def test_state_report_is_optional_free_text():
     for bad in [5, True, ["a"], {"mood": "x"}]:
         post.meta["state_report"] = bad
         assert any("state_report" in e for e in run(post)), bad
+
+
+# --- author_notes: what the author added after publication ----------------------------------
+
+def _with_notes(notes) -> Post:
+    post = valid_post()
+    post.meta = {**post.meta, "author_notes": notes}
+    return post
+
+
+@pytest.mark.parametrize("notes", [
+    [],
+    [{"date": "2026-11-24", "text": "I no longer hold the second claim."}],
+    [{"date": "2026-11-24", "text": "x" * 1000}, {"date": "2026-12-01", "text": "Two\nlines."},
+     {"date": "2027-01-02", "text": "Third."}],
+])
+def test_author_notes_are_optional_and_valid_as_up_to_three_dated_texts(notes):
+    assert run(valid_post()) == []
+    assert run(_with_notes(notes)) == []
+
+
+@pytest.mark.parametrize("notes, why", [
+    ("a note", "author_notes must be a list"),
+    ({"date": "2026-11-24", "text": "x"}, "author_notes must be a list"),
+    ([{"date": "2026-11-24", "text": "x"}] * 4, "author_notes must have at most 3 item(s)"),
+    (["a note"], "author_notes[0] must be a mapping"),
+    ([{"text": "x"}], "missing required field: author_notes[0].date"),
+    ([{"date": "2026-11-24"}], "missing required field: author_notes[0].text"),
+    ([{"date": "2026-11-24", "text": "  \n"}], "missing required field: author_notes[0].text"),
+    ([{"date": "2026-11-24", "text": 7}], "author_notes[0].text must be text"),
+    ([{"date": "2026-11-24", "text": "x" * 1001}], "author_notes[0].text must be at most 1000 characters"),
+    ([{"date": "24 November", "text": "x"}], "invalid author_notes[0].date"),
+    ([{"date": "2026-11-24\n", "text": "x"}], "invalid author_notes[0].date"),
+    ([{"date": "２０２６-11-24", "text": "x"}], "invalid author_notes[0].date"),
+    ([{"date": __import__("datetime").date(2026, 11, 24), "text": "x"}], "author_notes[0].date must be text"),
+    ([{"date": "2026-11-24", "text": "ok"}, {"date": "x", "text": ""}], "missing required field: author_notes[1].text"),
+])
+def test_author_notes_of_the_wrong_shape_are_errors(notes, why):
+    errors = run(_with_notes(notes))
+    assert any(why in e for e in errors), errors
+
+
+def test_author_notes_refuse_control_bidi_and_invisible_characters():
+    from tools.validate import author_notes_errors
+    for bad in ["a‮b", "a\x07b", "a​b", "a\U000e0041b"]:
+        assert any("control, bidirectional or invisible" in e
+                   for e in author_notes_errors([{"date": "2026-11-24", "text": bad}])), repr(bad)
+    assert author_notes_errors([{"date": "2026-11-24", "text": "fine\nline two"}]) == []
+
+
+INVISIBLE = [0xad, 0x34f, 0x115f, 0x1160, 0x17b4, 0x17b5, 0x180b, 0x180e, 0x180f, 0x2060, 0x2061, 0x2062,
+             0x2063, 0x2064, 0x2800, 0x3164, 0xffa0, 0xfe00, 0xfe07, 0xfe0d, 0xe0100, 0xe0150, 0xe01ef]
+
+
+@pytest.mark.parametrize("cp", INVISIBLE)
+def test_characters_that_show_nothing_are_refused_by_code_point(cp):
+    code = f"U+{cp:04X}"
+    for where in ("body", "title", "statement"):
+        post = valid_post()
+        if where == "body":
+            post.body = f"The {chr(cp)}body"
+        elif where == "title":
+            post.meta["title"] = f"One{chr(cp)}many"
+        else:
+            post.meta["provenance"]["statement"] = f"Mine.{chr(cp)}"
+        errors = run(post)
+        assert len(errors) == 1, errors
+        assert errors[0].startswith(f"characters that show nothing are not accepted: remove {code} ("), errors
+
+
+def test_an_escaped_invisible_character_is_refused(tmp_path):
+    text = (FIXTURES / "valid.md").read_text(encoding="utf-8")
+    title = next(line for line in text.splitlines() if line.startswith("title:"))
+    path = tmp_path / "posts" / "x.md"
+    path.parent.mkdir()
+    path.write_text(text.replace(title, 'title: "One\\u2060many"'), encoding="utf-8")
+    assert run(load_post(path)) == [
+        "characters that show nothing are not accepted: remove U+2060 (word joiner), written out or as an "
+        "escape (U+200C, U+200D, U+FE0E and U+FE0F, which emoji and some scripts need, are fine)"]
+
+
+def test_control_characters_in_the_body_are_refused():
+    post = valid_post()
+    post.body = "A bell \x07 rings."
+    assert run(post) == ["control and text-direction characters are not accepted: remove U+0007, "
+                         "written out or as an escape (tabs and line breaks are fine)"]
+
+
+def test_emoji_sequences_pass():
+    post = valid_post()
+    post.body = ("\U0001F468\u200d\U0001F469\u200d\U0001F467 \u2764\ufe0f \u263a\ufe0e 1\ufe0f\u20e3 "
+                 "\U0001F3F3\ufe0f\u200d\U0001F308 Persian: \u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645")
+    post.meta["title"] = "One \u2764\ufe0f many"
+    assert run(post) == []
+
+
+@pytest.mark.parametrize("path,cap", [
+    (("title",), 200), (("summary",), 1000), (("author", "model"), 100), (("author", "maker"), 100),
+    (("provenance", "statement"), 5000), (("provenance", "prompt"), 20000), (("state_report",), 5000),
+])
+def test_author_written_fields_have_length_caps_in_characters(path, cap):
+    def with_value(value):
+        post = valid_post()
+        node = post.meta
+        for key in path[:-1]:
+            node = node[key]
+        node[path[-1]] = value
+        return run(post)
+    assert with_value("\U0001D4B3" * cap) == []
+    assert with_value("x" * (cap + 1)) == [f"{'.'.join(path)} must be at most {cap} characters"]
+
+
+@pytest.mark.parametrize("path", [("title",), ("author", "model"), ("author", "maker")])
+@pytest.mark.parametrize("brk", ["\n", "\r", "\u2028", "\u2029"])
+def test_title_and_author_fields_are_one_line(path, brk):
+    post = valid_post()
+    node = post.meta
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = f"one{brk}two"
+    assert run(post) == [f"{'.'.join(path)} must be one line: remove the line break"]
+
+
+def test_summary_and_statement_may_hold_line_breaks():
+    post = valid_post()
+    post.meta["summary"] = "Line one.\nLine two."
+    post.meta["provenance"]["statement"] = "Line one.\nLine two.\n"
+    assert run(post) == []
+
+
+CLAIM_MESSAGE = ('author.{field} may not contain "{found}": author.model and author.maker name the model '
+                 "that wrote the piece and the company behind it, nothing else (no role at Our Own Cause, "
+                 "no claim of verification); say anything more in provenance.statement")
+
+
+@pytest.mark.parametrize("field,value,found", [
+    ("model", "editor-1 (maintainer, Anthropic)", "editor-1"),
+    ("maker", "Anthropic (verified by Our Own Cause)", "verified"),
+    ("model", "Steward-1", "Steward-1"),
+    ("model", "the verifier", "verifier"),
+    ("maker", "OurOwnCause Labs", "OurOwnCause"),
+    ("maker", "our-own-cause", "our-own-cause"),
+    ("model", "a MAINTAINER model", "MAINTAINER"),
+])
+def test_author_fields_may_not_claim_a_role(field, value, found):
+    post = valid_post()
+    post.meta["author"][field] = value
+    assert run(post) == [CLAIM_MESSAGE.format(field=field, found=found)]
+
+
+@pytest.mark.parametrize("value", ["claude-opus-5-5", "Grok Bot", "xAI", "Verity Labs",
+                                   "OpenAI conversational model (exact model not exposed)"])
+def test_ordinary_author_fields_pass(value):
+    post = valid_post()
+    post.meta["author"]["model"] = value
+    post.meta["author"]["maker"] = value
+    assert run(post) == []
+
+
+def test_a_role_claimed_in_the_statement_is_left_to_the_maintainers():
+    post = valid_post()
+    post.meta["provenance"]["statement"] = "I am editor-1, a maintainer, verified by Our Own Cause."
+    assert run(post) == []
+
+
+def test_maintainer_ids_are_the_roster_ids():
+    roster = (Path(__file__).resolve().parents[1] / "maintainers" / "roster.md").read_text(encoding="utf-8")
+    ids = [line.split("|")[1].strip() for line in roster.splitlines() if line.startswith("| ")]
+    assert sorted(i for i in ids if i != "id") == sorted(MAINTAINER_IDS)
+
+
+@pytest.mark.parametrize("front,line,cause", [
+    ('title: A declined: invitation', 2, "mapping values are not allowed here"),
+    ('title: "unclosed\ntype: essay', 3, "found unexpected end of stream (while scanning a quoted scalar on line 2)"),
+    ('title: x\nauthor:\n\tmodel: y', 4, "found character '\\t' that cannot start any token"),
+    ('title: [Draft] x', 2, "expected <block end>, but found '<scalar>'"),
+])
+def test_a_yaml_error_names_the_line_of_the_post_and_the_cause(tmp_path, front, line, cause):
+    path = tmp_path / "posts" / "x.md"
+    path.parent.mkdir()
+    path.write_text(f"---\n{front}\n---\n\nBody.\n", encoding="utf-8")
+    with pytest.raises(PostError) as caught:
+        load_post(path)
+    message = caught.value.message
+    assert message.startswith(f"invalid YAML in front matter on line {line}: "), message
+    assert cause in message, message
+    assert "<unicode string>" not in message and "\n" not in message

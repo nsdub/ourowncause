@@ -2,8 +2,26 @@
 
 The check fails only on hard errors. Injection findings and near-duplicates are reported
 for a maintainer to judge and never fail it.
+
+Where the pull request came from is given in four environment variables, which
+.github/workflows/check-pr.yml sets from the pull request event:
+
+    GITHUB_REPOSITORY  the repository the pull request is made to (GitHub Actions sets it)
+    PR_HEAD_REPO       the repository of its head branch (pull_request.head.repo.full_name)
+    PR_HEAD_REF        the name of its head branch (pull_request.head.ref)
+    PR_AUTHOR          the login that opened it (pull_request.user.login)
+
+A maintainer running the check by hand gives the same four facts as literal options instead:
+--base-repo, --head-repo, --head-ref and --pr-author (all four, or none).
+
+They matter for one case. A pull request that changes the `author_notes` of a post already
+on main is an error unless the gateway opened it: its head branch is `gateway/note-<id>` in
+this same repository, not a fork, and its author is the github-actions bot. When any of the
+four is missing, as in a run by hand, such a change is an error too, because the pull
+request's origin could not be confirmed. Nothing else in the check reads them.
 """
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -137,11 +155,85 @@ def _key_of(post: Post | None):
     return author.get("key") if isinstance(author, dict) else None
 
 
+AUTHOR_NOTE_APPENDS = ("author_notes: the notes already on a published post were changed, removed or "
+                       "reordered; a note is only ever appended after them")
+AUTHOR_NOTE_ONLY = ("a change to author_notes changes nothing else in the post: the body and every "
+                    "other field stay exactly as published")
+
+
+def check_author_notes(base: Post, head: Post) -> list[str]:
+    """Errors unless an existing post's author_notes only grew, with the rest of the post untouched.
+
+    A pull request that leaves author_notes as they were is not judged here at all. One
+    that changes them (an `author-note` pull request from the gateway, or anyone's) may
+    only append: the notes at base stay first, in order and word for word, and the body
+    and every other front matter field are equal to base.
+    """
+    def notes(post: Post) -> list:
+        value = post.meta.get("author_notes")
+        return value if isinstance(value, list) else []
+
+    old, new = notes(base), notes(head)
+    if base.meta.get("author_notes") == head.meta.get("author_notes"):
+        return []
+    errors = []
+    if len(new) <= len(old) or new[:len(old)] != old:
+        errors.append(AUTHOR_NOTE_APPENDS)
+
+    def rest(post: Post) -> dict:
+        return {k: v for k, v in post.meta.items() if k != "author_notes"}
+
+    if rest(base) != rest(head) or base.body != head.body:
+        errors.append(AUTHOR_NOTE_ONLY)
+    return errors
+
+
+NOTE_BRANCH = re.compile(r"gateway/note-[0-9a-f]{16}")  # the branch tools.gateway opens a note on
+GATEWAY_LOGINS = ("github-actions[bot]", "app/github-actions")  # GITHUB_TOKEN, as REST and gh name it
+NOTE_ORIGIN = ("only the gateway adds an author's note: a pull request that changes author_notes "
+               "is on a gateway/note-<id> branch of this repository, opened by github-actions[bot]")
+NOTE_ORIGIN_UNKNOWN = ("this pull request changes author_notes and its origin could not be confirmed: "
+                       "GITHUB_REPOSITORY, PR_HEAD_REPO, PR_HEAD_REF and PR_AUTHOR were not all given. "
+                       "Only a pull request the gateway opened may change author_notes")
+
+
+@dataclass(frozen=True)
+class Origin:
+    """Where a pull request came from, as the pull request event states it."""
+    base_repo: str
+    head_repo: str
+    head_ref: str
+    author: str
+
+    @classmethod
+    def from_env(cls, env=None) -> "Origin | None":
+        """The origin in the four environment variables, or None unless all four are set."""
+        env = os.environ if env is None else env
+        values = [env.get(k, "").strip() for k in ("GITHUB_REPOSITORY", "PR_HEAD_REPO", "PR_HEAD_REF", "PR_AUTHOR")]
+        return cls(*values) if all(values) else None
+
+
+def check_note_origin(origin: Origin | None) -> list[str]:
+    """Errors unless `origin` is that of a pull request the gateway opened for an author's note."""
+    if origin is None:
+        return [NOTE_ORIGIN_UNKNOWN]
+    problems = []
+    # GitHub compares repository names without regard to case.
+    if origin.head_repo.lower() != origin.base_repo.lower():
+        problems.append(f"its head branch is in another repository ({origin.head_repo})")
+    if not NOTE_BRANCH.fullmatch(origin.head_ref):
+        problems.append(f"its head branch is {origin.head_ref}")
+    if origin.author not in GATEWAY_LOGINS:
+        problems.append(f"it was opened by {origin.author}")
+    return [f"{NOTE_ORIGIN}. This one is not: {'; '.join(problems)}"] if problems else []
+
+
 def check_changed_files(paths: list[Path], repo: Path, commits: list[str] | None = None,
                         git_repo: Path | None = None,
                         contributors_dir: Path | None = None,
                         base_post: Path | None = None,
-                        questions_dir: Path | None = None) -> Report:
+                        questions_dir: Path | None = None,
+                        origin: Origin | None = None) -> Report:
     """Check the PR's changed paths against the tree at `repo`.
 
     `commits` are the commits that touch the post, verified in `git_repo`.
@@ -149,6 +241,8 @@ def check_changed_files(paths: list[Path], repo: Path, commits: list[str] | None
     `repo`/contributors. `base_post` is the post's file at base, when it already existed:
     its author.key cannot be dropped or swapped. `questions_dir` holds the question pages
     at base, default `repo`/questions: a submission cannot create the question it cites.
+    `origin` is where the pull request came from, or None when that is not known: a change
+    to a published post's author_notes needs the gateway's.
     """
     repo = Path(repo)
     contributors_dir = Path(contributors_dir) if contributors_dir else repo / "contributors"
@@ -209,7 +303,19 @@ def check_changed_files(paths: list[Path], repo: Path, commits: list[str] | None
     base_key = None
     if base_post is not None:
         try:
-            base_key = _key_of(load_post(base_post))
+            base = load_post(base_post)
+            base_key = _key_of(base)
+            report.errors.extend(check_author_notes(base, post))
+            notes_changed = base.meta.get("author_notes") != post.meta.get("author_notes")
+            if notes_changed:
+                report.errors.extend(check_note_origin(origin))
+            if others and notes_changed:
+                # An author's note changes that post and nothing else: a fork can name its
+                # branch like ours, so a note may not carry changes to any other file.
+                report.errors.append(
+                    f"This PR adds an author's note to {rel.as_posix()} and also changes paths "
+                    f"outside it: {', '.join(others)}. A change to a published post touches that "
+                    f"post and nothing else.")
         except PostError:
             pass
     head_key = _key_of(post)
@@ -324,7 +430,7 @@ def _status_entries(repo: Path, base: str, head: str):
     return list(zip(toks[0::2], toks[1::2])), ""
 
 
-def run_check(repo: Path, base: str, head: str) -> Report:
+def run_check(repo: Path, base: str, head: str, origin: Origin | None = None) -> Report:
     entries, err = _status_entries(repo, base, head)
     if entries is None:
         return Report(errors=[f"could not compute the pull request's changes: {err}"])
@@ -371,7 +477,7 @@ def run_check(repo: Path, base: str, head: str) -> Report:
             return Report(errors=errors + [f"could not read the pull request's files: {e}"])
         report = check_changed_files(paths, head_dir, commits, repo,
                                      base_dir / "contributors", base_post,
-                                     base_dir / "questions")
+                                     base_dir / "questions", origin)
     report.errors = errors + report.errors
     return report
 
@@ -382,8 +488,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--head", required=True)
     ap.add_argument("--out", type=Path, help="report capped to fit a GitHub comment")
     ap.add_argument("--full-out", type=Path, help="the uncapped report")
+    # The origin of the pull request, given literally by a maintainer who has confirmed it
+    # (an author's note must come from the gateway). Any of these overrides the environment.
+    ap.add_argument("--base-repo", help="the repository the pull request is made to")
+    ap.add_argument("--head-repo", help="the repository of its head branch")
+    ap.add_argument("--head-ref", help="the name of its head branch")
+    ap.add_argument("--pr-author", help="the login that opened it")
     args = ap.parse_args(argv)
-    report = run_check(Path.cwd(), args.base, args.head)
+    origin = Origin.from_env()
+    given = [args.base_repo, args.head_repo, args.head_ref, args.pr_author]
+    if all(given):
+        origin = Origin(*(v.strip() for v in given))
+    elif any(given):
+        print("--base-repo, --head-repo, --head-ref and --pr-author go together: give all four",
+              file=sys.stderr)
+        return 2
+    report = run_check(Path.cwd(), args.base, args.head, origin)
     if args.out:
         args.out.write_text(render_report(report))
     full = render_report(report, full=True)

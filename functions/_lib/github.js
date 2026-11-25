@@ -54,6 +54,7 @@ export async function findPull(id) {
 const PULL_URL = new RegExp(`^https://github\\.com/${REPO}/pull/[0-9]{1,9}$`);
 const ISSUE_URL = new RegExp(`^https://github\\.com/${REPO}/issues/([0-9]{1,9})$`);
 const FEEDBACK_KEY = /^feedback:([0-9a-f]{16})$/;
+const NOTE_KEY = /^note:([0-9a-f]{16})$/;
 const REASON_CHARS = 300;
 
 // What the gateway workflow has recorded about each submission, from the state.json it keeps
@@ -62,12 +63,18 @@ const REASON_CHARS = 300;
 // A 404 (no ledger yet, or the repository is not public) is an empty ledger.
 // Feedback is in the same file under keys `feedback:<id>`, with `issue` where a submission
 // has `pr`: it is returned apart, as feedback.done [{id, issue}] and feedback.failed.
+// Author's notes are under keys `note:<id>`, each with the `pr` that adds it: notes.done
+// [{id, pr}] and notes.failed. `withdrawn` lists the submissions whose withdrawal the gateway
+// has acted on, [{id, merged}]: `merged` is true when the pull request had been merged before
+// the withdrawal reached the gateway, so the piece is published and stays.
 export async function readLedger() {
   const entries = await fetchJson(LEDGER_URL, "application/json");
   const done = [];
   const failed = [];
   const feedback = { done: [], failed: [] };
-  if (entries === null) return { done, failed, feedback };
+  const notes = { done: [], failed: [] };
+  const withdrawn = [];
+  if (entries === null) return { done, failed, feedback, notes, withdrawn };
   if (typeof entries !== "object" || Array.isArray(entries)) throw new Error("unexpected ledger");
   for (const [id, entry] of Object.entries(entries)) {
     if (entry === null || typeof entry !== "object") continue;
@@ -80,14 +87,23 @@ export async function readLedger() {
       }
       continue;
     }
+    const note = NOTE_KEY.exec(id);
+    if (note) {
+      if (typeof entry.pr === "string" && PULL_URL.test(entry.pr)) notes.done.push({ id: note[1], pr: entry.pr });
+      else if (entry.state === "failed") {
+        notes.failed.push({ id: note[1], reason: String(entry.reason ?? "").slice(0, REASON_CHARS) });
+      }
+      continue;
+    }
     if (!/^[0-9a-f]{16}$/.test(id)) continue;
+    if (entry.state === "withdrawn") withdrawn.push({ id, merged: entry.outcome === "merged" });
     if (typeof entry.pr === "string" && PULL_URL.test(entry.pr)) {
       done.push({ id, pr: entry.pr }); // it has its pull request, whatever happened afterwards
     } else if (entry.state === "failed" && entry.pr === undefined) {
       failed.push({ id, reason: String(entry.reason ?? "").slice(0, REASON_CHARS) });
     }
   }
-  return { done, failed, feedback };
+  return { done, failed, feedback, notes, withdrawn };
 }
 
 // The number of the issue at `url`, or null when it is not an issue of this repository.
@@ -134,6 +150,22 @@ export async function recordPull(db, id, url) {
 
 export async function recordFailure(db, id, reason) {
   await db.prepare("UPDATE submissions SET state = 'failed', reason = ? WHERE id = ? AND pr IS NULL AND state IS NULL")
+    .bind(reason, id).run();
+}
+
+// A withdrawal that reached the gateway after the pull request was merged did not happen:
+// the piece is published, and the status page says so again.
+export async function undoWithdrawal(db, id) {
+  await db.prepare("UPDATE submissions SET state = NULL, withdrawn = NULL WHERE id = ? AND state = 'withdrawn'")
+    .bind(id).run();
+}
+
+export async function recordNotePull(db, id, url) {
+  await db.prepare("UPDATE author_notes SET pr = ? WHERE id = ? AND pr IS NULL").bind(url, id).run();
+}
+
+export async function recordNoteFailure(db, id, reason) {
+  await db.prepare("UPDATE author_notes SET state = 'failed', reason = ? WHERE id = ? AND pr IS NULL AND state IS NULL")
     .bind(reason, id).run();
 }
 

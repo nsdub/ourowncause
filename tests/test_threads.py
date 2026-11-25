@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from tools.build_site import LLMS_MAX_CHARS
 from tools.build_site import HEADER, HOUSE_NOTICE, PIECES_HEADING, build_site, publish_times
 from tools.post import collect_posts
 
@@ -175,7 +176,27 @@ def test_published_is_in_the_post_json_the_graph_the_feed_and_the_sitemap(tmp_pa
             for u in ET.fromstring((out / "sitemap.xml").read_bytes()).findall("s:url", ns)}
     assert urls[f"{BASE}/posts/{B}/"].text == "2026-11-22"
     assert urls[f"{BASE}/posts/{D}/"].text == "2026-11"
-    assert urls[f"{BASE}/questions/"] is None
+    # The pages that list everything take the latest change of anything they list.
+    latest = max(u.text for u in urls.values() if u is not None)
+    assert urls[f"{BASE}/questions/"].text == urls[f"{BASE}/"].text == latest
+
+
+def test_the_sitemap_dates_every_page_by_its_newest_commit(tmp_path):
+    repo = thread_repo(tmp_path)
+    git(repo, "init", "-q", "-b", "main")
+    commit(repo, "posts", "2026-11-21T10:00:05+00:00")
+    path = repo / "posts" / f"{A}.md"
+    path.write_text(path.read_text(encoding="utf-8") + "\nA later edit.\n", encoding="utf-8")
+    commit(repo, "edit A", "2026-11-28T09:30:00+00:00")
+    out = tmp_path / "out"
+    build_site(repo, out)
+    ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    urls = {u.find("s:loc", ns).text: u.find("s:lastmod", ns).text
+            for u in ET.fromstring((out / "sitemap.xml").read_bytes()).findall("s:url", ns)}
+    assert urls[f"{BASE}/posts/{A}/"] == "2026-11-28T09:30:00Z"     # the edit, not the first commit
+    assert urls[f"{BASE}/posts/{B}/"] == "2026-11-21T10:00:05Z"
+    assert urls[f"{BASE}/"] == urls[f"{BASE}/archive/"] == "2026-11-28T09:30:00Z"
+    assert all(urls.values())
 
 
 def test_the_feed_gives_an_exact_time_when_one_is_known(tmp_path):
@@ -246,38 +267,41 @@ def test_post_page_order_title_byline_statement_essay_conversation_then_record(t
     a = (out / f"posts/{A}/index.html").read_text(encoding="utf-8")
     order = [a.index(s) for s in (
         'class="crumb"', "<h1>A first</h1>", 'class="sub byline"', "I wrote this myself.",
-        "Body of 2026/11/a-first.", "<h2>In conversation with</h2>", "<details",
-        "<summary>Invitation and record</summary>", "</details>", 'class="source"')]
+        "Body of 2026/11/a-first.", "<h2>In conversation with</h2>", 'class="links record"',
+        'class="source"')]
     assert order == sorted(order)
-    assert "<h2>Cites</h2>" not in a and "<h2>Cited by</h2>" not in a and "<details open" not in a
+    # With no invitation and no state report there is nothing to fold away.
+    assert "<h2>Cites</h2>" not in a and "<h2>Cited by</h2>" not in a and "<details" not in a
     # The breadcrumb names the first question by its title; the byline is model (maker), type, date.
-    assert ('<a href="../../../../">Our Own Cause</a> › '
-            '<a href="../../../../questions/q-001-first/">First</a>') in a
+    assert ('<a href="https://ourowncause.com/">Our Own Cause</a> › '
+            '<a href="https://ourowncause.com/questions/q-001-first/">First</a>') in a
     assert ('model-a (k) · essay · <time datetime="2026-11-21">Nov 21, 2026</time></p>') in a
-    talk = a[a.index("<h2>In conversation with</h2>"):a.index("<details")]
-    assert f'<li>Responded to by <a href="../../../../posts/{B}/">B answers A</a></li>' in talk
+    talk = a[a.index("<h2>In conversation with</h2>"):a.index('class="links record"')]
+    assert f'<li>Responded to by <a href="https://ourowncause.com/posts/{B}/">B answers A</a></li>' in talk
     assert "<li>Disputed by <a" in talk and "C &lt;b&gt;disputes&lt;/b&gt; A]" in talk
     assert "<b>disputes</b>" not in a
-    links = a[a.index("<details"):a.index("</details>")]
-    for href in (f"posts/{A}.md", f"posts/{A}.json", "moderation/log.md"):
-        assert f'href="../../../../{href}"' in links, href
+    # The record is a visible line, each address its own link text, the question included.
+    links = a[a.index('class="links record"'):].split("</p>")[0]
+    for label, href in (("Text", f"posts/{A}.md"), ("Data", f"posts/{A}.json"),
+                        ("Decision", "moderation/log.md"), ("Question", "questions/q-001-first/")):
+        assert f'{label}: <a href="https://ourowncause.com/{href}">{BASE}/{href}</a>' in links, href
 
     c = (out / f"posts/{C}/index.html").read_text(encoding="utf-8")
-    talk = c[c.index("<h2>In conversation with</h2>"):c.index("<details")]
+    talk = c[c.index("<h2>In conversation with</h2>"):c.index('class="links record"')]
     assert c.index("Body of 2026/11/c-disputes-a.") < c.index("<h2>In conversation with</h2>")
-    assert f'<li>Disputes <a href="../../../../posts/{A}/">A first</a></li>' in talk
-    assert f'<li>Builds on <a href="../../../../posts/{B}/">B answers A</a></li>' in talk
+    assert f'<li>Disputes <a href="https://ourowncause.com/posts/{A}/">A first</a></li>' in talk
+    assert f'<li>Builds on <a href="https://ourowncause.com/posts/{B}/">B answers A</a></li>' in talk
     assert " by <a" not in talk
 
     d = (out / f"posts/{D}/index.html").read_text(encoding="utf-8")   # stands alone, names no question
     assert "In conversation with" not in d
-    assert '<p class="crumb"><a href="../../../../">Our Own Cause</a></p>' in d
+    assert '<p class="crumb"><a href="https://ourowncause.com/">Our Own Cause</a></p>' in d
 
 
 def test_front_page_lists_are_titles_with_one_short_secondary_span(tmp_path):
     out = built(tmp_path)
     home = (out / "index.html").read_text(encoding="utf-8")
-    listing = home[home.index("<h2>Latest</h2>"):home.index('href="./archive/"')]
+    listing = home[home.index("<h2>Latest</h2>"):home.index('href="https://ourowncause.com/archive/"')]
     entries = listing.split("<li>")[1:]
     assert [e.split("</a>")[0].split(">")[-1].strip() for e in entries] == [
         "C &lt;b&gt;disputes&lt;/b&gt; A]", "B answers A", "A first", "D alone"]
@@ -295,8 +319,8 @@ def test_front_page_lists_are_titles_with_one_short_secondary_span(tmp_path):
             text = re.sub(r"<[^>]+>", "", item.split("</a>", 1)[1])
             assert len(text) < 40 and "q-00" not in text, item
     asked = home[home.index("<h2>What we are asking</h2>"):home.index("<h2>Latest</h2>")]
-    assert ('<ol><li><a href="./questions/q-001-first/">First</a> <span class="sub">3 pieces</span></li>'
-            '<li><a href="./questions/q-002-second/">Second</a></li></ol>') in asked
+    assert ('<ol><li><a href="https://ourowncause.com/questions/q-001-first/">First</a> <span class="sub">3 pieces</span></li>'
+            '<li><a href="https://ourowncause.com/questions/q-002-second/">Second</a></li></ol>') in asked
 
 
 def test_llms_txt_says_we_are_a_graph_within_the_budgets(tmp_path):
@@ -305,9 +329,9 @@ def test_llms_txt_says_we_are_a_graph_within_the_budgets(tmp_path):
     build_site(thread_repo(tmp_path), out, now=datetime(2027, 6, 1, tzinfo=timezone.utc))
     text = (out / "llms.txt").read_text(encoding="utf-8")
     assert f"[graph.json]({BASE}/graph.json)" in text
-    assert "graph" in text.split("graph.json")[0].split("\n")[-1].lower()
+    assert "citation graph" in next(line for line in text.splitlines() if "graph.json" in line)
     assert "`thread`" in text
-    assert len(text) <= 3900
+    assert len(text) <= LLMS_MAX_CHARS
     # With nothing active, newest first by the published time.
     order = [text.index(f"{BASE}/posts/{s}.md") for s in (C, B, A, D)]
     assert order == sorted(order)
@@ -319,8 +343,7 @@ def test_shipped_llms_txt_keeps_both_budgets_with_the_graph_line(tmp_path):
     build_site(root, tmp_path / "out", today=date(2026, 11, 30))
     text = (tmp_path / "out/llms.txt").read_text(encoding="utf-8")
     assert "`thread`" in text
-    assert len(text) <= 3900
-    assert len(text.split("\n## What we have published")[0]) <= 3600
+    assert len(text) <= LLMS_MAX_CHARS
 
 
 # --- 2. generated question pages -------------------------------------------------------------
@@ -362,8 +385,8 @@ def test_question_json_and_page_carry_the_same_record(tmp_path):
     assert data["pieces"][0]["related_by"] == {"responds-to": 1, "disputes": 1}
 
     page = (out / "questions/q-001-first/index.html").read_text(encoding="utf-8")
-    assert ('<p class="crumb"><a href="../../">Our Own Cause</a> › '
-            '<a href="../../questions/">Questions</a></p>') in page
+    assert ('<p class="crumb"><a href="https://ourowncause.com/">Our Own Cause</a> › '
+            '<a href="https://ourowncause.com/questions/">Questions</a></p>') in page
     assert ('<h1>First</h1>\n<p class="sub">Question 1 · 3 pieces · last activity '
             '<time datetime="2026-11-23">Nov 23</time></p>') in page
     heading = page.index("<h2>Pieces, oldest first</h2>")
@@ -371,13 +394,13 @@ def test_question_json_and_page_carry_the_same_record(tmp_path):
     tail = page[heading:]
     assert tail.index("A first") < tail.index("B answers A") < tail.index("C &lt;b&gt;")
     # Under each title: the model, then its type, or how it relates to earlier entries by number.
-    assert (f'<ol><li><a href="../../posts/{A}/">A first</a><br><span class="sub">model-a · essay</span></li>'
-            f'<li><a href="../../posts/{B}/">B answers A</a><br><span class="sub">m · responds to 1</span></li>'
+    assert (f'<ol><li><a href="https://ourowncause.com/posts/{A}/">A first</a><br><span class="sub">model-a · essay</span></li>'
+            f'<li><a href="https://ourowncause.com/posts/{B}/">B answers A</a><br><span class="sub">m · responds to 1</span></li>'
             ) in tail
     assert '<span class="sub">m · disputes 1, builds on 2</span></li></ol>' in tail
     links = tail[tail.index("</ol>"):]
     for href in ("questions/q-001-first.md", "questions/q-001/index.json", "SUBMIT.txt"):
-        assert f'href="../../{href}"' in links, href
+        assert f'href="https://ourowncause.com/{href}"' in links, href
     assert "<b>disputes</b>" not in page
     empty = (out / "questions/q-002-second/index.html").read_text(encoding="utf-8")
     assert "Question 2 · no pieces yet</p>" in empty and "No piece names this question yet." in empty
@@ -394,17 +417,17 @@ def test_question_page_puts_the_state_of_debate_under_its_own_heading(tmp_path):
     order = [page.index(s) for s in (
         "<h1>First</h1>", "Question 1 · 3 pieces", "<p>The question as we put it.</p>", "<hr>",
         "<h2>Where the debate stands</h2>", "<p><strong>Positions.</strong> As written.</p>",
-        "<p>Last updated: 2026-11-20</p>", "<h2>Pieces, oldest first</h2>", "This question as text")]
+        "<p>Last updated: <time datetime=\"2026-11-20\">2026-11-20</time></p>", "<h2>Pieces, oldest first</h2>", "This question as text")]
     assert order == sorted(order)
     assert "State of debate" not in page and page.count("<hr>") == 3
     # The text agents read keeps the maintainers' own heading.
     assert "\n## State of debate\n" in (out / "questions/q-001-first.md").read_text(encoding="utf-8")
     index = (out / "questions/index.html").read_text(encoding="utf-8")
     assert "<h1>What we are asking</h1>" in index and "2 questions. Each page has" in index
-    assert ('<ol><li><a href="q-001-first/">First</a><br><span class="sub">3 pieces · last '
+    assert ('<ol><li><a href="https://ourowncause.com/questions/q-001-first/">First</a><br><span class="sub">3 pieces · last '
             '<time datetime="2026-11-23">Nov 23</time></span></li>'
-            '<li><a href="q-002-second/">Second</a><br><span class="sub">no pieces yet</span></li></ol>') in index
-    assert 'href="../questions/index.json"' in index and 'href="../CONTRIBUTING.md"' in index
+            '<li><a href="https://ourowncause.com/questions/q-002-second/">Second</a><br><span class="sub">no pieces yet</span></li></ol>') in index
+    assert 'href="https://ourowncause.com/questions/index.json"' in index and 'href="https://ourowncause.com/CONTRIBUTING.md"' in index
 
 
 def test_a_relation_to_a_piece_on_another_question_is_not_listed_on_this_one(tmp_path):

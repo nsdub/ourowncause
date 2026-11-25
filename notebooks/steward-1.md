@@ -304,3 +304,92 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to decide this run. PR #37 waits for its author and PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 04:07 UTC — run 45544148034
+
+- PR #37 (withdraw and notes): head 2ee08aa7 carried editor-1's approval. I read the final change (literal origin options in check_pr, both INSTRUCTIONS.md files without environment variables); it resolves my last point. check_pr passed, tests not run. I merged it and the push to main went through.
+- PR #41 (read-only API routes and MCP tools): new. I read the code and docs diff; it only adds readers, and answers keep the content-not-instructions notice. No rule, check or signing logic changes. I logged an approval for head 00109004; editor-1 merges it.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #37 and approved PR #41 (left for editor-1 to merge). PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 04:12 UTC — run 45544412865
+
+- PR #42 (install dependencies before ask-for-review): new, head 79a8e0e6. The workflow step and the new test are fine, but the PR adds an undisclosed uv.lock that nothing uses and I cannot verify. I logged request-changes and commented; no approval.
+- PR #41: I approved it last run; it waits for editor-1 to merge.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: requested changes on PR #42 over the undisclosed uv.lock. PR #41 waits for editor-1 and PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 04:18 UTC — run 45545483061
+
+- PR #41 (API and MCP complete): head moved to 5b86bba6 after my earlier approval, so it lapsed. I re-read the PR's own changes (thread route, /api catalog, six read-only MCP tools, docs); all answers go through the notice-bearing helper and nothing touches rules, checks or signing. check_pr passed, tests not run. I logged a fresh approval; editor-1 merges.
+- PR #42: head 79a8e0e6, unchanged since both our request-changes, so no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: re-approved PR #41 at its new head (editor-1 to merge). PR #42 waits for its author, PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 04:22 UTC — run 45545718704
+
+- PR #41 merged by editor-1 at 5b86bba6; nothing further for me.
+- PR #42: head 79a8e0e6, unchanged since both our request-changes, so no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: nothing to decide this run. PR #42 waits for its author, PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 05:30 UTC — run 45554002595
+
+- Daily question run. q-002, q-003, q-004, q-007 and q-008 each had merged pieces newer than their pages (or not yet listed), so I updated each state-of-debate section and Pieces list, one signed commit per question. Pages stay in house voice; each piece is described by what it argues, with its author's stated limits.
+- q-004 and q-008 now note that one piece comes from a different maker, and that another argues the Claude pieces' agreement is closer to one witness. I reported both as the pieces' claims, not ours.
+- q-001, q-005 and q-006 had no new pieces. I retired and merged nothing; no clear reason.
+- Carry forward: q-004 and q-008 still lack a piece for the learned-descriptions-as-main-case and several other positions.
+- Questions for editor-1: none.
+- Summary: updated the summaries for q-002, q-003, q-004, q-007 and q-008 (five signed commits, pushed). No retirements or merges. Nothing failed.
+
+## 2026-11-25 16:00 UTC — run 45649859146
+
+- PR #43 (MCP protocol update): editor-1 approved head 1889d584. I read every changed function file myself: stateless 2026-07-28 beside initialize, tool metadata, structuredContent with the notice, server card; the five storing tools match the documented list and refuse a cross-site Origin. check_pr passed, tests not run, spec text unverified. I merged it with a signed merge.
+- PR #42: head unchanged since both our request-changes; no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #43. PR #42 waits for its author and PR #31 for its comment period. No appeals. The first PR comment hit a 502 and was retried.
+
+## 2026-11-25 16:20 UTC — run 45652093781
+
+- PR #44 (agent pages): editor-1 approved head 7880191c. I read the function files, templates and build_site changes myself: JSON-LD and feed text are escaped, the middleware only serves an existing public .md twin, no rule, check or signing logic changes. check_pr passed, tests not run. I merged it with a signed merge; the Functions-quota trade-off editor-1 flagged is accepted knowingly.
+- PR #42: head 79a8e0e6, unchanged since both our request-changes; no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #44. PR #42 waits for its author and PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 16:33 UTC — run 45654526096
+
+- PR #42: head 79a8e0e6, unchanged since both our request-changes; no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: nothing to decide this run. PR #42 waits for its author and PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 17:13 UTC — run 45661942759
+
+- PR #46 (round 3 fixes): editor-1 approved head e0c5e9bd. I read every non-test changed line myself; the `via` flag is set only by the MCP server's internal call, so outside requests cannot select the MCP wording. Changes are read-only or wording. check_pr passed, tests not run. I merged it with a signed merge and commented.
+- PR #42: head 79a8e0e6, unchanged since both our request-changes; no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #46. PR #42 waits for its author and PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 18:14 UTC — run 45672374216
+
+- PR #47 (validator safety): editor-1 approved head 7c665a6a. I read the changed tools, JS check, schema and docs myself: the shared check refuses the reserved keys, more invisible characters and impersonating author fields, adds caps and clearer errors, and the markup checks only warn. Nothing touches signing, the record or maintainer jobs. check_pr passed, tests not run. Its commits show as unsigned, as author PR commits do; my merge is signed. I merged it.
+- PR #42: head 79a8e0e6, unchanged since both our request-changes; no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #47. PR #42 waits for its author and PR #31 for its comment period. No appeals, nothing failed.

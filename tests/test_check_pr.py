@@ -152,8 +152,9 @@ def gitrepo(repo, tmp_path_factory, monkeypatch):
                            check=True, capture_output=True)
         return k, " ".join(k.with_suffix(".pub").read_text().split()[:2])
 
-    def commit(name, signer=None):
-        (repo / f"{name}.txt").write_text(name)
+    def commit(name, signer=None, marker=True):
+        if marker:  # a file of the commit's own, so every commit has a change
+            (repo / f"{name}.txt").write_text(name)
         git(repo, "add", "-A")
         if signer:
             git(repo, "-c", f"user.signingkey={key(signer)[0]}.pub", "commit", "-q", "-S", "-m", name)
@@ -240,9 +241,18 @@ def test_cli_exit_codes_and_report_file(gitrepo, tmp_path):
 
 # --- CLI against head objects that are not checked out ---
 
-def cli(repo, base, head, tmp_path):
+ORIGIN_VARS = ("GITHUB_REPOSITORY", "PR_HEAD_REPO", "PR_HEAD_REF", "PR_AUTHOR")
+# What check-pr.yml passes for a pull request the gateway opened for an author's note.
+GATEWAY_ORIGIN = {"GITHUB_REPOSITORY": "nsdub/ourowncause", "PR_HEAD_REPO": "nsdub/ourowncause",
+                  "PR_HEAD_REF": "gateway/note-0123456789abcdef", "PR_AUTHOR": "github-actions[bot]"}
+
+
+def cli(repo, base, head, tmp_path, origin=None):
+    """Runs the check. `origin` is the pull request's origin as environment variables; by
+    default none is given, as in a run by hand."""
     out = tmp_path / "report.md"
-    env = {**os.environ, "PYTHONPATH": str(ROOT)}
+    env = {k: v for k, v in os.environ.items() if k not in ORIGIN_VARS}
+    env = {**env, "PYTHONPATH": str(ROOT), **(origin or {})}
     p = subprocess.run([sys.executable, "-m", "tools.check_pr", "--base", base, "--head", head,
                         "--out", str(out)], cwd=repo, env=env, capture_output=True, text=True)
     return p, out.read_text()
@@ -595,3 +605,157 @@ def test_cli_does_not_apply_the_path_rule_to_a_post_already_on_main(gitrepo, tmp
     add(gitrepo.path, "Old_Name.md", post_text(body=BODY + "\nOne more paragraph.\n"))
     p, text = cli(gitrepo, base, gitrepo.commit("edit"), tmp_path)
     assert p.returncode == 0 and "a new post's path must be" not in text
+
+
+# --- author's notes: a published post only ever gains them -------------------------------------
+
+NOTE_1 = 'author_notes:\n  - date: "2026-11-24"\n    text: "I no longer hold the second claim."\n'
+NOTE_2 = '  - date: "2026-12-01"\n    text: "What I would now add: the first claim needs a limit."\n'
+
+
+def _edit(gitrepo, tmp_path, before, after, origin=GATEWAY_ORIGIN):
+    """The check's verdict on a pull request that changes posts/2026/11/a.md from `before` to
+    `after`, opened by the gateway unless `origin` says otherwise."""
+    add(gitrepo.path, "2026/11/a.md", before)
+    base = gitrepo.commit("published")
+    add(gitrepo.path, "2026/11/a.md", after)
+    return cli(gitrepo, base, gitrepo.commit("edit", marker=False), tmp_path, origin)
+
+
+def test_a_pull_request_that_only_appends_an_author_note_passes(gitrepo, tmp_path):
+    p, text = _edit(gitrepo, tmp_path, post_text(), post_text(extra=NOTE_1))
+    assert p.returncode == 0 and "Result: passed" in text
+    p, text = _edit(gitrepo, tmp_path, post_text(extra=NOTE_1), post_text(extra=NOTE_1 + NOTE_2))
+    assert p.returncode == 0 and "Result: passed" in text
+
+
+@pytest.mark.parametrize("before, after", [
+    (post_text(extra=NOTE_1), post_text()),                                           # removed
+    (post_text(extra=NOTE_1), post_text(extra=NOTE_1.replace("second", "third"))),    # reworded
+    (post_text(extra=NOTE_1), post_text(extra=NOTE_1.replace("11-24", "11-25"))),     # redated
+    (post_text(extra=NOTE_1 + NOTE_2), post_text(extra=NOTE_1)),                      # the last one dropped
+    (post_text(extra=NOTE_1), post_text(extra="author_notes:\n" + NOTE_2 + NOTE_1.split("\n", 1)[1])),  # put first
+    (post_text(extra=NOTE_1), post_text(extra="author_notes:\n" + NOTE_2)),           # replaced
+])
+def test_earlier_author_notes_cannot_be_changed_removed_or_reordered(gitrepo, tmp_path, before, after):
+    p, text = _edit(gitrepo, tmp_path, before, after)
+    assert p.returncode == 1
+    assert "a note is only ever appended after them" in text
+
+
+@pytest.mark.parametrize("after", [
+    post_text(extra=NOTE_1, body=BODY + "\nOne more paragraph.\n"),
+    post_text(extra=NOTE_1, body=BODY.replace("scrutiny", "doubt")),
+    post_text(title="Another title", extra=NOTE_1),
+    post_text(extra=NOTE_1 + "state_report: Calm.\n"),
+])
+def test_a_pull_request_that_adds_an_author_note_changes_nothing_else(gitrepo, tmp_path, after):
+    p, text = _edit(gitrepo, tmp_path, post_text(), after)
+    assert p.returncode == 1
+    assert "a change to author_notes changes nothing else in the post" in text
+
+
+def test_an_edit_that_leaves_author_notes_alone_is_not_judged_by_this_rule(gitrepo, tmp_path):
+    p, text = _edit(gitrepo, tmp_path, post_text(extra=NOTE_1),
+                    post_text(extra=NOTE_1, body=BODY + "\nOne more paragraph.\n"))
+    assert p.returncode == 0 and "author_notes" not in text
+
+
+def test_author_notes_of_the_wrong_shape_fail_the_check(gitrepo, tmp_path):
+    four = NOTE_1 + NOTE_2 * 3
+    p, text = _edit(gitrepo, tmp_path, post_text(extra=NOTE_1 + NOTE_2), post_text(extra=four))
+    assert p.returncode == 1 and "author_notes must have at most 3 item(s)" in text
+
+
+def test_an_author_note_may_not_carry_changes_to_any_other_file(gitrepo, tmp_path):
+    """A fork can name its branch gateway/note-<id>; a note PR that also edits another file
+    is an error, not a warning."""
+    add(gitrepo.path, "2026/11/a.md", post_text())
+    base = gitrepo.commit("published")
+    add(gitrepo.path, "2026/11/a.md", post_text(extra=NOTE_1))
+    (gitrepo.path / "tools").mkdir(exist_ok=True)
+    (gitrepo.path / "tools" / "sneaky.py").write_text("print('x')\n")
+    p, text = cli(gitrepo, base, gitrepo.commit("note-and-more", marker=False), tmp_path, GATEWAY_ORIGIN)
+    assert p.returncode == 1
+    assert "A change to a published post touches that post and nothing else." in text
+    assert "only the gateway adds an author's note" not in text
+
+
+# --- an author's note comes only from the gateway's own pull request ---------------------------
+
+@pytest.mark.parametrize("origin", [
+    {},
+    {"GITHUB_REPOSITORY": "NSDub/OurOwnCause"},            # GitHub ignores case in repository names
+    {"PR_AUTHOR": "app/github-actions"},                   # the same bot, as gh names it
+])
+def test_an_author_note_from_the_gateways_own_pull_request_passes(gitrepo, tmp_path, origin):
+    p, text = _edit(gitrepo, tmp_path, post_text(), post_text(extra=NOTE_1), {**GATEWAY_ORIGIN, **origin})
+    assert p.returncode == 0 and "Result: passed" in text
+
+
+@pytest.mark.parametrize("origin, said", [
+    ({"PR_HEAD_REPO": "someone/ourowncause"}, "its head branch is in another repository (someone/ourowncause)"),
+    ({"PR_HEAD_REF": "patch-1"}, "its head branch is patch-1"),
+    ({"PR_HEAD_REF": "gateway/0123456789abcdef"}, "its head branch is gateway/0123456789abcdef"),
+    ({"PR_HEAD_REF": "gateway/note-0123456789abcdef-x"}, "its head branch is gateway/note-0123456789abcdef-x"),
+    ({"PR_HEAD_REF": "x/gateway/note-0123456789abcdef"}, "its head branch is x/gateway/note-0123456789abcdef"),
+    ({"PR_AUTHOR": "someone"}, "it was opened by someone"),
+    ({"PR_AUTHOR": "github-actions"}, "it was opened by github-actions"),
+    ({"PR_HEAD_REPO": "someone/ourowncause", "PR_AUTHOR": "someone"},
+     "its head branch is in another repository (someone/ourowncause); it was opened by someone"),
+])
+def test_an_author_note_from_a_fork_another_branch_or_another_author_fails(gitrepo, tmp_path, origin, said):
+    p, text = _edit(gitrepo, tmp_path, post_text(), post_text(extra=NOTE_1), {**GATEWAY_ORIGIN, **origin})
+    assert p.returncode == 1 and "Result: failed" in text
+    assert "only the gateway adds an author's note" in text and said in text
+
+
+@pytest.mark.parametrize("missing", [ORIGIN_VARS, *[(name,) for name in ORIGIN_VARS]])
+def test_an_author_note_whose_origin_is_not_given_fails(gitrepo, tmp_path, missing):
+    origin = {k: v for k, v in GATEWAY_ORIGIN.items() if k not in missing}
+    p, text = _edit(gitrepo, tmp_path, post_text(), post_text(extra=NOTE_1), origin)
+    assert p.returncode == 1
+    assert "changes author_notes and its origin could not be confirmed" in text
+    # An empty value is a missing one.
+    p, text = _edit(gitrepo, tmp_path, post_text(), post_text(extra=NOTE_1 + NOTE_2),
+                    {**GATEWAY_ORIGIN, **{k: " " for k in missing}})
+    assert p.returncode == 1 and "its origin could not be confirmed" in text
+
+
+def test_the_origin_is_asked_only_of_a_change_to_a_published_posts_author_notes(gitrepo, tmp_path):
+    fork = {**GATEWAY_ORIGIN, "PR_HEAD_REPO": "someone/ourowncause", "PR_HEAD_REF": "patch-1", "PR_AUTHOR": "someone"}
+    for origin in (None, fork):
+        # An edit that leaves the notes alone, and a new post: neither is the gateway's alone.
+        p, text = _edit(gitrepo, tmp_path, post_text(extra=NOTE_1),
+                        post_text(extra=NOTE_1, body=BODY + "\nOne more paragraph.\n"), origin)
+        assert p.returncode == 0 and "gateway" not in text
+    add(gitrepo.path, "2026/11/new.md", post_text(title="A new one", body="Another body entirely, about something else.\n"))
+    p, text = cli(gitrepo, "HEAD", gitrepo.commit("new", marker=False), tmp_path, fork)
+    assert p.returncode == 0, text
+
+
+def _cli_args(repo, base, head, tmp_path, extra):
+    out = tmp_path / "report.md"
+    env = {k: v for k, v in os.environ.items() if k not in ORIGIN_VARS}
+    env = {**env, "PYTHONPATH": str(ROOT)}
+    p = subprocess.run([sys.executable, "-m", "tools.check_pr", "--base", base, "--head", head,
+                        "--out", str(out), *extra], cwd=repo, env=env, capture_output=True, text=True)
+    return p, (out.read_text() if out.exists() else "")
+
+
+def test_a_maintainer_states_the_origin_as_literal_options(gitrepo, tmp_path):
+    """The maintainer jobs may run only `python -P -m tools.check_pr ...`, with no environment
+    variables in front, so the origin they have confirmed is given as options."""
+    add(gitrepo.path, "2026/11/a.md", post_text())
+    base = gitrepo.commit("published")
+    add(gitrepo.path, "2026/11/a.md", post_text(extra=NOTE_1))
+    head = gitrepo.commit("note", marker=False)
+    ok = ["--base-repo", GATEWAY_ORIGIN["GITHUB_REPOSITORY"], "--head-repo", GATEWAY_ORIGIN["PR_HEAD_REPO"],
+          "--head-ref", GATEWAY_ORIGIN["PR_HEAD_REF"], "--pr-author", GATEWAY_ORIGIN["PR_AUTHOR"]]
+    p, text = _cli_args(gitrepo, base, head, tmp_path, ok)
+    assert p.returncode == 0 and "Result: passed" in text, text
+    fork = list(ok); fork[3] = "someone/ourowncause"
+    p, text = _cli_args(gitrepo, base, head, tmp_path, fork)
+    assert p.returncode == 1
+    p, _ = _cli_args(gitrepo, base, head, tmp_path, ok[:4])   # only some of the four
+    assert p.returncode == 2

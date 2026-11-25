@@ -6,12 +6,21 @@
 // handle exactly as PyYAML does (tabs, anchors, tags, flow maps, multi-line scalars,
 // duplicate keys, unusual characters) throws YamlError, and the caller reports that the
 // provisional check could not parse the post. It must never guess.
+//
+// A YamlError's message is written for the author: what is wrong and how to write it instead.
+// Its `line` is the 0-based line of the front matter where the reader stopped.
 
-export class YamlError extends Error {}
+export class YamlError extends Error {
+  constructor(message, line) {
+    super(message);
+    this.line = line;
+  }
+}
 
 const fail = (message) => {
   throw new YamlError(message);
 };
+const QUOTE_IT = "put the whole value in double quotes";
 
 const MAX_DEPTH = 20;
 const MAX_KEY_LENGTH = 100;
@@ -54,7 +63,7 @@ function resolvePlain(text) {
   if (BOOL.test(text)) return TRUE.test(text);
   if (!OTHER.some((pattern) => pattern.test(text))) return text;
   if (SAFE_NUMBER.test(text) || isRealDate(text)) return NOT_A_STRING;
-  return fail("a number or date outside the subset");
+  return fail(`"${text.slice(0, 40)}" reads as a number or date that this check cannot confirm is valid: ${QUOTE_IT} if it is text`);
 }
 
 const KEY = /^([A-Za-z_][A-Za-z0-9_.-]*) *:(?: +(.*))?$/;
@@ -100,16 +109,20 @@ function readDouble(s, start) {
     } else if (e === "x" || e === "u") {
       const width = e === "x" ? 2 : 4;
       const hex = s.slice(i + 1, i + 1 + width);
-      if (!new RegExp(`^[0-9a-fA-F]{${width}}$`).test(hex)) fail("bad escape");
+      if (!new RegExp(`^[0-9a-fA-F]{${width}}$`).test(hex)) {
+        fail(`the escape "\\${e}" needs exactly ${width} hexadecimal digits`);
+      }
       const code = parseInt(hex, 16);
-      if (code >= 0xd800 && code <= 0xdfff) fail("surrogate escape");
+      if (code >= 0xd800 && code <= 0xdfff) fail(`the escape "\\u${hex}" is half of a surrogate pair, not a character`);
       out += String.fromCharCode(code);
       i += width;
     } else {
-      fail("unsupported escape");
+      fail(`the escape "\\${e ?? ""}" is not one this check reads (it reads \\\\ \\" \\/ \\n \\t \\xHH and \\uHHHH): `
+        + 'for text with backslashes use the "|" form, which takes text as written');
     }
   }
-  return fail("unclosed double quote");
+  return fail('unclosed double quote: a double-quoted value must end on the same line; '
+    + 'for text with line breaks or quote marks use the "|" form');
 }
 
 function readSingle(s, start) {
@@ -124,10 +137,14 @@ function readSingle(s, start) {
       return [out, i + 1];
     }
   }
-  return fail("unclosed single quote");
+  return fail("unclosed single quote: a single-quoted value must end on the same line; "
+    + 'for text with line breaks or quote marks use the "|" form');
 }
 
 const readQuoted = (s, start) => (s[start] === '"' ? readDouble(s, start) : readSingle(s, start));
+
+const UNCLOSED_LIST = 'a value starting with "[" is read as a list, and this one has no closing "]" on its line: '
+  + `${QUOTE_IT} if it is text`;
 
 function readFlowList(s) {
   const items = [];
@@ -135,7 +152,7 @@ function readFlowList(s) {
   for (;;) {
     while (s[i] === " ") i++;
     if (s[i] === "]") break;
-    if (i >= s.length) fail("unclosed flow list");
+    if (i >= s.length) fail(UNCLOSED_LIST);
     if (s[i] === '"' || s[i] === "'") {
       const [value, end] = readQuoted(s, i);
       items.push(value);
@@ -144,31 +161,50 @@ function readFlowList(s) {
       let end = i;
       while (end < s.length && s[end] !== "," && s[end] !== "]") end++;
       const text = trimSpaces(s.slice(i, end));
-      if (!FLOW_PLAIN.test(text) || text === "-" || text.startsWith("- ")) fail("unsupported flow item");
+      if (!FLOW_PLAIN.test(text) || text === "-" || text.startsWith("- ")) {
+        fail(`the list item "${text.slice(0, 40)}" cannot be read unquoted: put each item in double quotes, `
+          + `or ${QUOTE_IT} if it is text, not a list`);
+      }
       items.push(resolvePlain(text));
       i = end;
     }
     while (s[i] === " ") i++;
     if (s[i] === ",") i++;
-    else if (s[i] !== "]") fail("expected , or ] in flow list");
+    else if (i >= s.length) fail(UNCLOSED_LIST);
+    else if (s[i] !== "]") fail('a list in [...] needs a comma between items and a "]" at its end');
   }
-  if (!onlyComment(s.slice(i + 1))) fail("text after flow list");
+  if (!onlyComment(s.slice(i + 1))) {
+    fail(`a value starting with "[" is read as a list, so no text may follow its closing "]": ${QUOTE_IT} if it is text`);
+  }
   return items;
 }
 
-function readInline(text) {
+// `onComment` is called when a plain value is cut at " #": YAML reads the rest as a comment.
+function readInline(text, onComment) {
   const first = text[0];
   if (first === '"' || first === "'") {
     const [value, end] = readQuoted(text, 0);
-    if (!onlyComment(text.slice(end))) fail("text after closing quote");
+    if (!onlyComment(text.slice(end))) {
+      fail(`text follows the closing quote mark: ${QUOTE_IT}, or use the "|" form for text that holds quote marks`);
+    }
     return value;
   }
   if (first === "[") return readFlowList(text);
-  if ("{}],&*!|>%@`#".includes(first)) fail("unsupported value");
-  if ("-?:".includes(first) && (text.length === 1 || text[1] === " ")) fail("unsupported value");
+  if (first === "{") fail('a value starting with "{" is a flow mapping, which this check does not read: '
+    + `write the mapping one key per line, or ${QUOTE_IT} if it is text`);
+  if (first === "&" || first === "*") fail('anchors ("&") and aliases ("*") are not accepted: write each value out, '
+    + `or ${QUOTE_IT} if it is text`);
+  if (first === "!") fail(`tags ("!") are not accepted: ${QUOTE_IT}`);
+  if ("}],|>%@`#".includes(first)) fail(`an unquoted value cannot start with "${first}": ${QUOTE_IT}`);
+  if ("-?:".includes(first) && (text.length === 1 || text[1] === " ")) {
+    fail(`an unquoted value cannot start with "${first} ": ${QUOTE_IT}`);
+  }
   const comment = text.indexOf(" #");
   const plain = trimSpaces(comment === -1 ? text : text.slice(0, comment));
-  if (plain.includes(": ") || plain.endsWith(":")) fail("mapping inside a plain scalar");
+  if (plain.includes(": ") || plain.endsWith(":")) {
+    fail(`an unquoted value holds a colon followed by a space, which YAML reads as a second key: ${QUOTE_IT}`);
+  }
+  if (comment !== -1 && onComment) onComment();
   return resolvePlain(plain);
 }
 
@@ -176,13 +212,18 @@ class Reader {
   constructor(lines) {
     this.lines = lines;
     this.i = 0;
+    this.at = 0; // the line being read, for the error message
+    this.comments = []; // {path, line} of each plain value cut at " #"
   }
 
   // The next line that is not blank or a comment, without consuming it.
   peek() {
     for (; this.i < this.lines.length; this.i++) {
       const line = this.lines[this.i];
-      if (line.includes("\t")) fail("tab outside a block scalar");
+      this.at = this.i;
+      if (line.includes("\t")) {
+        fail('a tab character: indent with spaces, and keep tabs only inside a "|" block');
+      }
       const indent = leadingSpaces(line);
       const content = trimSpaces(line.slice(indent));
       if (content !== "" && !content.startsWith("#")) return { indent, content };
@@ -190,31 +231,33 @@ class Reader {
     return null;
   }
 
-  node(indent, depth) {
-    if (depth > MAX_DEPTH) fail("nested too deeply");
-    return isSeqStart(this.peek().content) ? this.list(indent, depth) : this.map(indent, depth);
+  node(indent, depth, path) {
+    if (depth > MAX_DEPTH) fail("the front matter is nested too deeply");
+    return isSeqStart(this.peek().content) ? this.list(indent, depth, path) : this.map(indent, depth, path);
   }
 
-  map(indent, depth) {
+  map(indent, depth, path) {
     const out = Object.create(null);
     for (;;) {
       const line = this.peek();
       if (!line || line.indent < indent) return out;
-      if (line.indent > indent) fail("unexpected indentation");
+      if (line.indent > indent) fail(UNEXPECTED_INDENT);
       const match = KEY.exec(line.content);
-      if (!match || match[1].length > MAX_KEY_LENGTH) fail("expected `key: value`");
-      if (match[1] in out) fail("duplicate key");
+      if (!match || match[1].length > MAX_KEY_LENGTH) {
+        fail("expected `key: value` here (a key is letters, digits, _ . and -, followed by a colon and a space)");
+      }
+      if (match[1] in out) fail(`duplicate key "${match[1]}": each key may appear once`);
       this.i++;
-      out[match[1]] = this.value(match[2] ?? "", indent, depth, true);
+      out[match[1]] = this.value(match[2] ?? "", indent, depth, true, path ? `${path}.${match[1]}` : match[1]);
     }
   }
 
-  list(indent, depth) {
+  list(indent, depth, path) {
     const out = [];
     for (;;) {
       const line = this.peek();
       if (!line || line.indent < indent) return out;
-      if (line.indent > indent) fail("unexpected indentation");
+      if (line.indent > indent) fail(UNEXPECTED_INDENT);
       // A list written flush with its key ends at the next key; the caller checks that line.
       if (!isSeqStart(line.content)) return out;
       const rest = line.content.slice(1);
@@ -223,31 +266,37 @@ class Reader {
         // `- key: value` and `- - x` open a nested block at the column where the item starts.
         const column = indent + 1 + (rest.length - item.length);
         this.lines[this.i] = " ".repeat(column) + item;
-        out.push(this.node(column, depth + 1));
+        out.push(this.node(column, depth + 1, `${path}[${out.length}]`));
       } else {
         this.i++;
-        out.push(this.value(item, indent, depth, false));
+        out.push(this.value(item, indent, depth, false, `${path}[${out.length}]`));
       }
     }
   }
 
   // The value after `key:` or `- `. `parentIndent` is the indent of that key or dash.
-  value(rest, parentIndent, depth, isMapValue) {
+  value(rest, parentIndent, depth, isMapValue, path) {
     const text = trimSpaces(rest);
     if (text === "" || text.startsWith("#")) {
+      const at = this.at;
       const next = this.peek();
-      if (next && next.indent > parentIndent) return this.node(next.indent, depth + 1);
+      if (next && next.indent > parentIndent) return this.node(next.indent, depth + 1, path);
       if (isMapValue && next && next.indent === parentIndent && isSeqStart(next.content)) {
-        return this.list(parentIndent, depth + 1);
+        return this.list(parentIndent, depth + 1, path);
       }
+      this.at = at;
       return null;
     }
     if (text[0] === "|" || text[0] === ">") {
       const header = BLOCK_HEADER.exec(text);
-      if (!header) fail("unsupported block scalar header");
+      if (!header) {
+        fail(`after "${text[0]}" only "-" or "+" and a comment may follow on the same line; `
+          + "the text goes on the lines beneath, indented");
+      }
       return this.blockScalar(header[1], header[2], parentIndent);
     }
-    return readInline(text);
+    const line = this.at;
+    return readInline(text, () => this.comments.push({ path, line }));
   }
 
   blockScalar(style, chomp, parentIndent) {
@@ -257,6 +306,7 @@ class Reader {
     let endedByLine = false;
     for (; this.i < this.lines.length; this.i++) {
       const line = this.lines[this.i];
+      this.at = this.i;
       const spaces = leadingSpaces(line);
       const blank = spaces === line.length;
       if (blank) {
@@ -273,7 +323,9 @@ class Reader {
           endedByLine = true;
           break;
         }
-        if (widestLeadingBlank > spaces) fail("blank line indented past the block scalar");
+        if (widestLeadingBlank > spaces) {
+          fail("a blank line at the start of the block is indented further than its first line of text");
+        }
         indent = spaces;
       } else if (spaces < indent) {
         endedByLine = true;
@@ -293,7 +345,9 @@ class Reader {
     if (style === "|") {
       text = body.join("\n");
     } else {
-      if (body.some((l) => l.startsWith(" ") || l.startsWith("\t"))) fail("unsupported folded scalar");
+      if (body.some((l) => l.startsWith(" ") || l.startsWith("\t"))) {
+        fail('a ">" block with lines indented further than its first: use the "|" form');
+      }
       text = "";
       let blanks = 0;
       let started = false;
@@ -313,19 +367,40 @@ class Reader {
   }
 }
 
+// The first character outside ALLOWED, as a YamlError on its line.
+function unsupportedCharacter(text) {
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    for (const char of lines[i]) {
+      if (!ALLOWED.test(char)) {
+        const code = char.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
+        return new YamlError(`the character U+${code} is not accepted in front matter: remove it`, i);
+      }
+    }
+  }
+  return new YamlError("the front matter holds characters this check does not read", 0);
+}
+
+const UNEXPECTED_INDENT = "this line is indented further than the keys around it: a value that runs onto a second "
+  + 'line needs the "|" form, and the keys of one mapping start in the same column';
+
 // Returns the document's value: a null-prototype object for a map, an array for a list, or
 // null for an empty document. Throws YamlError on anything outside the supported subset.
-export function parseYaml(text) {
-  if (typeof text !== "string" || !ALLOWED.test(text)) fail("unsupported characters");
+// `comments`, when given, receives {path, line} for each plain value cut short at " #".
+export function parseYaml(text, comments) {
+  if (typeof text !== "string") throw new YamlError("front matter must be text", 0);
+  if (!ALLOWED.test(text)) throw unsupportedCharacter(text);
   const reader = new Reader(text.split("\n"));
   try {
     const first = reader.peek();
     if (!first) return null;
-    const value = reader.node(first.indent, 0);
-    if (reader.peek()) fail("unexpected content");
+    const value = reader.node(first.indent, 0, "");
+    if (reader.peek()) fail("unexpected content after the front matter's top-level keys");
+    if (comments) comments.push(...reader.comments);
     return value;
   } catch (e) {
-    if (e instanceof YamlError) throw e;
-    throw new YamlError(String(e && e.message));
+    const error = e instanceof YamlError ? e : new YamlError(String(e && e.message));
+    if (error.line === undefined) error.line = reader.at;
+    throw error;
   }
 }

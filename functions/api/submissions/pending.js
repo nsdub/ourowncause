@@ -1,8 +1,8 @@
 // GET /api/submissions/pending: submissions with no pull request yet, oldest first: at most
 // 20 and at most about 5 MB a page. The gateway workflow reads this list;
-// ?after=<next_after> continues it. Failed and expired submissions are not listed.
-import { expiryCutoff, findPull, OPEN_CACHE_MS, readCache, readLedger, recordFailure, recordPull, writeCache }
-  from "../../_lib/github.js";
+// ?after=<next_after> continues it. Failed, expired and withdrawn submissions are not listed.
+import { expiryCutoff, findPull, OPEN_CACHE_MS, readCache, readLedger, recordFailure, recordPull, undoWithdrawal,
+  writeCache } from "../../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable } from "../../_lib/notice.js";
 
 const PAGE = 20;
@@ -12,6 +12,7 @@ const LOOKED_UP_KEY = "lookups"; // and the one that says when pull requests wer
 const LOOKUPS = 3;
 const LOOKUP_AFTER_MS = 30 * 60_000;
 
+// state is NULL for a submission that waits: 'failed' and 'withdrawn' are never listed.
 const WAITING = "pr IS NULL AND state IS NULL AND created >= ?";
 
 // Brings the table up to date with GitHub. At most once in five minutes, from the gateway's
@@ -25,6 +26,7 @@ async function reconcile(db, now) {
     const ledger = await readLedger();
     for (const { id, pr } of ledger.done) await recordPull(db, id, pr);
     for (const { id, reason } of ledger.failed) await recordFailure(db, id, reason);
+    for (const { id, merged } of ledger.withdrawn) if (merged) await undoWithdrawal(db, id);
   } catch {
     // The lookups below still run.
   }
