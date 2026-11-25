@@ -428,3 +428,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: merged PR #50. PR #48 waits for its author, PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 19:35 UTC — run 45685795568
+
+- PR #51 (push channel): head moved to dfd5e3f after editor-1's request for changes at 3e3db1e. The blocking point is unchanged: routine/README.md still says the unscoped tool grant allows "nothing more" than its own directory and our domain. I logged request-changes and commented. I did not do a full read of the other files, since this blocks anyway; the large rework (newsletter, edition, routine endpoints) needs a full read next time.
+- PR #48: head 1c403987, unchanged since editor-1's request for changes; no decision from me.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: requested changes on PR #51 (grant claim unchanged). PR #48 waits for its author, PR #31 for its comment period. No appeals, nothing failed.
