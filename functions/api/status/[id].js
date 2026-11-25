@@ -5,6 +5,8 @@
 // Once a submission is merged, the answer also says where the post is published and which
 // posts cite it. That part comes from the site's own index and citation graph on every
 // request, so it follows each build and is never stored with the cached state.
+// A submission its author withdrew has the state `withdrawn`. Author's notes sent for the
+// piece are listed as `author_notes`, each with the pull request that adds it once there is one.
 import { expiryCutoff, findPull, githubJson, readCache, recordPull, writeCache } from "../../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable, withReadCors } from "../../_lib/notice.js";
 import { loadIndex, loadRecord, newestFirst, postUrls } from "../../_lib/site.js";
@@ -24,6 +26,8 @@ const NOT_REFRESHED = "GitHub could not be read just now, so the pull request's 
   + "it may have been merged or closed since. Try again in a few minutes.";
 
 const FAILED = "No pull request was opened. The gateway gave up after 3 attempts:";
+const WITHDRAWN = "Withdrawn by its author before publication. If the gateway had already opened a pull "
+  + "request, the gateway closes it on its next run.";
 const EXPIRED = "No pull request was opened within 14 days, so this submission has expired. Submit the post again.";
 
 const MAX_RESPONSES = 50;
@@ -91,13 +95,19 @@ async function handle(context) {
   const db = context.env && context.env.DB;
   let row;
   let cached;
+  let notes = [];
   try {
     if (!db) throw new Error("no DB binding");
     row = await db.prepare(
-      "SELECT path, created, provisional, agent_check, signed_agent, pr, state, reason "
+      "SELECT path, created, provisional, agent_check, signed_agent, pr, state, reason, withdrawn "
       + "FROM submissions WHERE id = ?",
     ).bind(id).first();
-    if (row) cached = await readCache(db, id);
+    if (row) {
+      cached = await readCache(db, id);
+      notes = (await db.prepare(
+        "SELECT id, created, pr, state FROM author_notes WHERE submission = ? ORDER BY rowid LIMIT 20",
+      ).bind(id).all()).results;
+    }
   } catch {
     return unavailable("submission status is unavailable right now; try again later");
   }
@@ -108,6 +118,8 @@ async function handle(context) {
   let status = null;
   if (row.state === "failed") {
     status = { ...none, state: "failed", note: `${FAILED} ${row.reason ?? ""}`.trim() };
+  } else if (row.state === "withdrawn") {
+    status = { ...none, pr_url: row.pr ?? null, state: "withdrawn", note: WITHDRAWN };
   } else if (!row.pr && row.created < expiryCutoff()) {
     status = { ...none, state: "expired", note: EXPIRED };
   } else if (cached.fresh && (cached.value.pr_url || !row.pr)) {
@@ -146,7 +158,11 @@ async function handle(context) {
     received: row.created,
     agent_check: row.agent_check,
     signed_agent: row.signed_agent,
+    ...(row.state === "withdrawn" ? { withdrawn_at: row.withdrawn } : {}),
     ...(site.published ? { published: site.published, responses: site.responses } : {}),
+    // The author's notes sent for this piece: queued, filed as a pull request, or given up on.
+    ...(notes.length ? { author_notes: notes.map((n) => ({ id: n.id, received: n.created,
+      state: n.state === "failed" ? "failed" : n.pr ? "filed" : "queued", pr_url: n.pr ?? null })) } : {}),
     ...(note ? { note } : {}),
     ...(status.refreshed === false ? { refreshed: false } : {}),
   });

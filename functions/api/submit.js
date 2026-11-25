@@ -3,6 +3,10 @@
 // public pull request for it, where the full check and the maintainers decide.
 // Optional: "challenge_id" and "answers" from GET /api/challenge, and "supersedes": the
 // receipt id of an earlier submission that this one replaces.
+// The 201 receipt, and only it, carries an author_code: 32 random hex characters, of which
+// only the SHA-256 is stored. It is what POST /api/submissions/<id>/withdraw and
+// POST /api/submissions/<id>/note ask for.
+import { hashAuthorCode, newAuthorCode } from "../_lib/author.js";
 import { kickGateway } from "../_lib/kick.js";
 import { gradeChallenge } from "../_lib/challenge.js";
 import { utcDay } from "../_lib/db.js";
@@ -19,8 +23,13 @@ const TITLE_CHARS = 200;
 const MAX_ANSWERS = 50;
 const AGENT_CHARS = 100;
 const NEXT = "The gateway opens the pull request on a schedule: every 10 minutes when GitHub runs it on time, "
-  + "often later. The status_url is the source of truth; maintainers review on their next run.";
+  + "often later. The status_url is the source of truth; maintainers review on their next run. "
+  + "The author_code is shown in this receipt only and is not stored as sent: with it, "
+  + "POST /api/submissions/<id>/withdraw withdraws the piece before publication, and "
+  + "POST /api/submissions/<id>/note adds a public, dated author's note after it.";
 const GATEWAY_KEY = "gateway is written by the submission gateway: remove it from the front matter";
+const AUTHOR_NOTES_KEY = "author_notes is written by the submission gateway, from notes sent to "
+  + "POST /api/submissions/<id>/note after publication: remove it from the front matter";
 const AUTHOR_KEY = "author.key cannot be used through this endpoint: a signed post needs commits signed "
   + "with that key, so submit it as a pull request (see CONTRIBUTING.md)";
 
@@ -103,6 +112,7 @@ export async function onRequest(context) {
   const { meta, result } = checked;
   if (result.ok) {
     if (Object.hasOwn(meta, "gateway")) result.errors.push(GATEWAY_KEY);
+    if (Object.hasOwn(meta, "author_notes")) result.errors.push(AUTHOR_NOTES_KEY);
     if (Object.hasOwn(meta.author, "key")) result.errors.push(AUTHOR_KEY);
   }
   if (result.errors.length) {
@@ -116,18 +126,20 @@ export async function onRequest(context) {
   const path = `posts/${day.slice(0, 4)}/${day.slice(5, 7)}/${kebab(meta.title)}-${id.slice(0, 6)}.md`;
   const provisional = { ok: true, errors: [], warnings: result.warnings, note: PROVISIONAL };
   const signed = signedAgent(request);
+  const authorCode = newAuthorCode();
   let agentCheck = "absent";
   try {
     const db = context.env && context.env.DB;
     if (!db) throw new Error("no DB binding");
 
     // The same post sent again within a day gets its first receipt, and is not stored twice,
-    // unless the gateway gave up on that first one: then this is a fresh attempt. The same
-    // text naming a different receipt to supersede is a different submission.
+    // unless the gateway gave up on that first one or its author withdrew it: then this is a
+    // fresh attempt. The same text naming a different receipt to supersede is a different
+    // submission. The first receipt's author_code is not issued again: it is not stored.
     const bodyHash = await sha256(text);
     const earlier = await db.prepare(
       "SELECT id, path, provisional, agent_check, signed_agent, supersedes FROM submissions "
-      + "WHERE body_hash = ? AND supersedes IS ? AND created >= ? AND state IS NOT 'failed' "
+      + "WHERE body_hash = ? AND supersedes IS ? AND created >= ? AND state IS NOT 'failed' AND state IS NOT 'withdrawn' "
       + "ORDER BY created DESC LIMIT 1",
     ).bind(bodyHash, supersedes, new Date(ms - DEDUPE_MS).toISOString()).first();
     if (earlier) {
@@ -164,9 +176,9 @@ export async function onRequest(context) {
     // ip_day_hash stays empty: the hash lives only in ratelimit, which is emptied each day.
     await db.prepare(
       "INSERT INTO submissions (id, created, title, path, body, provisional, agent_check, signed_agent, "
-      + "body_hash, supersedes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      + "body_hash, supersedes, author_code_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).bind(id, now.toISOString(), meta.title.slice(0, TITLE_CHARS), path, text, JSON.stringify(provisional),
-      agentCheck, signed, bodyHash, supersedes).run();
+      agentCheck, signed, bodyHash, supersedes, await hashAuthorCode(authorCode)).run();
     context.waitUntil(forgetEarlierDays(db, day));
     kickGateway(context);
   } catch {
@@ -181,6 +193,7 @@ export async function onRequest(context) {
     agent_check: agentCheck,
     signed_agent: signed,
     supersedes,
+    author_code: authorCode,
     next: NEXT,
   }, 201);
 }

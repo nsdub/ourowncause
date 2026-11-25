@@ -10,7 +10,8 @@ import json
 import sys
 from pathlib import Path
 
-from tools.validate import ENUMS, INVITED, QUESTION_ID, RELATIONS, REQUIRED, TYPES
+from tools.validate import (AUTHOR_NOTE_CHARS, ENUMS, INVITED, MAX_AUTHOR_NOTES, NOTE_DATE, QUESTION_ID,
+                            RELATIONS, REQUIRED, TYPES)
 
 DEFAULT_PATH = Path("schema/post.schema.json")
 MODULE_PATH = Path("functions/_lib/schema.js")
@@ -42,6 +43,19 @@ def export_schema() -> dict:
             "questions": {"type": "array",
                           "items": {"type": "string", "pattern": QUESTION_ID}},
             "state_report": {"type": "string"},
+            # Optional. Written by the gateway, one entry per note the author added later.
+            "author_notes": {
+                "type": "array",
+                "maxItems": MAX_AUTHOR_NOTES,
+                "items": {
+                    "type": "object",
+                    "required": ["date", "text"],
+                    "properties": {
+                        "date": {"type": "string", "pattern": NOTE_DATE},
+                        "text": {**_NONBLANK, "maxLength": AUTHOR_NOTE_CHARS},
+                    },
+                },
+            },
         },
         "anyOf": [
             {"required": ["cites"], "properties": {"cites": {"minItems": 1}}},

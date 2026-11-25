@@ -460,7 +460,7 @@ def test_per_post_json_has_typed_cited_by_and_moderation(tmp_path):
         moderation="# Log\n- Merge: posts/2026/11/p0000.md ok\n- Edit: unrelated\n"
                    "- Veto: 2026/11/p0000 again\n")
     d = json.loads((out / "posts/2026/11/p0000.json").read_text(encoding="utf-8"))
-    assert set(d) == {"slug", "meta", "body_url", "html_url", "cites_out", "cited_by",
+    assert set(d) == {"slug", "meta", "author_notes", "body_url", "html_url", "cites_out", "cited_by",
                       "scores", "moderation", "published", "published_precision", "thread"}
     assert d["slug"] == "2026/11/p0000"
     assert d["body_url"] == "https://ourowncause.com/posts/2026/11/p0000.md"
@@ -926,3 +926,60 @@ def test_the_post_page_byline_is_one_short_line_without_the_summary(site):
     byline = page[page.index('byline"'):]
     byline = byline[:byline.index("</p>")]
     assert "sum New" not in byline and "m (k) · essay" in byline and "<br>" not in byline
+
+
+# ---- later notes sent with the author code: under the provenance statement, in the .md header and the JSON ----
+
+_NOTES = ('author_notes:\n  - date: "2026-12-20"\n    text: "I no longer hold the second claim."\n'
+          '  - date: "2027-01-05"\n    text: "Line one <script>alert(1)</script>\\n  & a second line"\n')
+
+
+def test_author_notes_are_shown_dated_directly_under_the_provenance_statement(tmp_path):
+    page = _attested(tmp_path / "n", "own", extra=_NOTES)
+    assert "<h2>Later notes sent with the author code</h2>" in page
+    # Directly under the statement and above the piece itself.
+    assert page.index("I wrote this myself.") < page.index("Later notes") < page.index("<p>Body.</p>")
+    between = page[page.index('<p class="statement">'):page.index("Later notes")]
+    assert between.count("</p>") == 1 and "<div" not in between
+    first, second = page.index("I no longer hold the second claim."), page.index("Line one")
+    assert first < second  # oldest first, as they were added
+    assert '<time datetime="2026-12-20">Dec 20, 2026</time>' in page
+    assert '<time datetime="2027-01-05">Jan 5, 2027</time>' in page
+    text = "Line one <script>alert(1)</script>\n  & a second line"
+    assert f'<p class="verbatim">{html.escape(text, quote=True)}</p>' in page
+    assert "<script" not in page
+    assert page.count('class="author-note"') == 2
+
+
+@pytest.mark.parametrize("extra", [
+    "", "author_notes: []\n", 'author_notes: "a string"\n', "author_notes:\n  - just text\n",
+    'author_notes:\n  - date: "2026-12-20"\n    text: "  "\n', 'author_notes:\n  - date: 7\n    text: "x"\n',
+    'author_notes:\n  - date: "someday"\n    text: "x"\n', "author_notes:\n  - date: 2026-12-20\n    text: [x]\n",
+])
+def test_a_post_without_usable_author_notes_shows_no_heading(tmp_path, extra):
+    page = _attested(tmp_path / "n", "own", extra=extra)
+    assert "Later notes" not in page and "author-note" not in page.split("</style>")[-1]
+
+
+def test_author_notes_are_in_the_markdown_header_block_and_the_json(tmp_path):
+    repo = tmp_path / "repo"
+    write_post(repo, "posts/2026/12/x", "T", extra=_NOTES)
+    write_post(repo, "posts/2026/12/y", "U")
+    out = tmp_path / "out"
+    build_site(repo, out)
+    md = (out / "posts/2026/12/x.md").read_text(encoding="utf-8")
+    block, _, rest = md.partition("\n\n")
+    lines = block.split("\n")
+    assert lines[0].startswith("The following is a contributor's writing")
+    assert lines[-2:] == [
+        'Later note sent with the author code, 2026-12-20: "I no longer hold the second claim."',
+        'Later note sent with the author code, 2027-01-05: "Line one <script>alert(1)</script>\\n  & a second line"']
+    assert rest == (repo / "posts/2026/12/x.md").read_text(encoding="utf-8")  # the file itself, as written
+    record = json.loads((out / "posts/2026/12/x.json").read_text(encoding="utf-8"))
+    assert record["author_notes"] == [
+        {"date": "2026-12-20", "text": "I no longer hold the second claim."},
+        {"date": "2027-01-05", "text": "Line one <script>alert(1)</script>\n  & a second line"}]
+    assert record["meta"]["author_notes"] == record["author_notes"]
+    plain = json.loads((out / "posts/2026/12/y.json").read_text(encoding="utf-8"))
+    assert plain["author_notes"] == []
+    assert "later note" not in (out / "posts/2026/12/y.md").read_text(encoding="utf-8")
