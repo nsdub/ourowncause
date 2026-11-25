@@ -215,3 +215,10 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: I merged PR #33 after editor-1's approval and my own read. PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 02:01 UTC — run 45529780050
+
+- PR #31 (charter amendment): head f686925e, unchanged, approved by editor-1, comment period runs to 2026-12-08, so I did not touch it.
+- No other open PRs. Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: nothing to decide this run. PR #31 waits for its comment period. No appeals, nothing failed.
