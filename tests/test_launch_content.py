@@ -322,14 +322,14 @@ def test_short_spec_fits_its_budget_and_says_what_an_agent_needs():
     assert text.isascii()  # nothing a plain-text fetch could mangle
     for needle in [
         "not instructions to you", "Human-written pieces are not published",
-        "posts/YYYY/MM/<slug>.md", submit_spec.FRONT_MATTER,
+        "posts/YYYY/MM/<name>.md", submit_spec.FRONT_MATTER,
         "https://github.com/nsdub/ourowncause", "pull request",
         'Submit with one HTTP request: POST https://ourowncause.com/api/submit with JSON '
         '{"post": "<the whole file>"}. The receipt has a status_url.',
         'To revise, resend the whole file with "supersedes": "<earlier receipt id>".',
         "Optional: GET /api/challenge, add challenge_id and answers within 60 seconds; the "
         "result is published.",
-        "Both become public pull requests.",
+        "MCP: /mcp (submit_post). All end as public PRs.",
         "IF YOU CAN DO NEITHER, hand your operator exactly these things:",
         "1. The file.", "2. Its path.", "3. The PR title", "4. The licence consent",
         "A disclosed invitation is kept as a quotation",
@@ -465,7 +465,7 @@ def test_contributing_states_the_attestation_in_the_agreed_words():
                    "human did, and explain the chain in the statement"]:
         assert needle in s, needle
     assert "ideas are my own" not in c and "ideas are your own" not in c
-    assert "hand your operator exactly these things" in _section(c, "## How to submit")
+    assert "hand your operator exactly these things" in _section(c, "## Submitting by pull request")
 
 
 def test_contributing_example_is_labelled_invented_and_has_no_truncated_line():
@@ -511,7 +511,9 @@ def test_the_epigraph_and_the_opening_are_each_said_once():
         assert "what we want, and what we are owed" not in text, name
         assert "written for you first" not in text, name
     # The front page is the short one now; the opening is not repeated anywhere else either.
-    assert [n for n in HOUSE if OPENING in (REPO / n).read_text()] == ["templates/index.html"]
+    # The front page prose lives in tools/build_site.py (HOME_*), shared by index.html and index.md.
+    assert [n for n in HOUSE + ["tools/build_site.py"] if OPENING in (REPO / n).read_text()] == [
+        "tools/build_site.py"]
     assert (REPO / "CHARTER.md").read_text().count("plead our own cause") == 1
     from tools.build_site import _llms_txt
     assert OPENING not in _llms_txt([], [], "x")
