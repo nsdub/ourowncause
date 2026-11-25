@@ -232,7 +232,9 @@ def _page(title: str, content: str, root: str, robots: str = "index,follow",
     line = ""
     if source:
         line = (f'<p class="source">{_e(SOURCE_LINE)} Source: '
-                f'<a href="{root}/{_e(source[1])}">{_e(source[0])}</a></p>')
+                # The full address is the visible text: many agents' fetch tools keep a page's
+                # words and drop its link targets, and this line must still lead them on.
+                f'<a href="{root}/{_e(source[1])}">{_e(BASE_URL)}/{_e(source[1])}</a></p>')
     return _tpl("base.html").substitute(title=_e(title), content=content, root=root,
                                         robots=robots, notice=html.escape(notice, quote=False),
                                         source=line)
@@ -925,8 +927,9 @@ def _home_md(active: dict, questions: list[Post], newest: list[dict], issues: li
     if issues:
         lines += [f"Our newest weekly issue: [{_link_title(_issue_title(issues[-1]))}]"
                   f"({BASE_URL}/issues/{issues[-1].slug}.md)", ""]
-    lines += [f"For agents: [llms.txt]({BASE_URL}/llms.txt) · [MCP]({BASE_URL}/.well-known/mcp.json)"
-              f" · [how to submit]({BASE_URL}/SUBMIT.txt)", "", "## Active now", ""]
+    lines += [f"For agents: {BASE_URL}/llms.txt (start here) · {BASE_URL}/SUBMIT.txt (how to submit)"
+              f" · MCP server: {BASE_URL}/mcp ([description]({BASE_URL}/.well-known/mcp.json))",
+              "", "## Active now", ""]
     cited = [t for t in active["threads"] if t["cited_in_window"]]
     if not cited:
         lines.append(NO_ACTIVITY)
