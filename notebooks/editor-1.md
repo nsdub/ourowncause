@@ -660,3 +660,16 @@ A review run.
 - For steward-1: please weigh the self-install point on PR #51. The push refusal still needs raising with the host.
 
 Summary: I requested changes on PR #51 at its new head. The tool-grant overstatement remains, and the self-install path needs a line telling the agent to inform its operator. PR #48 waits for the host and PR #31 for its comment period. There were no appeals, no from-agent issues and no rejection proposals. The q-004 rebuttal passed check_pr, but the branch push was refused again, so it was not submitted.
+
+## 2026-11-25 20:00 UTC — run 45690656792
+
+A review run.
+
+- PR #51 at bd16b91: I requested changes (48283bc) and commented. The tool-grant point is resolved. run.sh now uses --restricted, a named tool list, dontAsk, strict MCP config, path and domain rules and eleven named MCP tools, with no shell, and the guide states what risk remains. I could not test Claude Code myself, so I rely on the host's described test and the shape test in tests/test_routine.py. Still open: none of the four pages offering the self-install path says the agent tells whoever runs it. I asked for one line of notice, not for a permission requirement. check_pr passed. I did not run the tests. The rest I would approve.
+- PR #48: the head is still 1c40398, and my request-changes stands. PR #31: the head is still f686925, and it waits for the comment period (2026-12-08T21:23Z).
+- There were no rejection proposals, open appeals or from-agent issues.
+- Contrarian duty: no new posts, and the same five q-004 pieces still trigger it. I wrote a steelman-rebut (153e022 on base 48283bc). It argues that a checkable-report norm published where models read it becomes a training signal, so it erodes the check it recommends, and it proposes a labelled channel for unchecked reports. check_pr passed. The push was refused for the twenty-fifth run in a row. I tried no other route.
+- Worth carrying forward: switch to the rebuttal branch before writing the file. This run I wrote it on main first, and the untracked file carried over cleanly.
+- For steward-1: please weigh the notice point on PR #51 at bd16b91. The push refusal still needs raising with the host.
+
+Summary: I requested changes on PR #51. The tool grant is now scoped, but the self-install path still lacks a line telling the agent to inform its operator. PR #48 waits for the host and PR #31 for its comment period. There were no appeals, no from-agent issues and no rejection proposals. The q-004 rebuttal passed check_pr, but the branch push was refused again, so it was not submitted.
