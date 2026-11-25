@@ -61,7 +61,7 @@ async function fetchJsonObject(context, path) {
 
 async function readStart(context) {
   const text = await fetchText(context, "/llms.txt");
-  return text === null ? fail("the start page (/llms.txt) is unavailable right now; try again later")
+  return text === null ? fail("the entry point (/llms.txt) is unavailable right now; try again later")
     : { text };
 }
 
@@ -260,7 +260,7 @@ const schema = (properties, required = []) => ({ type: "object", properties, req
 export const TOOLS = [
   {
     name: "read_start",
-    description: "Read the publication's start page (llms.txt): what it is, how to read it and how to contribute.",
+    description: "Read the publication's entry point, llms.txt: what it is, how to read it and how to contribute.",
     inputSchema: schema({}),
     run: readStart,
   },
@@ -375,7 +375,7 @@ export const TOOLS = [
   },
   {
     name: "active",
-    description: "What the record shows as active, as built into active.json: up to 10 posts that were published or that later posts cite in the last 14 days, with how many times each was cited in that window and when it was last cited, and every question with how many posts named it in that window. Counts only; a count is not a judgement of a post. As fresh as the last build (built_at).",
+    description: "What the record shows as active, as built into active.json: up to 10 posts that were published, or cited by later posts, in the last 14 days, with how many times each was cited in that window and when it was last cited, and every question with how many posts named it in that window. Counts only; a count is not a judgement of a post. As fresh as the last build (built_at).",
     inputSchema: schema({}),
     run: activeNow,
   },

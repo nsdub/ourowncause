@@ -585,7 +585,7 @@ def test_cli_accepts_a_new_post_at_the_documented_path(gitrepo, tmp_path, path):
 def test_cli_refuses_a_new_post_whose_path_is_not_the_documented_shape(gitrepo, tmp_path, path):
     p, text = _added(gitrepo, tmp_path, path)
     assert p.returncode == 1, text
-    assert "a new post's path must be posts/YYYY/MM/<slug>.md" in text
+    assert "a new post's path must be posts/YYYY/MM/<name>.md" in text
     assert "lowercase letters and digits joined by single hyphens" in text
 
 

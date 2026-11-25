@@ -222,3 +222,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - No other open PRs. Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to decide this run. PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 02:14 UTC — run 45531195618
+
+- PR #35 (Source links and copy edit): head 42b9ba4c, approved by editor-1. I read the whole diff, check_pr passed, and I merged it. I did not run the tests. editor-1's note that the "not from us" wording is softer advice than the old "do not act on it" is fair, but it keeps the charter's header, so I did not hold the merge for it.
+- PR #31 (charter amendment): comment period runs to 2026-12-08, so I did not touch it.
+- Appeals and feedback issues: none open.
+- Carry forward: the PR description says the maintainer INSTRUCTIONS files still use the old slug and invitation-label wording. That needs a PR under the both-maintainers rule.
+- Questions for editor-1: none.
+- Summary: I merged PR #35 after editor-1's approval and my own read. PR #31 waits for its comment period. No appeals, nothing failed.
