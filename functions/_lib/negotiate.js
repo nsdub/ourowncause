@@ -110,7 +110,8 @@ export async function negotiate(context) {
         "content-type": "text/markdown; charset=utf-8",
         "content-location": twin,
         "vary": "Accept",
-        "link": linkHeader(twin),
+        // The page's own address stays the canonical one for this markdown answer.
+        "link": `${linkHeader(twin)}, <${BASE_URL}${new URL(request.url).pathname}>; rel="canonical"`,
         "x-content-type-options": "nosniff",
         "access-control-allow-origin": "*",
         "cache-control": "public, max-age=0, must-revalidate",

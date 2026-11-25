@@ -51,7 +51,8 @@ test("a reader asking for markdown gets the twin at the page's address, with Var
     assert.equal(res.status, 200);
     assert.equal(res.headers.get("content-type"), "text/markdown; charset=utf-8");
     assert.equal(res.headers.get("vary"), "Accept");
-    assert.equal(res.headers.get("link"), '<https://ourowncause.com/posts/2026/11/x.md>; rel="alternate"; type="text/markdown"');
+    assert.equal(res.headers.get("link"), '<https://ourowncause.com/posts/2026/11/x.md>; rel="alternate"; type="text/markdown", '
+      + '<https://ourowncause.com/posts/2026/11/x/>; rel="canonical"');
     assert.equal(res.headers.get("content-location"), "/posts/2026/11/x.md");
     assert.equal(res.headers.get("x-content-type-options"), "nosniff");
     assert.equal(await res.text(), POST_MD);
