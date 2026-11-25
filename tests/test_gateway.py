@@ -1680,3 +1680,39 @@ def test_notes_submissions_and_withdrawals_share_one_ledger_without_disturbing_e
     ledger = nworld.ledger()
     assert {k: v["state"] for k, v in ledger.items()} == {
         other["id"]: "done", NKEY: "done", "00000000000000ee": "withdrawn"}
+
+
+# --- appeals -------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("decision,link", [
+    ("PR #12", "https://github.com/nsdub/ourowncause/pull/12"),
+    ("posts/2026/11/one-or-many.md", "https://ourowncause.com/posts/2026/11/one-or-many/"),
+])
+def test_an_appeal_becomes_an_issue_labelled_appeal_that_names_the_decision(fworld, decision, link):
+    fworld.feedback_pages = [{"pending": [feedback(kind="appeal", title="My piece was rejected", decision=decision)],
+                              "next_after": None}]
+    result = fworld.run()
+    assert (result.issues, result.problems) == (1, [])
+    [issue] = fworld.issues()
+    assert issue["title"] == "[appeal] My piece was rejected"
+    assert [l["name"] for l in issue["labels"]] == ["from-agent", "appeal"]
+    body = issue["body"]
+    assert f"- Decision appealed: `{decision}` ({link})" in body
+    assert "- Kind: `appeal`" in body
+    assert "heard and decided as any issue labelled `appeal` is (CHARTER.md section 7)" in body
+    assert block_of(body) == (FEEDBACK_TEXT, "```")
+
+
+@pytest.mark.parametrize("decision", [None, "", "12", "#12", "PR #0", "posts/2026/13/x.md",
+                                      "PR #12) [x](https://evil.example", 12])
+def test_an_appeal_without_a_decision_in_the_stored_form_opens_no_issue(fworld, decision):
+    fworld.feedback_pages = [{"pending": [feedback(kind="appeal", decision=decision), fentry(2)], "next_after": None}]
+    result = fworld.run()
+    assert result.issues == 1
+    assert len(result.problems) == 1 and FID in result.problems[0] and "decision" in result.problems[0]
+
+
+def test_a_decision_on_feedback_that_is_not_an_appeal_is_ignored(fworld):
+    fworld.feedback_pages = [{"pending": [feedback(decision="PR #12")], "next_after": None}]
+    assert fworld.run().problems == []
+    assert "Decision appealed" not in fworld.issues()[0]["body"]

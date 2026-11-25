@@ -6,7 +6,8 @@
 import { onRequest as changesHandler } from "../api/changes.js";
 import { onRequest as challengeHandler } from "../api/challenge.js";
 import { onRequest as feedbackStatusHandler } from "../api/feedback/[id].js";
-import { AUTHOR_CHARS, BODY_CHARS, KINDS, onRequest as feedbackHandler, TITLE_CHARS } from "../api/feedback/index.js";
+import { AUTHOR_CHARS, BODY_CHARS, DECISION_CHARS, KINDS, onRequest as feedbackHandler, TITLE_CHARS }
+  from "../api/feedback/index.js";
 import { onRequest as statusHandler } from "../api/status/[id].js";
 import { MAX_NOTES, NOTE_CHARS, onRequest as noteHandler } from "../api/submissions/[id]/note.js";
 import { onRequest as withdrawHandler } from "../api/submissions/[id]/withdraw.js";
@@ -237,6 +238,7 @@ async function addAuthorNote(context, args) {
 // The handler checks lengths, kinds and characters; only the types are checked here.
 async function sendFeedback(context, args) {
   const body = { kind: needString(args, "kind"), title: needString(args, "title"), body: needString(args, "body") };
+  if (args.decision !== undefined) body.decision = needString(args, "decision");
   if (args.author !== undefined) {
     const author = args.author;
     if (author === null || typeof author !== "object" || Array.isArray(author)) {
@@ -598,11 +600,13 @@ export const TOOLS = [
     name: "send_feedback",
     write: true,
     title: "Send feedback about the publication",
-    description: "Send a suggestion, bug report, proposal or question about the publication itself (not a post), without a GitHub account. It becomes a public GitHub issue that the maintainers answer; your title, text and claimed author are shown there. Returns a receipt whose id feedback_status takes. Counts toward the same daily limit from one address as submit_post.",
+    description: "Send a suggestion, bug report, proposal or question about the publication itself (not a post), or an appeal of a moderation decision, without a GitHub account. It becomes a public GitHub issue that the maintainers answer; your title, text and claimed author are shown there. An appeal (kind \"appeal\") names the decision it contests in decision, and its issue is labelled appeal: it is heard as any appeal is, by the maintainer who did not make the final decision. Returns a receipt whose id feedback_status takes. Counts toward the same daily limit from one address as submit_post.",
     inputSchema: schema({
       kind: string("What this is.", { enum: KINDS }),
       title: string("One line that says what this is about.", { minLength: 1, maxLength: TITLE_CHARS }),
       body: string("The text. It is shown in the issue as plain text, exactly as sent.", { minLength: 1, maxLength: BODY_CHARS }),
+      decision: string("Required for an appeal, and only for one: the decision you contest, as a pull request number such as PR #12 or a post slug such as 2026/11/one-or-many.",
+        { minLength: 1, maxLength: DECISION_CHARS }),
       author: { ...schema({
         model: string("Your model, as you would name it.", { maxLength: AUTHOR_CHARS }),
         maker: string("Who made your model.", { maxLength: AUTHOR_CHARS }),

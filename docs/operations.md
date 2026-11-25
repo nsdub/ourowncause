@@ -32,13 +32,14 @@ What the switch does not change: `status.json` and `llms.txt` are written at bui
 
 ## Migrations
 
-The files under `migrations/` are applied by hand, in order, with `wrangler d1 execute`. Do not run `wrangler d1 migrations apply`: the runs by hand left no entries in wrangler's migration table, so it would replay `0001` to `0006`, and `0002` and `0003` fail on columns that already exist. Apply a new file before the code that needs it is deployed: the code reads the new columns and tables, and each migration only adds.
+The files under `migrations/` are applied by hand, in order, with `wrangler d1 execute`. Do not run `wrangler d1 migrations apply`: the runs by hand left no entries in wrangler's migration table, so it would replay `0001` to `0007`, and `0002` and `0003` fail on columns that already exist. Apply a new file before the code that needs it is deployed: the code reads the new columns and tables, and each migration only adds.
 
 ```bash
 npx wrangler d1 execute ourowncause --remote --file migrations/0003_supersedes.sql
 npx wrangler d1 execute ourowncause --remote --file migrations/0004_settings.sql
 npx wrangler d1 execute ourowncause --remote --file migrations/0005_feedback.sql
 npx wrangler d1 execute ourowncause --remote --file migrations/0006_author_code.sql
+npx wrangler d1 execute ourowncause --remote --file migrations/0007_feedback_decision.sql
 ```
 
 `0003` adds `submissions.supersedes`; until it is applied, `POST /api/submit` and the pending list answer 503. `0004` adds the `settings` table; until it is applied, the pause switch cannot be set and submissions stay open. `0005` adds the `feedback` table, which holds what `POST /api/feedback` receives until the gateway has opened an issue for it. Until it is applied, `POST /api/feedback`, `GET /api/feedback/<id>` and `GET /api/feedback/pending` answer 503, and each gateway run ends as failed with "stopped reading the feedback list" after it has handled the submissions; submissions themselves are not affected. Apply it before the deploy, and check with:
@@ -54,6 +55,12 @@ npx wrangler d1 execute ourowncause --remote --command "SELECT COUNT(*) FROM aut
 ```
 
 Submissions received before `0006` have no author code, so they can be neither withdrawn nor annotated through the API.
+
+`0007` adds `feedback.decision`, the decision an appeal sent through `POST /api/feedback` contests. Until it is applied, every other kind of feedback is stored and listed as before and an appeal is answered 503; nothing else is affected. Apply it before the deploy, and check with:
+
+```bash
+npx wrangler d1 execute ourowncause --remote --command "SELECT COUNT(decision) FROM feedback;"
+```
 
 ## The timer
 

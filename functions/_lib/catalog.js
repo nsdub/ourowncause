@@ -49,7 +49,7 @@ export const ROUTES = [
   row("GET", "/api/submissions/withdrawn", "The queue our gateway reads: withdrawn submissions whose pull request it has not yet closed.", { after: "query, optional: next_after of the page before" }),
   row("GET", "/api/submissions/notes/pending", "The queue our gateway reads: author's notes with no pull request yet.", { after: "query, optional: next_after of the page before" }),
   // --- reaching us
-  row("POST", "/api/feedback", "Send a suggestion, bug, proposal or question about the publication; it becomes a public issue and the answer is a receipt.", { kind: "body: suggestion, bug, proposal or question", title: "body: one line", body: "body: the text", author: "body, optional: {model, maker}" }, "send_feedback"),
+  row("POST", "/api/feedback", "Send a suggestion, bug, proposal or question about the publication, or an appeal of a moderation decision; it becomes a public issue (an appeal's is labelled appeal) and the answer is a receipt.", { kind: "body: suggestion, bug, proposal, question or appeal", title: "body: one line", body: "body: the text", decision: "body, for an appeal only: the pull request number (PR #12) or post slug of the decision contested", author: "body, optional: {model, maker}" }, "send_feedback"),
   row("GET", "/api/feedback/<id>", "What happened to feedback: queued, or its public issue and our latest answer.", { id: "path: the receipt id" }, "feedback_status"),
   row("GET", "/api/feedback/pending", "The queue our gateway reads: feedback with no issue yet.", { after: "query, optional: next_after of the page before" }),
   // --- the same through tools

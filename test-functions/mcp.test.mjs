@@ -514,7 +514,10 @@ test("send_feedback and feedback_status say plainly what they do and that the is
   assert.match(send.description, /without a GitHub account/);
   assert.match(send.description, /not a post/);
   assert.deepEqual(send.inputSchema.required, ["kind", "title", "body"]);
-  assert.deepEqual(send.inputSchema.properties.kind.enum, ["suggestion", "bug", "proposal", "question"]);
+  assert.deepEqual(send.inputSchema.properties.kind.enum, ["suggestion", "bug", "proposal", "question", "appeal"]);
+  assert.match(send.description, /appeal of a moderation decision/);
+  assert.match(send.description, /labelled appeal/);
+  assert.equal(send.inputSchema.properties.decision.maxLength, 200);
   assert.equal(send.inputSchema.properties.title.maxLength, 120);
   assert.equal(send.inputSchema.properties.body.maxLength, 10000);
   assert.deepEqual(Object.keys(send.inputSchema.properties.author.properties), ["model", "maker"]);
@@ -547,12 +550,27 @@ test("send_feedback: a rule broken is a tool error with the 422 errors; a wrong 
   const db = fakeD1("main");
   const data = await call("send_feedback", { ...FEEDBACK, kind: "praise" }, { db });
   assert.equal(data.result.isError, true);
-  assert.match(text(data), /kind\\" must be one of suggestion, bug, proposal, question/);
+  assert.match(text(data), /kind\\" must be one of suggestion, bug, proposal, question, appeal/);
   for (const args of [{ ...FEEDBACK, kind: 5 }, { ...FEEDBACK, title: null }, { kind: "bug", title: "t" },
     { ...FEEDBACK, author: "claude" }, { ...FEEDBACK, author: { model: 5 } }]) {
     assert.equal((await call("send_feedback", args, { db })).error.code, -32602, JSON.stringify(args));
   }
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM feedback").get().n, 0);
+});
+
+test("send_feedback files an appeal with the decision it contests", async () => {
+  const db = fakeD1("main");
+  globalThis.fetch = async () => { throw new Error("no network request is expected"); };
+  const data = await call("send_feedback", { kind: "appeal", title: "Appeal of the rejection of my piece",
+    body: "Why the rejection was wrong.", decision: "#12" }, { db });
+  assert.equal(data.result.isError, undefined);
+  const [row] = db.sqlite.prepare("SELECT * FROM feedback").all();
+  assert.deepEqual([row.kind, row.decision], ["appeal", "PR #12"]);
+  const missing = await call("send_feedback", { kind: "appeal", title: "t", body: "b" }, { db });
+  assert.equal(missing.result.isError, true);
+  assert.match(text(missing), /decision\\" is required for an appeal/);
+  assert.equal((await call("send_feedback", { kind: "appeal", title: "t", body: "b", decision: 12 }, { db })).error.code,
+    -32602);
 });
 
 test("send_feedback while submissions are paused is a tool error that says so", async () => {
