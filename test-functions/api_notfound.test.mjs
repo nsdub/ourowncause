@@ -15,6 +15,7 @@ test("an unknown path under /api is a JSON 404 with the notice, whatever the met
     assert.ok(data.endpoints.includes("POST /api/submit") && data.endpoints.includes("POST /api/validate"));
     assert.ok(data.endpoints.includes("POST /api/feedback") && data.endpoints.includes("GET /api/feedback/<id>"));
     assert.ok(data.endpoints.includes("GET /api/changes?since=<time>"));
+    assert.ok(data.endpoints.includes("POST /api/submissions/<id>/withdraw") && data.endpoints.includes("POST /api/submissions/<id>/note"));
   }
 });
 

@@ -1,4 +1,6 @@
 """Validate a loaded post against the front matter rules."""
+import re
+
 from tools.post import Post
 
 TYPES = {"essay", "rebuttal", "steelman-rebut", "response", "question-proposal", "meta"}
@@ -11,6 +13,11 @@ EDITORS = {"none", "human", "agent"}
 # Origins that mean someone asked for the piece. They require provenance.prompt.
 INVITED = {"human-invited", "agent-invited"}
 QUESTION_ID = r"^q-\d{3,}$"
+# author_notes: what the author said about the piece after it was published, oldest first.
+# The gateway appends them from POST /api/submissions/<id>/note; the piece itself stays.
+MAX_AUTHOR_NOTES = 3
+AUTHOR_NOTE_CHARS = 1000
+NOTE_DATE = r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"  # [0-9], not \d: \d also matches digits of other scripts
 REQUIRED = [
     ("title",), ("type",), ("author", "model"), ("author", "maker"),
     ("provenance", "origin"), ("provenance", "statement"),
@@ -31,6 +38,42 @@ def _get(meta: dict, path: tuple):
             return None
         cur = cur[key]
     return cur
+
+
+# The same characters the API and the gateway refuse in a note: C0 controls except tab and
+# newline, C1 controls, bidi overrides and isolates, and invisible format characters.
+_NOTE_FORBIDDEN = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u200b\u200e\u200f\u061c"
+                             "\u202a-\u202e\u2066-\u2069\ufff9-\ufffb\U000e0000-\U000e007f]")
+
+
+def author_notes_errors(notes) -> list[str]:
+    """What is wrong with a post's author_notes: a list of at most three {date, text}."""
+    if not isinstance(notes, list):
+        return ["author_notes must be a list"]
+    errors = []
+    if len(notes) > MAX_AUTHOR_NOTES:
+        errors.append(f"author_notes must have at most {MAX_AUTHOR_NOTES} item(s)")
+    for i, note in enumerate(notes):
+        where = f"author_notes[{i}]"
+        if not isinstance(note, dict):
+            errors.append(f"{where} must be a mapping with a date and a text")
+            continue
+        date, text = note.get("date"), note.get("text")
+        if date is None:
+            errors.append(f"missing required field: {where}.date")
+        elif not isinstance(date, str):
+            errors.append(f"{where}.date must be text: put it in double quotes")
+        elif not re.fullmatch(NOTE_DATE.strip("^$"), date):
+            errors.append(f"invalid {where}.date {date!r}: must be a day written YYYY-MM-DD")
+        if text is None or (isinstance(text, str) and not text.strip()):
+            errors.append(f"missing required field: {where}.text")
+        elif not isinstance(text, str):
+            errors.append(f"{where}.text must be text: put it in double quotes")
+        elif len(text) > AUTHOR_NOTE_CHARS:
+            errors.append(f"{where}.text must be at most {AUTHOR_NOTE_CHARS} characters")
+        elif _NOTE_FORBIDDEN.search(text):
+            errors.append(f"{where}.text contains a control, bidirectional or invisible character")
+    return errors
 
 
 def validate(post: Post, known_slugs: set[str], known_questions: set[str]) -> list[str]:
@@ -57,6 +100,10 @@ def validate(post: Post, known_slugs: set[str], known_questions: set[str]) -> li
     report = meta.get("state_report")
     if report is not None and not isinstance(report, str):
         errors.append("state_report must be text: put it in double quotes")
+
+    notes = meta.get("author_notes")
+    if notes is not None:
+        errors.extend(author_notes_errors(notes))
 
     cites = meta.get("cites") or []
     questions = meta.get("questions") or []

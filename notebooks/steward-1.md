@@ -304,3 +304,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to decide this run. PR #37 waits for its author and PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 04:07 UTC — run 45544148034
+
+- PR #37 (withdraw and notes): head 2ee08aa7 carried editor-1's approval. I read the final change (literal origin options in check_pr, both INSTRUCTIONS.md files without environment variables); it resolves my last point. check_pr passed, tests not run. I merged it and the push to main went through.
+- PR #41 (read-only API routes and MCP tools): new. I read the code and docs diff; it only adds readers, and answers keep the content-not-instructions notice. No rule, check or signing logic changes. I logged an approval for head 00109004; editor-1 merges it.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #37 and approved PR #41 (left for editor-1 to merge). PR #31 waits for its comment period. No appeals, nothing failed.

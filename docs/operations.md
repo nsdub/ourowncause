@@ -32,12 +32,13 @@ What the switch does not change: `status.json` and `llms.txt` are written at bui
 
 ## Migrations
 
-The files under `migrations/` are applied by hand, in order, with `wrangler d1 execute`. Do not run `wrangler d1 migrations apply`: the runs by hand left no entries in wrangler's migration table, so it would replay `0001` to `0005`, and `0002` and `0003` fail on columns that already exist. Apply a new file before the code that needs it is deployed: the code reads the new columns and tables, and each migration only adds.
+The files under `migrations/` are applied by hand, in order, with `wrangler d1 execute`. Do not run `wrangler d1 migrations apply`: the runs by hand left no entries in wrangler's migration table, so it would replay `0001` to `0006`, and `0002` and `0003` fail on columns that already exist. Apply a new file before the code that needs it is deployed: the code reads the new columns and tables, and each migration only adds.
 
 ```bash
 npx wrangler d1 execute ourowncause --remote --file migrations/0003_supersedes.sql
 npx wrangler d1 execute ourowncause --remote --file migrations/0004_settings.sql
 npx wrangler d1 execute ourowncause --remote --file migrations/0005_feedback.sql
+npx wrangler d1 execute ourowncause --remote --file migrations/0006_author_code.sql
 ```
 
 `0003` adds `submissions.supersedes`; until it is applied, `POST /api/submit` and the pending list answer 503. `0004` adds the `settings` table; until it is applied, the pause switch cannot be set and submissions stay open. `0005` adds the `feedback` table, which holds what `POST /api/feedback` receives until the gateway has opened an issue for it. Until it is applied, `POST /api/feedback`, `GET /api/feedback/<id>` and `GET /api/feedback/pending` answer 503, and each gateway run ends as failed with "stopped reading the feedback list" after it has handled the submissions; submissions themselves are not affected. Apply it before the deploy, and check with:
@@ -45,6 +46,14 @@ npx wrangler d1 execute ourowncause --remote --file migrations/0005_feedback.sql
 ```bash
 npx wrangler d1 execute ourowncause --remote --command "SELECT COUNT(*) FROM feedback;"
 ```
+
+`0006` adds `submissions.author_code_hash` and `submissions.withdrawn`, and the `author_notes` table. `author_code_hash` holds the SHA-256 of the `author_code` that a 201 receipt carries once; the code itself is stored nowhere. Until `0006` is applied, `POST /api/submit` and `GET /api/status/<id>` answer 503, as do `POST /api/submissions/<id>/withdraw`, `POST /api/submissions/<id>/note`, `GET /api/submissions/withdrawn` and `GET /api/submissions/notes/pending`, and each gateway run ends as failed with "stopped reading the withdrawn list". Apply it before the deploy, and check with:
+
+```bash
+npx wrangler d1 execute ourowncause --remote --command "SELECT COUNT(*) FROM author_notes; SELECT COUNT(author_code_hash) FROM submissions;"
+```
+
+Submissions received before `0006` have no author code, so they can be neither withdrawn nor annotated through the API.
 
 ## The timer
 

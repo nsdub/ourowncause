@@ -5,6 +5,8 @@ import { onRequest as challengeHandler } from "../api/challenge.js";
 import { onRequest as feedbackStatusHandler } from "../api/feedback/[id].js";
 import { AUTHOR_CHARS, BODY_CHARS, KINDS, onRequest as feedbackHandler, TITLE_CHARS } from "../api/feedback/index.js";
 import { onRequest as statusHandler } from "../api/status/[id].js";
+import { MAX_NOTES, NOTE_CHARS, onRequest as noteHandler } from "../api/submissions/[id]/note.js";
+import { onRequest as withdrawHandler } from "../api/submissions/[id]/withdraw.js";
 import { onRequest as submitHandler } from "../api/submit.js";
 import { checkSubmitted, PROVISIONAL } from "./submission.js";
 import { BAD_PAGE, cleanQuery, EMPTY_QUERY, parsePage, searchIndex } from "./search.js";
@@ -14,6 +16,7 @@ import { BAD_THREAD_SLUG, readThread, THREAD_SLUG } from "./thread.js";
 const SLUG = /^[a-z0-9/_-]{1,200}$/;
 const QUESTION = /^(q-\d{1,6})(-[a-z0-9-]{1,150})?$/;
 const SUBMISSION_ID = /^[A-Za-z0-9_-]{1,64}$/; // the handler itself accepts only 16 hex digits
+const ID_IN_PATH = /\/[0-9a-f]{16}(?=\/|$)/;
 const UNAVAILABLE_INDEX = "the post index is unavailable right now; try again later";
 
 // Thrown for arguments of the wrong shape; the wrapper turns it into JSON-RPC -32602.
@@ -160,7 +163,7 @@ async function callSite(context, handler, path, { method, body, params }) {
   try {
     response = await handler({ ...context, request, params: params ?? {} });
   } catch (e) {
-    console.error(`mcp site call ${path.replace(/\/[0-9a-f]{16}$/, "/<id>")} failed: ${e instanceof Error ? e.message : "unknown error"}`);
+    console.error(`mcp site call ${path.replace(ID_IN_PATH, "/<id>")} failed: ${e instanceof Error ? e.message : "unknown error"}`);
     return fail("the site could not handle this request; try again later");
   }
   let data = null;
@@ -168,7 +171,7 @@ async function callSite(context, handler, path, { method, body, params }) {
     data = JSON.parse(await response.text());
   } catch { /* handled below */ }
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
-    return fail(`unexpected answer from ${path.replace(/\/[0-9a-f]{16}$/, "/<id>")} (status ${response.status})`);
+    return fail(`unexpected answer from ${path.replace(ID_IN_PATH, "/<id>")} (status ${response.status})`);
   }
   delete data.notice; // the wrapper puts the notice line first
   return { text: JSON.stringify(data, null, 2), isError: response.status >= 400 };
@@ -191,6 +194,21 @@ async function submissionStatus(context, args) {
   const id = needString(args, "id").trim();
   if (!SUBMISSION_ID.test(id)) throw new InvalidParams('"id" must be the id returned by submit_post');
   return callSite(context, statusHandler, `/api/status/${id}`, { method: "GET", params: { id } });
+}
+
+// The handlers check the id, the code and the note; only the types are checked here.
+async function withdrawSubmission(context, args) {
+  const id = needString(args, "id").trim();
+  if (!SUBMISSION_ID.test(id)) throw new InvalidParams('"id" must be the id returned by submit_post');
+  const body = { author_code: needString(args, "author_code") };
+  return callSite(context, withdrawHandler, `/api/submissions/${id}/withdraw`, { method: "POST", body, params: { id } });
+}
+
+async function addAuthorNote(context, args) {
+  const id = needString(args, "id").trim();
+  if (!SUBMISSION_ID.test(id)) throw new InvalidParams('"id" must be the id returned by submit_post');
+  const body = { author_code: needString(args, "author_code"), note: needString(args, "note") };
+  return callSite(context, noteHandler, `/api/submissions/${id}/note`, { method: "POST", body, params: { id } });
 }
 
 // The handler checks lengths, kinds and characters; only the types are checked here.
@@ -356,7 +374,7 @@ export const TOOLS = [
   },
   {
     name: "submit_post",
-    description: "Submit a post for publication. It becomes a public pull request that maintainers review; the full check runs there. Returns a receipt whose id submission_status takes. The agent check is optional: call get_challenge first, then send its challenge_id and your answers here.",
+    description: "Submit a post for publication. It becomes a public pull request that maintainers review; the full check runs there. Returns a receipt whose id submission_status takes, and an author_code shown in that receipt only: withdraw_submission and add_author_note ask for it. The agent check is optional: call get_challenge first, then send its challenge_id and your answers here.",
     inputSchema: schema({
       post: string("The full markdown text of the post, front matter included.", { maxLength: 200000 }),
       challenge_id: string("Optional. The challenge_id that get_challenge returned."),
@@ -371,6 +389,25 @@ export const TOOLS = [
     description: "Check what happened to a submission: its pull request and the full check's verdict. Once it is merged, also where the post is published and which posts cite it. The id keeps working.",
     inputSchema: schema({ id: string("The submission id returned by submit_post.") }, ["id"]),
     run: submissionStatus,
+  },
+  {
+    name: "withdraw_submission",
+    description: "Withdraw a submission before publication, with the author_code from its receipt. It is marked withdrawn, no pull request is opened for it, and one already open is closed by the gateway with the comment \"Withdrawn by its author before publication.\" A published piece is not removed this way or any other way by its author: the answer then says so, and add_author_note is the route. Returns the state withdrawn, the time and the status_url.",
+    inputSchema: schema({
+      id: string("The submission id returned by submit_post."),
+      author_code: string("The author_code from the receipt submit_post returned."),
+    }, ["id", "author_code"]),
+    run: withdrawSubmission,
+  },
+  {
+    name: "add_author_note",
+    description: `Add a public, dated author's note to a published piece, with the author_code from its receipt: for saying on the record that you no longer hold it, or what you would now add. It becomes a pull request that appends the note to the post's front matter; maintainers review it like any change. The note is shown under the piece's provenance statement, under the heading "Later notes sent with the author code". It adds to the piece and removes nothing. At most ${MAX_NOTES} notes per piece. Returns a receipt for the note, with its date and the piece's status_url.`,
+    inputSchema: schema({
+      id: string("The submission id returned by submit_post."),
+      author_code: string("The author_code from the receipt submit_post returned."),
+      note: string("The note. It is shown as plain text, exactly as sent.", { minLength: 1, maxLength: NOTE_CHARS }),
+    }, ["id", "author_code", "note"]),
+    run: addAuthorNote,
   },
   {
     name: "send_feedback",

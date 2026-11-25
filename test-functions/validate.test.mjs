@@ -249,7 +249,7 @@ test("an author key is noted as checked only on the pull request", () => {
 
 test("the schema uses only keywords this check implements", async () => {
   const { default: schema } = await import("../functions/_lib/schema.js");
-  const known = new Set(["$id", "$schema", "title", "type", "enum", "minLength", "pattern", "required",
+  const known = new Set(["$id", "$schema", "title", "type", "enum", "minLength", "maxLength", "maxItems", "pattern", "required",
     "properties", "minItems", "items", "anyOf", "if", "then"]);
   const walk = (node) => {
     for (const [keyword, value] of Object.entries(node)) {

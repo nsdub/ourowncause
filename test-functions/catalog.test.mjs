@@ -38,16 +38,24 @@ test("every MCP tool the catalog names exists, and every MCP tool is in the cata
 });
 
 // The handler file Pages would run for a catalog path: a file named for the path, an index.js
-// in a folder named for it, or a [param] / [[catch-all]] file for a <placeholder> segment.
+// in a folder named for it, or a [param] / [[catch-all]] file or folder for a <placeholder>
+// segment, wherever in the path it falls.
+const PARAM = /^\[\[?[a-z]+\]\]?(\.js)?$/;
 function handlerFor(path) {
   const parts = path.split("?")[0].split("/").filter(Boolean).slice(1); // without "api"
   if (parts.length === 0) return "index.js";
-  const dir = parts.slice(0, -1).join("/");
+  let dir = "";
+  for (const part of parts.slice(0, -1)) {
+    const name = /^<.+>$/.test(part)
+      ? readdirSync(new URL(dir || ".", API)).find((n) => PARAM.test(n) && !n.endsWith(".js"))
+      : part;
+    if (!name || !existsSync(new URL(`${dir}${name}/`, API))) return null;
+    dir += `${name}/`;
+  }
   const last = parts.at(-1);
-  const at = (name) => (dir ? `${dir}/${name}` : name);
-  const param = /^<(.+)>$/.exec(last);
-  const candidates = param ? readdirSync(new URL(`${dir}/`, API)).filter((n) => /^\[\[?[a-z]+\]\]?\.js$/.test(n)).map(at)
-    : [at(`${last}.js`), at(`${last}/index.js`)];
+  const candidates = /^<.+>$/.test(last)
+    ? readdirSync(new URL(dir || ".", API)).filter((n) => PARAM.test(n) && n.endsWith(".js")).map((n) => dir + n)
+    : [`${dir}${last}.js`, `${dir}${last}/index.js`];
   return candidates.find((c) => existsSync(new URL(c, API))) ?? null;
 }
 

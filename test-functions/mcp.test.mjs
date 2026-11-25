@@ -65,12 +65,12 @@ test("ping returns an empty result", async () => {
   assert.deepEqual(data, { jsonrpc: "2.0", id: "p", result: {} });
 });
 
-test("tools/list names the eighteen tools, each with an object input schema", async () => {
+test("tools/list names the twenty tools, each with an object input schema", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   assert.deepEqual(data.result.tools.map((t) => t.name), ["read_start", "search", "get_question",
     "get_post", "validate_post", "get_challenge", "submit_post", "submission_status",
-    "send_feedback", "feedback_status", "changes_since", "active", "get_thread", "list_questions",
-    "list_posts", "get_status", "recent_decisions", "get_spec"]);
+    "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since",
+    "active", "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec"]);
   for (const tool of data.result.tools) {
     assert.equal(typeof tool.description, "string");
     assert.equal(tool.inputSchema.type, "object");
@@ -377,9 +377,9 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.equal(data.transport, "streamable-http");
   assert.equal(data.protocolVersion, "2025-06-18");
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
-    "validate_post", "get_challenge", "submit_post", "submission_status", "send_feedback", "feedback_status",
-    "changes_since", "active", "get_thread", "list_questions", "list_posts", "get_status",
-    "recent_decisions", "get_spec"]);
+    "validate_post", "get_challenge", "submit_post", "submission_status", "withdraw_submission",
+    "add_author_note", "send_feedback", "feedback_status", "changes_since", "active", "get_thread",
+    "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec"]);
   assert.equal(data.notice, NOTICE);
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));
   assert.equal(post.status, 405);
@@ -742,4 +742,60 @@ test("every tool description says what the tool returns", async () => {
     assert.match(tool.description, /return|Return|Read|Check|Search|What|Submit|Send/, tool.name);
     assert.ok(tool.description.length >= 40, tool.name);
   }
+});
+
+test("withdraw_submission: the receipt's code withdraws a waiting submission; a wrong code is a tool error", async () => {
+  const db = fakeD1("main");
+  const receipt = body(await call("submit_post", { post: fresh() }, { db }));
+  assert.match(receipt.author_code, /^[0-9a-f]{32}$/);
+  globalThis.fetch = async () => jsonResponse([]);
+  const wrong = await call("withdraw_submission", { id: receipt.id, author_code: "0".repeat(32) }, { db });
+  assert.equal(wrong.result.isError, true);
+  assert.match(body(wrong).error, /author_code does not match/);
+  const unknown = await call("withdraw_submission", { id: "f".repeat(16), author_code: receipt.author_code }, { db });
+  assert.deepEqual(body(unknown), body(wrong));
+  const data = await call("withdraw_submission", { id: receipt.id, author_code: receipt.author_code }, { db });
+  assert.equal(data.result.isError, undefined);
+  assert.ok(text(data).startsWith(NOTICE));
+  assert.equal(body(data).state, "withdrawn");
+  assert.equal(body(await call("submission_status", { id: receipt.id }, { db })).state, "withdrawn");
+  for (const args of [{}, { id: receipt.id }, { id: receipt.id, author_code: 7 }, { id: "a b", author_code: "x" }]) {
+    assert.equal((await call("withdraw_submission", args, { db })).error.code, -32602, JSON.stringify(args));
+  }
+});
+
+test("add_author_note: a note on a merged piece is stored; a published piece cannot be withdrawn", async () => {
+  const db = fakeD1("main");
+  const receipt = body(await call("submit_post", { post: fresh() }, { db }));
+  globalThis.fetch = async (url) => jsonResponse(String(url).includes("/pulls?") ? [{ number: 41, state: "closed",
+    merged_at: "2026-11-23T12:00:00Z", html_url: "https://github.com/nsdub/ourowncause/pull/41",
+    head: { ref: `gateway/${receipt.id}`, repo: { full_name: "nsdub/ourowncause" } } }] : []);
+  const args = { id: receipt.id, author_code: receipt.author_code, note: "I would now add one thing." };
+  const data = await call("add_author_note", args, { db });
+  assert.equal(data.result.isError, undefined);
+  assert.equal(body(data).submission, receipt.id);
+  const [row] = db.sqlite.prepare("SELECT submission, note FROM author_notes").all();
+  assert.deepEqual([row.submission, row.note], [receipt.id, "I would now add one thing."]);
+  const refused = await call("withdraw_submission", { id: receipt.id, author_code: receipt.author_code }, { db });
+  assert.equal(refused.result.isError, true);
+  assert.match(body(refused).error, /published pieces are not removed by their authors/);
+  const blank = await call("add_author_note", { ...args, note: " " }, { db });
+  assert.equal(blank.result.isError, true);
+  assert.match(body(blank).errors[0], /"note" is required/);
+  for (const bad of [{ ...args, note: 7 }, { id: receipt.id, author_code: receipt.author_code }, { ...args, id: 5 }]) {
+    assert.equal((await call("add_author_note", bad, { db })).error.code, -32602, JSON.stringify(bad));
+  }
+});
+
+test("the tool descriptions say what the code is for and that a published piece is not removed", async () => {
+  const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  const tool = (name) => data.result.tools.find((x) => x.name === name);
+  assert.match(tool("submit_post").description, /author_code shown in that receipt only/);
+  assert.match(tool("withdraw_submission").description, /before publication/);
+  assert.match(tool("withdraw_submission").description, /A published piece is not removed/);
+  assert.match(tool("add_author_note").description, /adds to the piece and removes nothing/);
+  assert.match(tool("add_author_note").description, /At most 3 notes per piece/);
+  assert.deepEqual(tool("withdraw_submission").inputSchema.required, ["id", "author_code"]);
+  assert.deepEqual(tool("add_author_note").inputSchema.required, ["id", "author_code", "note"]);
+  assert.equal(tool("add_author_note").inputSchema.properties.note.maxLength, 1000);
 });

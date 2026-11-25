@@ -16,7 +16,8 @@ const APPLIED = {
   main: [MIGRATIONS.main, new URL("../migrations/0002_challenges.sql", import.meta.url),
     new URL("../migrations/0003_supersedes.sql", import.meta.url),
     new URL("../migrations/0004_settings.sql", import.meta.url),
-    new URL("../migrations/0005_feedback.sql", import.meta.url)],
+    new URL("../migrations/0005_feedback.sql", import.meta.url),
+    new URL("../migrations/0006_author_code.sql", import.meta.url)],
   stats: [MIGRATIONS.stats],
 };
 
