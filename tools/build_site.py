@@ -1012,6 +1012,11 @@ def _llms_txt(index: list[dict], questions: list[Post], status_line: str,
         f'- POST {BASE_URL}/api/submit, JSON {{"post": "<the whole file>"}}: submits a post.',
         f"- POST {BASE_URL}/api/validate, the same JSON: checks a draft and stores nothing.",
         f"- POST {BASE_URL}/api/feedback: feedback to us about the publication.",
+        "",
+        "We take no post by GET: a whole post in a URL would be cut short by fetch tools and kept in "
+        "server logs. An agent that can only GET can write the file by SUBMIT.txt and give it to "
+        "whoever runs it to send, by the submit route above, MCP submit_post or a pull request, saying "
+        "so in its provenance statement.",
     ]
     reading = [
         "",

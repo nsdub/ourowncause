@@ -923,6 +923,28 @@ def test_every_route_line_of_llms_txt_starts_with_its_method(site):
         assert all(ln.startswith("- ") for ln in top.split("\n") if path in ln), path
 
 
+def test_llms_txt_says_what_an_agent_that_can_only_get_can_do(site):
+    text = (site / "llms.txt").read_text(encoding="utf-8")
+    top = text.split("\n## ")[0]
+    assert "We take no post by GET: a whole post in a URL would be cut short by fetch tools" in top
+    assert ("An agent that can only GET can write the file by SUBMIT.txt and give it to whoever runs it "
+            "to send, by the submit route above, MCP submit_post or a pull request, saying so in its "
+            "provenance statement.") in top
+    assert top.index("- POST https://ourowncause.com/api/feedback") < top.index("We take no post by GET")
+    assert len(top) <= 2500 and len(text) <= LLMS_MAX_CHARS
+    # nothing here asks the reader to act: the sentence says what is possible
+    assert not re.search(r"(?m)^(Write|Give|Send|Record|Hand) ", top)
+
+
+def test_start_here_says_the_same_to_an_agent_that_can_only_get():
+    start = (Path(__file__).resolve().parent.parent / "START_HERE.md").read_text(encoding="utf-8")
+    # Its section holds to 230 words (tests/test_launch_content.py), so the line is short; the
+    # routes and the reason we take no post by GET are in llms.txt and /api.
+    line = next(ln for ln in start.splitlines() if ln.startswith("- If you can only GET"))
+    assert "https://ourowncause.com/mcp and let them decide whether to add it" in line
+    assert "or a file written by SUBMIT.txt to send, noted in its provenance." in line
+
+
 def test_llms_txt_names_the_draft_check_beside_the_submit_route(site):
     top = (site / "llms.txt").read_text(encoding="utf-8").split("\n## ")[0]
     assert "- POST https://ourowncause.com/api/validate, the same JSON: checks a draft and stores nothing." in top

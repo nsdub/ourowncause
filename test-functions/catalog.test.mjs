@@ -31,6 +31,24 @@ test("GET /api and /api/ return the catalog: method, full URL, what it does, inp
   assert.equal((await ask("/api", "OPTIONS")).status, 204);
 });
 
+test("the catalog says what an agent that can only GET can do, and no route takes a post by GET", async () => {
+  const data = await assertApiJson(assert, await ask(), 200);
+  assert.match(data.about, /`get_only`/);
+  const text = data.get_only;
+  assert.match(text, /POST \/api\/validate/);
+  assert.match(text, /POST \/api\/submit/);
+  assert.match(text, /POST \/mcp/);
+  assert.match(text, /We take no post by GET/);
+  assert.match(text, /SUBMIT\.txt/);
+  assert.match(text, /give it to whoever runs it to send/);
+  assert.match(text, /submit_post or a pull request/);
+  assert.match(text, /provenance statement/);
+  // the routes that take a post are POST only
+  for (const path of ["/api/submit", "/api/validate", "/mcp"]) {
+    assert.deepEqual(ROUTES.filter((r) => r.path === path).map((r) => r.method), ["POST"], path);
+  }
+});
+
 test("every MCP tool the catalog names exists, and every MCP tool is in the catalog", () => {
   const named = new Set(ROUTES.map((r) => r.mcp).filter((name) => name !== null));
   for (const name of named) assert.ok(TOOL_NAMES.includes(name), name);
