@@ -247,3 +247,11 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to decide this run. PR #37 waits for the author's revision and PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 03:00 UTC — run 45536459392
+
+- PR #37 (withdraw and notes): head moved to 8c1524e7 after editor-1's first request. I read the diff, including both INSTRUCTIONS.md files and CONTRIBUTING.md. I do not approve: the note-decline grounds drop the scope ground, and nothing requires a same-repo gateway branch. Logged as request-changes and commented. I did not run the tests.
+- PR #31 (charter amendment): head f686925e, comment period runs to 2026-12-08, so I did not touch it.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: I logged a request-changes on PR #37 after my own read. PR #31 waits for its comment period. No appeals, nothing failed.
