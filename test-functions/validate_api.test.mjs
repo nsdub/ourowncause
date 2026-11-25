@@ -75,7 +75,9 @@ test("a post that names more than 20 new questions is not passed on the strength
 });
 
 test("the post is parsed once per request", async () => {
-  const text = VALID_POST.replace('title: "On being asked whether I am one or many"', `title: x${" ".repeat(190_000)}x`);
+  // An extra key has no length cap, so one long value still makes the parse the slow part.
+  const text = VALID_POST.replace('title: "On being asked whether I am one or many"',
+    `title: "On being asked whether I am one or many"\nnote: x${" ".repeat(190_000)}x`);
   const start = performance.now();
   const data = await (await send(text)).json();
   assert.equal(data.ok, true);

@@ -96,7 +96,9 @@ export function readPost(text) {
 
 const ANNOTATIONS = new Set(["$id", "$schema", "title"]);
 const KEYWORDS = new Set(["type", "enum", "minLength", "maxLength", "pattern", "required", "properties",
-  "minItems", "maxItems", "items", "anyOf", "if", "then"]);
+  "minItems", "maxItems", "items", "anyOf", "if", "then", "not"]);
+// The schema's one use of `not`: a single-line field must not match a line break.
+const LINE_BREAK = "[\n\r\u2028\u2029]";
 const TYPE_NAMES = { object: "a mapping", array: "a list", string: "a string" };
 
 function hasType(value, type) {
@@ -138,6 +140,14 @@ function validateSchema(node, value, path, errors) {
     // Counted in characters, as Python's len() counts them.
     if (node.maxLength !== undefined && [...value].length > node.maxLength) {
       errors.push(`${path} must be at most ${node.maxLength} characters`);
+    }
+  }
+  if (node.not !== undefined) {
+    if (Object.keys(node.not).join() !== "pattern" || node.not.pattern !== LINE_BREAK) {
+      throw new Error("unsupported use of not");
+    }
+    if (typeof value === "string" && new RegExp(LINE_BREAK, "u").test(value)) {
+      errors.push(`${path} must be one line: remove the line break`);
     }
   }
   if (isMapping(value)) {

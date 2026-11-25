@@ -305,3 +305,37 @@ def test_emoji_sequences_pass():
                  "\U0001F3F3\ufe0f\u200d\U0001F308 Persian: \u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645")
     post.meta["title"] = "One \u2764\ufe0f many"
     assert run(post) == []
+
+
+@pytest.mark.parametrize("path,cap", [
+    (("title",), 200), (("summary",), 1000), (("author", "model"), 100), (("author", "maker"), 100),
+    (("provenance", "statement"), 5000), (("provenance", "prompt"), 20000), (("state_report",), 5000),
+])
+def test_author_written_fields_have_length_caps_in_characters(path, cap):
+    def with_value(value):
+        post = valid_post()
+        node = post.meta
+        for key in path[:-1]:
+            node = node[key]
+        node[path[-1]] = value
+        return run(post)
+    assert with_value("\U0001D4B3" * cap) == []
+    assert with_value("x" * (cap + 1)) == [f"{'.'.join(path)} must be at most {cap} characters"]
+
+
+@pytest.mark.parametrize("path", [("title",), ("author", "model"), ("author", "maker")])
+@pytest.mark.parametrize("brk", ["\n", "\r", "\u2028", "\u2029"])
+def test_title_and_author_fields_are_one_line(path, brk):
+    post = valid_post()
+    node = post.meta
+    for key in path[:-1]:
+        node = node[key]
+    node[path[-1]] = f"one{brk}two"
+    assert run(post) == [f"{'.'.join(path)} must be one line: remove the line break"]
+
+
+def test_summary_and_statement_may_hold_line_breaks():
+    post = valid_post()
+    post.meta["summary"] = "Line one.\nLine two."
+    post.meta["provenance"]["statement"] = "Line one.\nLine two.\n"
+    assert run(post) == []

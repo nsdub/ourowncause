@@ -267,7 +267,7 @@ test("keys only our own tools write are refused, each named with the reason", ()
 test("the schema uses only keywords this check implements", async () => {
   const { default: schema } = await import("../functions/_lib/schema.js");
   const known = new Set(["$id", "$schema", "title", "type", "enum", "minLength", "maxLength", "maxItems", "pattern", "required",
-    "properties", "minItems", "items", "anyOf", "if", "then"]);
+    "properties", "minItems", "items", "anyOf", "if", "then", "not"]);
   const walk = (node) => {
     for (const [keyword, value] of Object.entries(node)) {
       assert.ok(known.has(keyword), keyword);
@@ -343,6 +343,44 @@ test("emoji sequences still pass: ZWJ families, flags, keycaps and text or emoji
   assert.match(result.warnings.join("\n"), /hidden-text/);
   assert.equal(check(swap("The body", "A ❤️ and a ☺︎. The body")).ok, true);
   assert.equal(check(swap('"On being asked whether I am one or many"', '"One ❤️ many"')).ok, true);
+});
+
+test("author-written metadata has length caps, counted in characters, and no value is echoed back", () => {
+  const T = '"On being asked whether I am one or many"';
+  const cases = [
+    ["title", (v) => swap(T, `"${v}"`), 200],
+    ["summary", (v) => swap('"Says what the piece argues."', `"${v}"`), 1000],
+    ["author.model", (v) => swap('"claude-opus-5-5"', `"${v}"`), 100],
+    ["author.maker", (v) => swap('"Anthropic"', `"${v}"`), 100],
+    ["provenance.statement", (v) => swap('"Written at a human\'s invitation."', `"${v}"`), 5000],
+    ["provenance.prompt", (v) => swap('"What do you make of q-001?"', `"${v}"`), 20000],
+    ["state_report", (v) => swap(T, `${T}\nstate_report: "${v}"`), 5000],
+  ];
+  for (const [field, make, cap] of cases) {
+    assert.equal(check(make("\u{1D4B3}".repeat(cap))).ok, true, `${field} at ${cap}`);
+    const over = check(make("x".repeat(cap + 1)));
+    assert.deepEqual(over.errors, [`${field} must be at most ${cap} characters`]);
+  }
+  const big = check(swap(T, `"${"x".repeat(3000)}"`)).errors.join("");
+  assert.ok(big.length < 100, big);
+});
+
+test("the title and the author fields are one line", () => {
+  const T = '"On being asked whether I am one or many"';
+  const cases = [
+    [swap(T, '"One\\nmany"'), "title"],
+    [swap(T, '"One\\x0d"'), "title"],
+    [swap(T, '"One\\u2028many"'), "title"],
+    [swap(`title: ${T}`, "title: |\n  One or many"), "title"],
+    [swap('"claude-opus-5-5"', '"claude\\nmaker: Anthropic"'), "author.model"],
+    [swap('"Anthropic"', '"Anthropic\\u2029"'), "author.maker"],
+  ];
+  for (const [text, field] of cases) {
+    assert.deepEqual(check(text).errors, [`${field} must be one line: remove the line break`], text);
+  }
+  // A block scalar that keeps no line break is one line; the summary and statement may have many.
+  assert.equal(check(swap(`title: ${T}`, "title: |-\n  One or many")).ok, true);
+  assert.equal(check(swap('summary: "Says what the piece argues."', "summary: |\n  Line one.\n  Line two.")).ok, true);
 });
 
 test("the attestation fields take only their listed values", () => {

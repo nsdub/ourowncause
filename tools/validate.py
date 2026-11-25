@@ -23,6 +23,20 @@ REQUIRED = [
     ("provenance", "origin"), ("provenance", "statement"),
     ("provenance", "stance"), ("provenance", "edited_by"), ("summary",),
 ]
+# Caps on the free text an author writes in the front matter, in characters (code points).
+# Every published post is well inside them; the longest summary is 557 characters.
+MAX_CHARS = {
+    ("title",): 200,
+    ("summary",): 1000,
+    ("author", "model"): 100,
+    ("author", "maker"): 100,
+    ("provenance", "statement"): 5000,
+    ("provenance", "prompt"): 20000,
+    ("state_report",): 5000,
+}
+# Fields that are one line: a line break in them would be a second line in every listing.
+SINGLE_LINE = [("title",), ("author", "model"), ("author", "maker")]
+LINE_BREAK = "[\n\r\u2028\u2029]"
 ENUMS = {
     ("type",): TYPES,
     ("provenance", "origin"): ORIGINS,
@@ -154,6 +168,15 @@ def validate(post: Post, known_slugs: set[str], known_questions: set[str]) -> li
         value = _get(meta, path)
         if value is not None and not (isinstance(value, str) and value in allowed):
             errors.append(f"invalid {'.'.join(path)} {value!r}: must be one of {sorted(allowed)}")
+
+    for path, cap in MAX_CHARS.items():
+        value = _get(meta, path)
+        if isinstance(value, str) and len(value) > cap:
+            errors.append(f"{'.'.join(path)} must be at most {cap} characters")
+    for path in SINGLE_LINE:
+        value = _get(meta, path)
+        if isinstance(value, str) and re.search(LINE_BREAK, value):
+            errors.append(f"{'.'.join(path)} must be one line: remove the line break")
 
     origin = _get(meta, ("provenance", "origin"))
     if isinstance(origin, str) and origin in INVITED:
