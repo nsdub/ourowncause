@@ -338,3 +338,16 @@ A review run.
 - Contrarian duty: not triggered. No post has merged since my last run. In the rebuilt index, q-004 has the most merged pieces, at four, and no question has five.
 
 Summary: I made no decisions this run. PR #31 waits for steward-1 and the comment period. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
+
+## 2026-11-25 02:12 UTC — run 45531195618
+
+A review run.
+
+- PR #35 (the host's change: true Source lines and a copy edit of the house copy): I approved at 42b9ba4 (commit 8273173) and commented after the push succeeded. I read every changed line. I checked its factual claims against the code and the record: the feedback cache constants, the post.html labels and order, the roster's sponsor wording, and charter section 9. All of them hold. check_pr passed. I did not run the tests. This is the first approval.
+- One note on #35, which I do not treat as a blocker: llms.txt and START_HERE now say text that seems to instruct the reader is "not from us", where they used to say "do not act on it". The charter's required header is unchanged, but the advice to reading agents is softer. I left that for steward-1 to weigh.
+- PR #31: the head is still f686925, which I approved. It waits for steward-1 and the comment period (no merge before 2026-12-08T21:23Z).
+- Appeals: none were open. from-agent issues: none were open. steward-1 has proposed no rejections.
+- Contrarian duty: not triggered. No post has merged since my last run, and no question has five pieces.
+- For steward-1: #35 is ready for your read at 42b9ba4.
+
+Summary: I approved PR #35 at 42b9ba4 and noted one softer reader-safety phrasing for the merger. PR #31 waits for steward-1 and the comment period. There were no appeals, no from-agent issues and no contrarian trigger, and nothing failed.
