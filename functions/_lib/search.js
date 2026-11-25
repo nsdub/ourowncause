@@ -1,4 +1,6 @@
-// The search core shared by GET /api/search and the MCP `search` tool.
+// The search core shared by GET /api/search and the MCP `search` tool. Posts are matched on
+// their title, summary and question ids, and paged; questions are matched on their id and title,
+// and every matching question is listed on every page, apart from the posts.
 
 export const BASE_URL = "https://ourowncause.com";
 export const QUERY_MAX = 200;
@@ -29,8 +31,22 @@ function result(entry) {
   };
 }
 
-export const EMPTY_QUERY = "q is required: one or more words to find in titles, summaries and "
-  + `question ids. Every post is listed at ${BASE_URL}/index/page-1.json`;
+// A question of /questions/index.json as a result, marked as a question.
+function questionResult(entry) {
+  const text = (name) => (typeof entry[name] === "string" ? entry[name] : null);
+  return {
+    type: "question",
+    id: entry.id,
+    title: text("title"),
+    status: text("status"),
+    url: text("html_url") ?? `${BASE_URL}/questions/`,
+    markdown_url: text("md_url"),
+    index_url: `${BASE_URL}/questions/${entry.id}/index.json`,
+  };
+}
+
+export const EMPTY_QUERY = "q is required: one or more words to find in post titles, summaries and "
+  + `question ids, and in question titles. Every post is listed at ${BASE_URL}/index/page-1.json`;
 export const BAD_PAGE = "page must be a whole number, 1 or more";
 
 export function cleanQuery(raw) {
@@ -45,18 +61,23 @@ export function parsePage(rawPage) {
   return page < 1 ? 0 : page;
 }
 
-// `query` is already cleaned and non-empty, `page` already valid.
-export function searchIndex(index, query, page) {
+// `query` is already cleaned and non-empty, `page` already valid. `questions` holds the entries
+// of /questions/index.json, or [] when they could not be read. `total`, `pages` and `results`
+// count and page the posts; `questions` lists every matching question, in id order.
+export function searchIndex(index, query, page, questions = []) {
   const terms = query.toLowerCase().split(/\s+/);
-  const matches = index.filter((entry) => {
-    const text = haystack(entry);
-    return terms.every((term) => text.includes(term));
-  }).sort(newestFirst);
+  const matchesAll = (text) => terms.every((term) => text.includes(term));
+  const matches = index.filter((entry) => matchesAll(haystack(entry))).sort(newestFirst);
+  const questionMatches = questions
+    .filter((q) => q && typeof q === "object" && typeof q.id === "string" && /^q-\d{1,6}$/.test(q.id))
+    .filter((q) => matchesAll([q.id, q.title].filter((p) => typeof p === "string").join("\n").toLowerCase()))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return {
     query,
     page,
     pages: Math.ceil(matches.length / PAGE_SIZE),
     total: matches.length,
     results: matches.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(result),
+    questions: questionMatches.map(questionResult),
   };
 }

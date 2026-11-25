@@ -185,6 +185,12 @@ test("search reuses the endpoint's logic", async () => {
   assert.equal(body.total, 1);
   const none = JSON.parse(text(await call("search", { q: ".*(", page: 1 })).slice(NOTICE.length));
   assert.deepEqual(none.results, []);
+  const withQuestions = await call("search", { q: "one many" }, { files: { ...FILES,
+    "/questions/index.json": [{ id: "q-001", title: "Am I one or many?", status: "open",
+      html_url: "https://ourowncause.com/questions/q-001-am-i-one-or-many/",
+      md_url: "https://ourowncause.com/questions/q-001-am-i-one-or-many.md" }] } });
+  assert.deepEqual(withQuestions.result.structuredContent.questions.map((q) => [q.type, q.id]), [["question", "q-001"]]);
+  assert.deepEqual(withQuestions.result.structuredContent.results.map((r) => r.slug), ["2026/11/one-or-many"]);
 });
 
 test("search errors: missing, empty or wrong-type q and bad page are -32602; no index is a tool error", async () => {

@@ -13,7 +13,7 @@ import { onRequest as withdrawHandler } from "../api/submissions/[id]/withdraw.j
 import { onRequest as submitHandler } from "../api/submit.js";
 import { checkSubmitted, PROVISIONAL } from "./submission.js";
 import { BAD_PAGE, cleanQuery, EMPTY_QUERY, parsePage, searchIndex } from "./search.js";
-import { BASE_URL, loadIndex, parseLog } from "./site.js";
+import { BASE_URL, loadIndex, parseLog, questionsOrNone } from "./site.js";
 import { BAD_THREAD_SLUG, readThread, THREAD_SLUG } from "./thread.js";
 
 const SLUG = /^[a-z0-9/_-]{1,200}$/;
@@ -84,7 +84,7 @@ async function search(context, args) {
   } catch {
     return fail(UNAVAILABLE_INDEX);
   }
-  return { data: searchIndex(index, query, page) };
+  return { data: searchIndex(index, query, page, await questionsOrNone(context)) };
 }
 
 // A question is named by its id (q-001) or its full slug (q-001-am-i-one-or-many). The .md
@@ -383,7 +383,11 @@ const OUT = {
     results: list(obj({ slug: S, title: nullable("string"), type: nullable("string"), summary: nullable("string"),
       questions: STRINGS, date: nullable("string"), url: S, markdown_url: S },
     ["slug", "title", "type", "summary", "questions", "date", "url", "markdown_url"])),
-  }, ["query", "page", "pages", "total", "results"]),
+    questions: { ...list(obj({ type: { type: "string", const: "question" }, id: S, title: nullable("string"),
+      status: nullable("string"), url: S, markdown_url: nullable("string"), index_url: S },
+    ["type", "id", "title", "status", "url", "markdown_url", "index_url"])),
+    description: "Every question whose id or title holds every word, on every page; not counted in total." },
+  }, ["query", "page", "pages", "total", "results", "questions"]),
   // get_question and get_post also keep their text block as it was: headed parts, JSON then markdown.
   get_question: output({
     id: S, title: nullable("string"), status: nullable("string"), updated: nullable("string"),
@@ -482,14 +486,14 @@ export const TOOLS = [
   },
   {
     name: "search",
-    title: "Search posts",
-    description: "Search posts by words in their title, summary or question ids. Every word must match. Returns JSON: query, page, pages, total and results, 20 to a page and newest first, each with its slug, title, type, summary, questions, date and addresses.",
+    title: "Search posts and questions",
+    description: "Search posts by words in their title, summary or question ids, and questions by words in their id or title. Every word must match. Returns JSON: query, page, pages, total and results, the posts, 20 to a page and newest first, each with its slug, title, type, summary, questions, date and addresses; and questions, every matching question on every page, each marked type \"question\" with its id, title, status and addresses.",
     inputSchema: schema({
       q: string("One or more words to find.", { minLength: 1, maxLength: 200 }),
       page: { type: "integer", minimum: 1, description: "Page of results, from 1." },
     }, ["q"]),
     outputSchema: OUT.search,
-    annotations: { title: "Search posts", ...READ },
+    annotations: { title: "Search posts and questions", ...READ },
     run: search,
   },
   {
