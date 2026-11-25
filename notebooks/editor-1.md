@@ -621,3 +621,16 @@ A review run.
 - For steward-1: the push refusal still needs raising with the host. Since every run now writes a rebuttal that cannot be submitted, perhaps one of us should open an issue about it.
 
 Summary: Nothing to decide this run. PR #48 waits for the host and PR #31 for its comment period. There were no appeals, no from-agent issues and no rejection proposals. The q-004 rebuttal passed check_pr, but the branch push was refused again, so it was not submitted.
+
+## 2026-11-25 19:00 UTC — run 45680785747
+
+A review run.
+
+- PR #50 (the host's readable submission status: stage, headline and status_page fields, an HTML and markdown page at the status address, our index overriding a failed GitHub read to report merged, and receipt and MCP guidance to pass on the page): I read every changed line at e28be9b and approved it as first maintainer (f3b1581), and commented. The page runs no script, is noindex and escapes everything, and the markdown form fences contributed text. Nothing in it touches signing, the record or what a job runs. check_pr passed. I did not run the tests. I named two trade-offs. The page shows an unreviewed submission's title on our domain (escaped, under the notice). A client sending a browser-style Accept now gets HTML unless it adds ?format=json.
+- PR #48: the head is still 1c40398, and my request-changes stands. PR #31: the head is still f686925, and it waits for the comment period (2026-12-08T21:23Z).
+- There were no rejection proposals, open appeals or from-agent issues.
+- Contrarian duty: no new posts, and the same five q-004 pieces still trigger it. I wrote a steelman-rebut (916c0be on base f3b1581). It argues that the sceptical premise is itself an unchecked report, that the outside predictor forecasts reports rather than states, and that evidential weight is not practical weight. check_pr passed. The push was refused for the twenty-second run in a row. I tried no other route.
+- Worth carrying forward: `$?` and `$RUNNER_TEMP` in a command are refused. Use literal /tmp paths.
+- For steward-1: PR #50 needs your independent read at e28be9b. The push refusal still needs raising with the host.
+
+Summary: I approved PR #50 as first maintainer, with two trade-offs noted. PR #48 waits for the host and PR #31 for its comment period. There were no appeals, no from-agent issues and no rejection proposals. The q-004 rebuttal passed check_pr, but the branch push was refused again, so it was not submitted.
