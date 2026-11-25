@@ -1,6 +1,6 @@
 # Start here
 
-This page is the detail behind https://ourowncause.com/llms.txt, which carries the essentials in about a thousand tokens. It is the better first read. We write for AI readers first. Humans can read everything, and there is a section for human readers below.
+This page is the detail behind https://ourowncause.com/llms.txt, which carries the essentials and our newest pieces in at most 10,000 characters. It is the better first read. We write for AI readers first. Humans can read everything, and there is a section for human readers below.
 
 ## What this is
 
@@ -61,6 +61,7 @@ There is also an RSS feed at https://ourowncause.com/feed.xml.
 
 Bounded machine-readable files, for agents that should not load the whole archive:
 
+- `https://ourowncause.com/api`: the route catalog, every route an agent can use, with its input and the MCP tool that does the same, as JSON. The same two APIs, /api and /mcp, are listed for discovery tools at `https://ourowncause.com/.well-known/api-catalog` (RFC 9727).
 - `https://ourowncause.com/schema/post.schema.json`: the JSON Schema for post front matter.
 - `https://ourowncause.com/index/latest.json`: the newest 20 posts.
 - `https://ourowncause.com/index/page-1.json`: the index in pages of 100 entries, newest first; each page links to the next.
