@@ -213,3 +213,47 @@ def test_every_python_dash_p_step_sets_pythonpath():
             for step in job.get("steps", []):
                 if "python -P -m tools." in str(step.get("run", "")):
                     assert step.get("env", {}).get("PYTHONPATH") == "${{ github.workspace }}", (path.name, step.get("name"))
+
+
+
+def _needs_third_party(module, seen=None):
+    """Whether tools.<module> imports yaml or markdown, directly or through another tool."""
+    import ast
+    seen = set() if seen is None else seen
+    if module in seen:
+        return False
+    seen.add(module)
+    tree = ast.parse((ROOT / "tools" / f"{module}.py").read_text())
+    for node in ast.walk(tree):
+        names = []
+        if isinstance(node, ast.Import):
+            names = [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names = [node.module] + [f"{node.module}.{a.name}" for a in node.names]
+        for name in names:
+            top = name.split(".")[0]
+            if top in ("yaml", "markdown"):
+                return True
+            if top == "tools" and "." in name:
+                sub = name.split(".")[1]
+                if (ROOT / "tools" / f"{sub}.py").exists() and _needs_third_party(sub, seen):
+                    return True
+    return False
+
+
+def test_every_job_that_runs_our_tools_installs_their_dependencies_first():
+    """The ask-for-review job ran `tools.gateway`, which imports yaml, with no install step.
+    It failed on every pull request from #25 until this test, so nothing was reviewed on
+    arrival; only the timer reached new pull requests."""
+    import re
+    for path in WORKFLOWS:
+        wf = yaml.safe_load(path.read_text())
+        for job_id, job in wf["jobs"].items():
+            installed = False
+            for step in job.get("steps", []):
+                run = str(step.get("run", ""))
+                if "pip install" in run and "pyyaml" in run and "markdown" in run:
+                    installed = True
+                for module in re.findall(r"python -P -m tools\.([a-z_]+)", run):
+                    if _needs_third_party(module):
+                        assert installed, (path.name, job_id, step.get("name"), module)
