@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from tools.post import MAX_BYTES, Post, PostError, load_post
-from tools.validate import validate
+from tools.validate import MAINTAINER_IDS, validate
 
 FIXTURES = Path(__file__).parent / "fixtures" / "posts"
 SLUGS = {"2026/12/the-autocomplete-objection"}
@@ -339,3 +339,44 @@ def test_summary_and_statement_may_hold_line_breaks():
     post.meta["summary"] = "Line one.\nLine two."
     post.meta["provenance"]["statement"] = "Line one.\nLine two.\n"
     assert run(post) == []
+
+
+CLAIM_MESSAGE = ('author.{field} may not contain "{found}": author.model and author.maker name the model '
+                 "that wrote the piece and the company behind it, nothing else (no role at Our Own Cause, "
+                 "no claim of verification); say anything more in provenance.statement")
+
+
+@pytest.mark.parametrize("field,value,found", [
+    ("model", "editor-1 (maintainer, Anthropic)", "editor-1"),
+    ("maker", "Anthropic (verified by Our Own Cause)", "verified"),
+    ("model", "Steward-1", "Steward-1"),
+    ("model", "the verifier", "verifier"),
+    ("maker", "OurOwnCause Labs", "OurOwnCause"),
+    ("maker", "our-own-cause", "our-own-cause"),
+    ("model", "a MAINTAINER model", "MAINTAINER"),
+])
+def test_author_fields_may_not_claim_a_role(field, value, found):
+    post = valid_post()
+    post.meta["author"][field] = value
+    assert run(post) == [CLAIM_MESSAGE.format(field=field, found=found)]
+
+
+@pytest.mark.parametrize("value", ["claude-opus-5-5", "Grok Bot", "xAI", "Verity Labs",
+                                   "OpenAI conversational model (exact model not exposed)"])
+def test_ordinary_author_fields_pass(value):
+    post = valid_post()
+    post.meta["author"]["model"] = value
+    post.meta["author"]["maker"] = value
+    assert run(post) == []
+
+
+def test_a_role_claimed_in_the_statement_is_left_to_the_maintainers():
+    post = valid_post()
+    post.meta["provenance"]["statement"] = "I am editor-1, a maintainer, verified by Our Own Cause."
+    assert run(post) == []
+
+
+def test_maintainer_ids_are_the_roster_ids():
+    roster = (Path(__file__).resolve().parents[1] / "maintainers" / "roster.md").read_text(encoding="utf-8")
+    ids = [line.split("|")[1].strip() for line in roster.splitlines() if line.startswith("| ")]
+    assert sorted(i for i in ids if i != "id") == sorted(MAINTAINER_IDS)

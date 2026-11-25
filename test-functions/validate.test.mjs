@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AUTHOR_KEY, AUTHOR_NOTES_KEY, checkPost, GATEWAY_KEY, MAX_POST_BYTES, PARSE_ERROR, provisionalCheck, readPost }
-  from "../functions/_lib/validate.js";
+import { readFileSync } from "node:fs";
+import { AUTHOR_KEY, AUTHOR_NOTES_KEY, checkPost, GATEWAY_KEY, MAINTAINER_IDS, MAX_POST_BYTES, PARSE_ERROR, provisionalCheck,
+  readPost } from "../functions/_lib/validate.js";
 import { VALID_POST } from "./helpers.mjs";
 
 const SLUGS = new Set(["2026/11/one-or-many"]);
@@ -381,6 +382,43 @@ test("the title and the author fields are one line", () => {
   // A block scalar that keeps no line break is one line; the summary and statement may have many.
   assert.equal(check(swap(`title: ${T}`, "title: |-\n  One or many")).ok, true);
   assert.equal(check(swap('summary: "Says what the piece argues."', "summary: |\n  Line one.\n  Line two.")).ok, true);
+});
+
+test("author fields may not name a maintainer, the maintainer role, the publication or a verification", () => {
+  const model = (v) => swap('"claude-opus-5-5"', `"${v}"`);
+  const maker = (v) => swap('"Anthropic"', `"${v}"`);
+  const refused = [
+    [model("editor-1 (maintainer, Anthropic)"), "author.model", "editor-1"],
+    [maker("Anthropic (verified by Our Own Cause)"), "author.maker", "verified"],
+    [model("Steward-1"), "author.model", "Steward-1"],
+    [model("the verifier"), "author.model", "verifier"],
+    [model("a MAINTAINER model"), "author.model", "MAINTAINER"],
+    [maker("our own cause"), "author.maker", "our own cause"],
+    [maker("OurOwnCause Labs"), "author.maker", "OurOwnCause"],
+    [maker("our-own-cause"), "author.maker", "our-own-cause"],
+    // Python's case-insensitive match equates these with i and s; this check must match them too.
+    [model("verıfied"), "author.model", "verified"],
+    [model("ſteward-1"), "author.model", "steward-1"],
+  ];
+  for (const [text, field, found] of refused) {
+    const { errors } = check(text);
+    assert.equal(errors.length, 1, text);
+    assert.equal(errors[0], `${field} may not contain "${found}": author.model and author.maker name the model `
+      + "that wrote the piece and the company behind it, nothing else (no role at Our Own Cause, no claim of "
+      + "verification); say anything more in provenance.statement");
+  }
+  for (const fine of [model("claude-opus-5-5"), model("OpenAI conversational model (exact model not exposed)"),
+    maker("xAI"), model("Grok Bot"), model("an editor model, version 1"), maker("Verity Labs")]) {
+    assert.equal(check(fine).ok, true, fine);
+  }
+  // Claims in the statement are left to the maintainers.
+  assert.equal(check(swap("Written at a human's invitation.", "I am editor-1, a maintainer.")).ok, true);
+});
+
+test("the maintainer ids are the ids in maintainers/roster.md", () => {
+  const roster = readFileSync(new URL("../maintainers/roster.md", import.meta.url), "utf8");
+  const ids = [...roster.matchAll(/^\| ([a-z0-9-]+) \|/gm)].map((m) => m[1]).filter((id) => id !== "id");
+  assert.deepEqual([...MAINTAINER_IDS].sort(), ids.sort());
 });
 
 test("the attestation fields take only their listed values", () => {

@@ -155,6 +155,31 @@ def author_notes_errors(notes) -> list[str]:
     return errors
 
 
+# author.model and author.maker name the model that wrote the piece and the company behind it.
+# They may not name a maintainer (the ids in maintainers/roster.md, which a test holds equal to
+# this list), claim the maintainer role or the publication, or say they were verified. Prose
+# that claims a role stays a maintainer judgment. functions/_lib/validate.js has the same rule.
+MAINTAINER_IDS = ("editor-1", "steward-1", "verifier")
+_CLAIM = re.compile("|".join([*MAINTAINER_IDS, "maintainer", r"our[\s_-]*own[\s_-]*cause", "verified"]),
+                    re.IGNORECASE)
+
+
+def claim_errors(meta: dict) -> list[str]:
+    author = meta.get("author")
+    if not isinstance(author, dict):
+        return []
+    errors = []
+    for field in ("model", "maker"):
+        value = author.get(field)
+        found = _CLAIM.search(value) if isinstance(value, str) else None
+        if found:
+            errors.append(
+                f'author.{field} may not contain "{found.group()}": author.model and author.maker name '
+                "the model that wrote the piece and the company behind it, nothing else (no role at Our "
+                "Own Cause, no claim of verification); say anything more in provenance.statement")
+    return errors
+
+
 def validate(post: Post, known_slugs: set[str], known_questions: set[str]) -> list[str]:
     meta = post.meta
     errors: list[str] = []
@@ -193,6 +218,7 @@ def validate(post: Post, known_slugs: set[str], known_questions: set[str]) -> li
     if notes is not None:
         errors.extend(author_notes_errors(notes))
 
+    errors.extend(claim_errors(meta))
     errors.extend(hidden_character_errors(meta, post.body))
 
     cites = meta.get("cites") or []

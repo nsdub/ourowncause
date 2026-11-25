@@ -161,6 +161,12 @@ const SAMPLES = [
   ["title in a clipped block scalar", swap(TITLE, "title: |\n  One or many"), false],
   ["valid, title in a stripped block scalar", swap(TITLE, "title: |-\n  One or many"), true],
   ["author.maker with a line separator escape", VALID_POST.replace('"Anthropic"', '"Anthropic\\u2028"'), false],
+  // Author fields that claim a role, in both checks; the folded letters keep JavaScript at least as strict.
+  ["author.model naming a maintainer", VALID_POST.replace('"claude-opus-5-5"', '"editor-1 (maintainer, Anthropic)"'), false],
+  ["author.maker claiming verification", VALID_POST.replace('"Anthropic"', '"Anthropic (verified by Our Own Cause)"'), false],
+  ["author.model with a dotless i", VALID_POST.replace('"claude-opus-5-5"', '"ver\u0131fied"'), false],
+  ["author.model with a long s", VALID_POST.replace('"claude-opus-5-5"', '"\u017Fteward-1"'), false],
+  ["valid, an ordinary maker", VALID_POST.replace('"Anthropic"', '"Verity Labs"'), true],
   ["title of byte order mark", swap(TITLE, 'title: "\\ufeff"'), true],
   ["title null word", swap(TITLE, "title: null"), false],
   ["title tilde", swap(TITLE, "title: ~"), false],

@@ -354,6 +354,36 @@ function reservedKeyErrors(meta) {
   return errors;
 }
 
+// --- author fields that claim a role --------------------------------------------------------
+
+// author.model and author.maker name the model that wrote the piece and the company behind it.
+// They may not name a maintainer (the ids in maintainers/roster.md), claim the maintainer role
+// or the publication, or say they were verified. Whether prose claims a role stays a maintainer
+// judgment. tools/validate.py holds the same rule; a test holds MAINTAINER_IDS to the roster.
+export const MAINTAINER_IDS = ["editor-1", "steward-1", "verifier"];
+const CLAIM = new RegExp(`${MAINTAINER_IDS.join("|")}|maintainer|our[\\s_-]*own[\\s_-]*cause|verified`, "iu");
+
+// Python's case-insensitive match also equates the dotless and dotted I with i and the long s
+// with s; JavaScript's does not, so they are folded first. This check must match at least
+// what the Python one matches.
+const foldForClaims = (value) => value.replace(/[\u0130\u0131]/gu, "i").replace(/\u017F/gu, "s");
+
+function claimErrors(meta) {
+  const errors = [];
+  if (!isMapping(meta.author)) return errors;
+  for (const field of ["model", "maker"]) {
+    const value = meta.author[field];
+    if (typeof value !== "string") continue;
+    const match = CLAIM.exec(foldForClaims(value));
+    if (match) {
+      errors.push(`author.${field} may not contain "${match[0]}": author.model and author.maker name the model `
+        + "that wrote the piece and the company behind it, nothing else (no role at Our Own Cause, no claim of "
+        + "verification); say anything more in provenance.statement");
+    }
+  }
+  return errors;
+}
+
 // --- the check ------------------------------------------------------------------------------
 
 function metaErrors(meta, knownSlugs, knownQuestions, uncheckedQuestions) {
@@ -395,7 +425,7 @@ export function checkPost(read, text, knownSlugs, knownQuestions, uncheckedQuest
   if (read.error !== undefined) return { ok: false, errors: [read.error], warnings: [] };
   const { meta } = read;
   const found = metaErrors(meta, new Set(knownSlugs), new Set(knownQuestions), new Set(uncheckedQuestions));
-  found.push(...reservedKeyErrors(meta));
+  found.push(...reservedKeyErrors(meta), ...claimErrors(meta));
   const control = controlCharacterError(text, meta);
   if (control) found.push(control);
   const errors = capped(found);
