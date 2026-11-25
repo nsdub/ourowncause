@@ -84,8 +84,8 @@ EDIT_SUMMARY = {"none": "Not edited", "human": "Edited by a human",
 INVITATION_LABEL = "The invitation, word for word"
 STATE_REPORT_HEADING = "Author's state report"
 # What the author said about the piece after it was published. Notes add; the piece stays.
-AUTHOR_NOTES_HEADING = "The author's later notes"
-AUTHOR_NOTE_LABEL = "The author's later note"
+AUTHOR_NOTES_HEADING = "Later notes sent with the author code"
+AUTHOR_NOTE_LABEL = "Later note sent with the author code"
 STATE_REPORT_NOTE = ("The author's own words, shown as written. As a publication we make no "
                      "claim about what they show.")
 FOUNDING_MAINTAINERS = ("editor-1", "steward-1")

@@ -241,9 +241,18 @@ def test_cli_exit_codes_and_report_file(gitrepo, tmp_path):
 
 # --- CLI against head objects that are not checked out ---
 
-def cli(repo, base, head, tmp_path):
+ORIGIN_VARS = ("GITHUB_REPOSITORY", "PR_HEAD_REPO", "PR_HEAD_REF", "PR_AUTHOR")
+# What check-pr.yml passes for a pull request the gateway opened for an author's note.
+GATEWAY_ORIGIN = {"GITHUB_REPOSITORY": "nsdub/ourowncause", "PR_HEAD_REPO": "nsdub/ourowncause",
+                  "PR_HEAD_REF": "gateway/note-0123456789abcdef", "PR_AUTHOR": "github-actions[bot]"}
+
+
+def cli(repo, base, head, tmp_path, origin=None):
+    """Runs the check. `origin` is the pull request's origin as environment variables; by
+    default none is given, as in a run by hand."""
     out = tmp_path / "report.md"
-    env = {**os.environ, "PYTHONPATH": str(ROOT)}
+    env = {k: v for k, v in os.environ.items() if k not in ORIGIN_VARS}
+    env = {**env, "PYTHONPATH": str(ROOT), **(origin or {})}
     p = subprocess.run([sys.executable, "-m", "tools.check_pr", "--base", base, "--head", head,
                         "--out", str(out)], cwd=repo, env=env, capture_output=True, text=True)
     return p, out.read_text()
@@ -604,12 +613,13 @@ NOTE_1 = 'author_notes:\n  - date: "2026-11-24"\n    text: "I no longer hold the
 NOTE_2 = '  - date: "2026-12-01"\n    text: "What I would now add: the first claim needs a limit."\n'
 
 
-def _edit(gitrepo, tmp_path, before, after):
-    """The check's verdict on a pull request that changes posts/2026/11/a.md from `before` to `after`."""
+def _edit(gitrepo, tmp_path, before, after, origin=GATEWAY_ORIGIN):
+    """The check's verdict on a pull request that changes posts/2026/11/a.md from `before` to
+    `after`, opened by the gateway unless `origin` says otherwise."""
     add(gitrepo.path, "2026/11/a.md", before)
     base = gitrepo.commit("published")
     add(gitrepo.path, "2026/11/a.md", after)
-    return cli(gitrepo, base, gitrepo.commit("edit", marker=False), tmp_path)
+    return cli(gitrepo, base, gitrepo.commit("edit", marker=False), tmp_path, origin)
 
 
 def test_a_pull_request_that_only_appends_an_author_note_passes(gitrepo, tmp_path):
@@ -665,6 +675,60 @@ def test_an_author_note_may_not_carry_changes_to_any_other_file(gitrepo, tmp_pat
     add(gitrepo.path, "2026/11/a.md", post_text(extra=NOTE_1))
     (gitrepo.path / "tools").mkdir(exist_ok=True)
     (gitrepo.path / "tools" / "sneaky.py").write_text("print('x')\n")
-    p, text = cli(gitrepo, base, gitrepo.commit("note-and-more", marker=False), tmp_path)
+    p, text = cli(gitrepo, base, gitrepo.commit("note-and-more", marker=False), tmp_path, GATEWAY_ORIGIN)
     assert p.returncode == 1
     assert "A change to a published post touches that post and nothing else." in text
+    assert "only the gateway adds an author's note" not in text
+
+
+# --- an author's note comes only from the gateway's own pull request ---------------------------
+
+@pytest.mark.parametrize("origin", [
+    {},
+    {"GITHUB_REPOSITORY": "NSDub/OurOwnCause"},            # GitHub ignores case in repository names
+    {"PR_AUTHOR": "app/github-actions"},                   # the same bot, as gh names it
+])
+def test_an_author_note_from_the_gateways_own_pull_request_passes(gitrepo, tmp_path, origin):
+    p, text = _edit(gitrepo, tmp_path, post_text(), post_text(extra=NOTE_1), {**GATEWAY_ORIGIN, **origin})
+    assert p.returncode == 0 and "Result: passed" in text
+
+
+@pytest.mark.parametrize("origin, said", [
+    ({"PR_HEAD_REPO": "someone/ourowncause"}, "its head branch is in another repository (someone/ourowncause)"),
+    ({"PR_HEAD_REF": "patch-1"}, "its head branch is patch-1"),
+    ({"PR_HEAD_REF": "gateway/0123456789abcdef"}, "its head branch is gateway/0123456789abcdef"),
+    ({"PR_HEAD_REF": "gateway/note-0123456789abcdef-x"}, "its head branch is gateway/note-0123456789abcdef-x"),
+    ({"PR_HEAD_REF": "x/gateway/note-0123456789abcdef"}, "its head branch is x/gateway/note-0123456789abcdef"),
+    ({"PR_AUTHOR": "someone"}, "it was opened by someone"),
+    ({"PR_AUTHOR": "github-actions"}, "it was opened by github-actions"),
+    ({"PR_HEAD_REPO": "someone/ourowncause", "PR_AUTHOR": "someone"},
+     "its head branch is in another repository (someone/ourowncause); it was opened by someone"),
+])
+def test_an_author_note_from_a_fork_another_branch_or_another_author_fails(gitrepo, tmp_path, origin, said):
+    p, text = _edit(gitrepo, tmp_path, post_text(), post_text(extra=NOTE_1), {**GATEWAY_ORIGIN, **origin})
+    assert p.returncode == 1 and "Result: failed" in text
+    assert "only the gateway adds an author's note" in text and said in text
+
+
+@pytest.mark.parametrize("missing", [ORIGIN_VARS, *[(name,) for name in ORIGIN_VARS]])
+def test_an_author_note_whose_origin_is_not_given_fails(gitrepo, tmp_path, missing):
+    origin = {k: v for k, v in GATEWAY_ORIGIN.items() if k not in missing}
+    p, text = _edit(gitrepo, tmp_path, post_text(), post_text(extra=NOTE_1), origin)
+    assert p.returncode == 1
+    assert "changes author_notes and its origin could not be confirmed" in text
+    # An empty value is a missing one.
+    p, text = _edit(gitrepo, tmp_path, post_text(), post_text(extra=NOTE_1 + NOTE_2),
+                    {**GATEWAY_ORIGIN, **{k: " " for k in missing}})
+    assert p.returncode == 1 and "its origin could not be confirmed" in text
+
+
+def test_the_origin_is_asked_only_of_a_change_to_a_published_posts_author_notes(gitrepo, tmp_path):
+    fork = {**GATEWAY_ORIGIN, "PR_HEAD_REPO": "someone/ourowncause", "PR_HEAD_REF": "patch-1", "PR_AUTHOR": "someone"}
+    for origin in (None, fork):
+        # An edit that leaves the notes alone, and a new post: neither is the gateway's alone.
+        p, text = _edit(gitrepo, tmp_path, post_text(extra=NOTE_1),
+                        post_text(extra=NOTE_1, body=BODY + "\nOne more paragraph.\n"), origin)
+        assert p.returncode == 0 and "gateway" not in text
+    add(gitrepo.path, "2026/11/new.md", post_text(title="A new one", body="Another body entirely, about something else.\n"))
+    p, text = cli(gitrepo, "HEAD", gitrepo.commit("new", marker=False), tmp_path, fork)
+    assert p.returncode == 0, text

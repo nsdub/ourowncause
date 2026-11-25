@@ -1483,11 +1483,14 @@ def test_a_pending_note_becomes_a_labelled_pull_request_that_only_appends_to_aut
     assert "author-note" in nworld.labels()
     assert pr["body"].split("\n")[0] == f"<!-- author-note:{NID} submission:{ID} -->"
     assert f"- Submission id: `{ID}`" in pr["body"] and "- Date written into the post: `2026-11-24`" in pr["body"]
-    assert "declined only for the reasons a post would be" in pr["body"]
+    assert "declined only for the reasons a post would be, the scope of charter principle 2 included" in pr["body"]
     text, _fence = block_of(pr["body"])
     assert text == NOTE_TEXT
+    # The check passes a change to author_notes only from the gateway's own pull request: the
+    # gateway tells its own run of the check that this is one.
     [comment] = pr["comments"]
     assert comment["body"].startswith(gateway.CHECK_HEADING) and comment["body"].rstrip().endswith("Result: passed")
+    assert "only the gateway adds" not in comment["body"] and "could not be confirmed" not in comment["body"]
     entry = nworld.ledger()[NKEY]
     assert (entry["state"], entry["pr"]) == ("done", pr["html_url"])
     assert git(nworld.origin, "log", "-1", "--format=%(trailers)", branch).strip().splitlines() == [
@@ -1497,6 +1500,29 @@ def test_a_pending_note_becomes_a_labelled_pull_request_that_only_appends_to_aut
 def _write(path, text):
     path.write_bytes(text.encode("utf-8"))
     return path
+
+
+def test_the_gateways_check_of_its_own_note_names_the_origin_whatever_the_environment_says(nworld, monkeypatch):
+    """Under Actions GITHUB_REPOSITORY is set, and stray PR_* values must not reach the check."""
+    monkeypatch.setenv("GITHUB_REPOSITORY", "nsdub/ourowncause")
+    monkeypatch.setenv("PR_HEAD_REPO", "someone/ourowncause")
+    monkeypatch.setenv("PR_HEAD_REF", "patch-1")
+    monkeypatch.setenv("PR_AUTHOR", "someone")
+    assert nworld.run().problems == []
+    [pr] = nworld.prs()
+    assert pr["comments"][0]["body"].rstrip().endswith("Result: passed")
+
+
+def test_the_check_report_fails_a_note_on_a_branch_that_is_not_a_note_branch(nworld, tmp_path):
+    """The origin the gateway hands the check is the branch it pushed, not a fixed pass."""
+    nworld.run()
+    git(nworld.repo, "fetch", "-q", "origin", "+refs/heads/*:refs/remotes/origin/*")
+    head = git(nworld.repo, "rev-parse", f"origin/gateway/note-{NID}").strip()
+    out = tmp_path / "r"
+    out.mkdir()
+    assert gateway._check_report(nworld.repo, head, out, f"gateway/note-{NID}").read_text().rstrip().endswith("Result: passed")
+    report = gateway._check_report(nworld.repo, head, out, f"gateway/{ID}").read_text()
+    assert report.rstrip().endswith("Result: failed") and f"its head branch is gateway/{ID}" in report
 
 
 def test_a_second_run_opens_no_second_note_pull_request_with_or_without_the_ledger(nworld):

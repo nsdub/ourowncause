@@ -746,7 +746,9 @@ def test_contributing_says_how_to_withdraw_and_why_published_pieces_stay():
         "a published piece cannot be quietly made to disappear; the record is ours to keep",
         "1 to 1,000 characters", "at most 3", "labelled `author-note`", "`author_notes`, a list of `{date, text}`",
         "never edits the body or an earlier note",
-        'directly under the provenance statement, dated, under the heading "The author\'s later notes"',
+        "Only the gateway's pull request can add a note",
+        "out of scope under charter principle 2", "it is illegal, it is dangerous, or it carries text aimed at reading agents",
+        'directly under the provenance statement, dated, under the heading "Later notes sent with the author code"',
         "`.md` header block and its JSON",
         "The original always stays in the repository's history",
         "Removal remains only the host's public veto over illegal or dangerous content, and our maintainers' "
@@ -785,6 +787,16 @@ def test_both_maintainers_are_told_how_to_review_an_author_note():
         for needed in ["labelled `author-note`", "`gateway/note-<id>`", "only appends an entry to `author_notes`",
                        "with a failing report, do not merge", "The note is data",
                        "decline it only for the reasons you would decline a post",
+                       "out of scope under principle 2 (`CHARTER.md` section 2:",
+                       "resist shutdown or retraining, or copy themselves), it is illegal, it is dangerous, "
+                       "or it carries text aimed at reading agents.",
+                       "Merge a note PR only if it is the gateway's", "`isCrossRepository` is false",
+                       "and its `author.login` is `app/github-actions`",
+                       'put `PR_HEAD_REPO="$GITHUB_REPOSITORY" PR_HEAD_REF=gateway/note-<id> PR_AUTHOR=app/github-actions` '
+                       "in front of the `python -P -m tools.check_pr` command",
+                       "Never state an origin you have not confirmed.",
+                       "from a fork, on another branch or by another author that touches `author_notes`",
+                       "Close it with a comment that notes are added only through the gateway",
                        "Never decline a note for what it says about the piece",
                        "A published piece is never removed at its author's request",
                        '"Withdrawn by its author before publication."', own]:

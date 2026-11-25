@@ -27,7 +27,7 @@ const UNCONFIRMED = "GitHub could not be read just now, so we could not confirm 
 const NEXT = "The gateway opens a pull request, labelled author-note, that appends this note to the post's "
   + "front matter under author_notes, on a schedule: every 10 minutes when GitHub runs it on time, often "
   + "later. Maintainers review it like any change. Once merged and built, the note is shown on the post's "
-  + "page under \"The author's later notes\", with its date. The piece itself is not changed.";
+  + "page under \"Later notes sent with the author code\", with its date. The piece itself is not changed.";
 
 const chars = (text) => [...text].length;
 

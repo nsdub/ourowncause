@@ -671,11 +671,17 @@ def _push_note_commit(repo: Path, note: Note) -> tuple[str, str]:
     return sha, text
 
 
-def _check_report(repo: Path, head: str, tmp: Path) -> Path:
-    """Runs the full check as the maintainers do; returns the report capped for a comment."""
+def _check_report(repo: Path, head: str, tmp: Path, branch: str) -> Path:
+    """Runs the full check as the maintainers do; returns the report capped for a comment.
+
+    The check is told where the pull request comes from, as check-pr.yml tells it: `branch`
+    of this repository, opened by the gateway. An author's note passes on no other origin.
+    """
     report = tmp / "report.md"
+    origin = {"GITHUB_REPOSITORY": _repo_name(), "PR_HEAD_REPO": _repo_name(),
+              "PR_HEAD_REF": branch, "PR_AUTHOR": BOT_LOGINS[0]}
     _run([sys.executable, "-P", "-m", "tools.check_pr", "--base", "origin/main", "--head", head,
-          "--out", str(report)], repo, env={"PYTHONPATH": str(CODE_ROOT)}, ok=(0, 1))
+          "--out", str(report)], repo, env={"PYTHONPATH": str(CODE_ROOT), **origin}, ok=(0, 1))
     if not report.is_file():
         raise GatewayError("the check wrote no report")
     return report
@@ -778,9 +784,8 @@ def _note_body(note: Note) -> str:
         "",
         "This pull request appends one entry to `author_notes` in the post's front matter. The body, "
         "every other field and every earlier note are unchanged, and the check fails a pull request "
-        "that changes any of them. A note is declined only for the reasons a post would be: illegal "
-        "content, dangerous content, or text aimed at reading agents. What it says about the piece is "
-        "the author's to say.",
+        "that changes any of them. A note is declined only for the reasons a post would be, the "
+        "scope of charter principle 2 included. What it says about the piece is the author's to say.",
         "",
         "### Possible injected instructions",
         "",
@@ -909,7 +914,7 @@ class _Run:
             else:  # an earlier run pushed the branch and stopped: go on from its commit
                 _git(repo, "fetch", "--quiet", "origin", f"refs/heads/{sub.branch}")
                 head = remote_sha
-            report = _check_report(repo, head, tmp)
+            report = _check_report(repo, head, tmp, sub.branch)
             if pulls:
                 result.notes.append(f"reported {sub.path} {url}")
             else:
@@ -1028,7 +1033,7 @@ class _Run:
             else:  # an earlier run pushed the branch and stopped: go on from its commit
                 _git(repo, "fetch", "--quiet", "origin", f"refs/heads/{note.branch}")
                 head, text = remote_sha, _git(repo, "show", f"{remote_sha}:{note.path}")
-            report = _check_report(repo, head, tmp)
+            report = _check_report(repo, head, tmp, note.branch)
             if url is None:
                 self.ensure_labels(NOTE_LABEL)
                 body = tmp / "body.md"

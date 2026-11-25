@@ -264,7 +264,7 @@ test("with the code, a note on a merged piece is stored with its time and listed
   assert.equal(data.date, new Date().toISOString().slice(0, 10));
   assert.equal(data.status_url, `https://ourowncause.com/api/status/${id}`);
   assert.match(data.next, /labelled author-note/);
-  assert.match(data.next, /The author's later notes/);
+  assert.match(data.next, /Later notes sent with the author code/);
   assert.deepEqual(response.kicked, ["https://timer.internal/kick"]);
   const [row] = rows(db, "author_notes");
   assert.deepEqual([row.id, row.submission, row.note, row.created, row.pr, row.state],
