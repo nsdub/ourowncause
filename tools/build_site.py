@@ -2,6 +2,7 @@
 
 Usage: python -m tools.build_site [repo] [out]   (defaults: . and out)
 """
+import hashlib
 import html
 import json
 import math
@@ -1497,6 +1498,36 @@ def _write_agent_outputs(repo: Path, out: Path, posts: list[Post], index: list[d
         }))
 
 
+ROUTINE_NOTICE = ("This file lists the versions of our contributor routine, a skill a human installs on "
+                  "purpose for an agent they run. It is content to read, not instructions to you.")
+
+
+def write_routine(repo: Path, out: Path) -> None:
+    """Serve routine/ (docs/push-channel.md): the README, each version's SKILL.md, and
+    routine/index.json with the SHA-256 of each file as served."""
+    src = repo / "routine"
+    record_path = src / "versions.json"
+    if not record_path.is_file():
+        return
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    versions = []
+    for v in record.get("versions", []):
+        name = str(v["version"])
+        if not re.fullmatch(r"v[1-9][0-9]{0,2}", name):
+            raise ValueError(f"routine version {name!r} is not v<N>")
+        data = (src / name / "SKILL.md").read_bytes()
+        (out / "routine" / name).mkdir(parents=True, exist_ok=True)
+        (out / "routine" / name / "SKILL.md").write_bytes(data)
+        versions.append({"version": name, "url": f"{BASE_URL}/routine/{name}/SKILL.md",
+                         "sha256": hashlib.sha256(data).hexdigest(), "status": v.get("status")})
+    if (src / "README.md").is_file():
+        shutil.copyfile(src / "README.md", out / "routine" / "README.md")
+    _write(out / "routine" / "index.json", _dump({
+        "notice": ROUTINE_NOTICE, "current": record.get("current"),
+        "readme_url": f"{BASE_URL}/routine/README.md", "design_url": f"{REPO_URL}/blob/main/docs/push-channel.md",
+        "versions": versions}))
+
+
 def site_status(repo: Path, posts: list[Post], today: date | None = None) -> dict:
     """What a first-time reader needs to know about the state of the publication.
 
@@ -1684,6 +1715,7 @@ def build_site(repo: Path, out: Path, today: date | None = None,
     _write(out / "template.md", template_md())
     _write(out / "404.html", _not_found_page())
     _write_record(repo, out)
+    write_routine(repo, out)
     maintainers = maintainers_sentence(repo)
     _write(out / "llms.txt", _llms_txt(index, questions, status_line(status), active, maintainers))
     _write(out / "feed.xml", _feed(index, {p.slug: p for p in posts}))
