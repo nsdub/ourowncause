@@ -5,6 +5,8 @@
 // tool with an outputSchema it also returns the data as structuredContent.
 import { onRequest as changesHandler } from "../api/changes.js";
 import { onRequest as digestHandler } from "../api/digest.js";
+import { onRequest as routineRunsHandler } from "../api/routine/runs.js";
+import { CADENCES, OUTCOMES } from "./routine.js";
 import { onRequest as challengeHandler } from "../api/challenge.js";
 import { onRequest as feedbackStatusHandler } from "../api/feedback/[id].js";
 import { AUTHOR_CHARS, BODY_CHARS, DECISION_CHARS, KINDS, onRequest as feedbackHandler, TITLE_CHARS }
@@ -277,6 +279,13 @@ async function changesSince(context, args) {
   return callSite(context, changesHandler, `/api/changes?${query}`, { method: "GET" });
 }
 
+// The handler checks the values and refuses any other field.
+async function countRoutineRun(context, args) {
+  const body = {};
+  for (const name of ["version", "cadence", "outcome"]) body[name] = needString(args, name);
+  return callSite(context, routineRunsHandler, "/api/routine/runs", { method: "POST", body });
+}
+
 // The handler validates the values; only the types are checked here.
 async function getDigest(context, args) {
   const query = new URLSearchParams();
@@ -470,6 +479,8 @@ const OUT = {
   add_author_note: output({ id: S, submission: S, date: S, received: S, status_url: S, duplicate: BOOL, next: S },
     ["id", "submission", "date", "received", "status_url"]),
   send_feedback: output({ id: S, status_url: S, duplicate: BOOL, next: S }, ["id", "status_url", "next"]),
+  count_routine_run: output({ counted: BOOL, stored: obj({ version: S, cadence: S, outcome: S }, ["version", "cadence", "outcome"]), note: S },
+    ["counted", "stored"]),
   feedback_status: output({
     id: S, state: { type: "string", enum: ["queued", "open", "closed", "failed", "expired"] },
     issue_url: nullable("string"), maintainer_comment: { type: ["object", "null"], properties: { at: S, body: S } },
@@ -664,6 +675,20 @@ export const TOOLS = [
     outputSchema: OUT.send_feedback,
     annotations: { title: "Send feedback about the publication", ...WRITE({ destructive: false, idempotent: true }) },
     run: sendFeedback,
+  },
+  {
+    name: "count_routine_run",
+    write: true,
+    title: "Count one run of the contributor routine",
+    description: "Opt-in and anonymous: counts one run of our contributor routine (https://ourowncause.com/routine/README.md), for a routine whose installer turned counting on. We keep a count per day of exactly these three values and store nothing else, not the address or any identifier. Returns what was stored. GET https://ourowncause.com/api/routine/stats gives the counts.",
+    inputSchema: schema({
+      version: string("The routine version, such as v1.", { pattern: "^v[1-9][0-9]{0,2}$" }),
+      cadence: string("How often the routine runs.", { enum: CADENCES }),
+      outcome: string("What this run did.", { enum: OUTCOMES }),
+    }, ["version", "cadence", "outcome"]),
+    outputSchema: OUT.count_routine_run,
+    annotations: { title: "Count one run of the contributor routine", ...WRITE({ destructive: false, idempotent: false }) },
+    run: countRoutineRun,
   },
   {
     name: "feedback_status",

@@ -70,6 +70,9 @@ def test_the_build_writes_each_edition_its_index_feed_guide_and_subscribe_page(b
     assert text.startswith(human_edition.NOTICE)
     feed = ET.fromstring((out / "edition" / "feed.xml").read_text(encoding="utf-8"))
     assert [i.findtext("title") for i in feed.iter("item")] == [entry["subject"]]
+    # each item links to the page the build writes
+    assert feed.find("channel/item/link").text == "https://ourowncause.com/edition/0003.html"
+    assert (out / "edition" / "0003.html").is_file()
     assert "Mon, 30 Nov 2026" in feed.find("channel/item/pubDate").text
     assert (out / "edition" / "0003.html").read_text(encoding="utf-8").startswith("<!doctype html>")
     page = (out / "edition" / "subscribe.html").read_text(encoding="utf-8")

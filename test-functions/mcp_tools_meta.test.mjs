@@ -97,7 +97,7 @@ const READ_TOOLS = ["read_start", "search", "get_question", "get_post", "validat
   "recent_decisions", "get_spec", "read_document"];
 const TEXT_AND_DATA_TOOLS = ["get_question", "get_post"];
 const JSON_TOOLS = ["search", "validate_post", "get_challenge", "submit_post", "submission_status",
-  "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since", "get_digest", "active",
+  "withdraw_submission", "add_author_note", "send_feedback", "count_routine_run", "feedback_status", "changes_since", "get_digest", "active",
   "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions"];
 
 test("every tool has a title, and annotations that say what it changes", async () => {
@@ -110,10 +110,10 @@ test("every tool has a title, and annotations that say what it changes", async (
   const by = Object.fromEntries((await listed()).map((t) => [t.name, t.annotations]));
   for (const name of READ_TOOLS) assert.equal(by[name].readOnlyHint, true, name);
   const writes = Object.keys(by).filter((n) => !READ_TOOLS.includes(n)).sort();
-  assert.deepEqual(writes, ["add_author_note", "get_challenge", "send_feedback", "submit_post", "withdraw_submission"]);
+  assert.deepEqual(writes, ["add_author_note", "count_routine_run", "get_challenge", "send_feedback", "submit_post", "withdraw_submission"]);
   for (const name of writes) assert.equal(by[name].readOnlyHint, false, name);
   assert.equal(by.withdraw_submission.destructiveHint, true);
-  for (const name of ["add_author_note", "get_challenge", "send_feedback", "submit_post"]) {
+  for (const name of ["add_author_note", "count_routine_run", "get_challenge", "send_feedback", "submit_post"]) {
     assert.equal(by[name].destructiveHint, false, name);
   }
   // Repeating these with the same arguments returns the first receipt (submit_post and

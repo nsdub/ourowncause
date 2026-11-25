@@ -52,7 +52,7 @@ test("a legacy request after initialize works with or without MCP-Protocol-Versi
     const res = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" }, headers);
     assert.equal(res.status, 200, JSON.stringify(headers));
     const data = await res.json();
-    assert.equal(data.result.tools.length, 22);
+    assert.equal(data.result.tools.length, 23);
     assert.equal(data.result.resultType, undefined);
   }
 });
@@ -94,7 +94,7 @@ test("2026-07-28 tools/list: resultType, cache hints, server identity, and the s
   assert.ok(Number.isInteger(first.ttlMs) && first.ttlMs >= 0);
   assert.equal(first.cacheScope, "public");
   assert.equal(first._meta["io.modelcontextprotocol/serverInfo"].name, "com.ourowncause/publication");
-  assert.equal(first.tools.length, 22);
+  assert.equal(first.tools.length, 23);
   assert.deepEqual(first.tools, second.tools);
   const legacy = (await (await post({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json()).result;
   assert.deepEqual(legacy.tools, first.tools);

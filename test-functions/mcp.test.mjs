@@ -65,11 +65,11 @@ test("ping returns an empty result", async () => {
   assert.deepEqual(data, { jsonrpc: "2.0", id: "p", result: {} });
 });
 
-test("tools/list names the twenty-two tools, each with an object input schema", async () => {
+test("tools/list names the twenty-three tools, each with an object input schema", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   assert.deepEqual(data.result.tools.map((t) => t.name), ["read_start", "search", "get_question",
     "get_post", "validate_post", "get_challenge", "submit_post", "submission_status",
-    "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since",
+    "withdraw_submission", "add_author_note", "send_feedback", "count_routine_run", "feedback_status", "changes_since",
     "get_digest", "active", "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec",
     "read_document"]);
   for (const tool of data.result.tools) {
@@ -428,7 +428,7 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.deepEqual(data.supportedProtocolVersions, ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]);
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
     "validate_post", "get_challenge", "submit_post", "submission_status", "withdraw_submission",
-    "add_author_note", "send_feedback", "feedback_status", "changes_since", "get_digest", "active", "get_thread",
+    "add_author_note", "send_feedback", "count_routine_run", "feedback_status", "changes_since", "get_digest", "active", "get_thread",
     "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec", "read_document"]);
   assert.equal(data.notice, NOTICE);
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));

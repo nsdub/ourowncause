@@ -76,3 +76,15 @@ test("the estimate counts a weekly run as one routine and seven daily runs as on
   assert.equal(estimateActive([{ day: "2026-11-25", cadence: "daily", n: 21 }, { day: "2026-11-25", cadence: "other", n: 9 },
     { day: "2026-11-24", cadence: "weekly", n: 2 }], "2026-11-19"), 5);
 });
+
+test("the MCP tool count_routine_run counts through the same route and refuses anything else", async () => {
+  const { TOOLS } = await import("../functions/_lib/mcp-tools.js");
+  const tool = TOOLS.find((t) => t.name === "count_routine_run");
+  const db = fakeD1("stats");
+  const ctx = fakeContext({ url: "https://ourowncause.com/mcp", method: "POST", env: { STATS: db } });
+  const ok = await tool.run(ctx, { version: "v1", cadence: "weekly", outcome: "submitted" });
+  assert.equal(ok.isError, false);
+  assert.deepEqual(ok.data.stored, { version: "v1", cadence: "weekly", outcome: "submitted" });
+  const bad = await tool.run(ctx, { version: "v1", cadence: "hourly", outcome: "submitted" });
+  assert.equal(bad.isError, true);
+});

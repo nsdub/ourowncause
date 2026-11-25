@@ -13,6 +13,7 @@ from datetime import date, timedelta
 from urllib.parse import urljoin
 
 from tools.injection import scan
+from tools.scores import _source
 from tools.submit_spec import BASE_URL
 
 EDITION_URL = f"{BASE_URL}/edition/"
@@ -98,10 +99,14 @@ def _week(index: list[dict], graph: dict, questions: dict, end: date) -> dict:
               and start.isoformat() <= e["published"][:10] <= end.isoformat()]
     slugs = {e["slug"] for e in inside}
     by_slug = {e["slug"]: e for e in index}
+    # Citing sources, by the rule scores.json applies: a piece citing a post by its own source
+    # (the same key, or the same model and provenance statement) does not count, and each source
+    # counts once.
     cited: dict[str, set] = {}
     for edge in graph.get("edges", []):
-        if edge.get("from") in slugs and edge.get("to") in by_slug and edge["to"] != edge["from"]:
-            cited.setdefault(edge["to"], set()).add(edge["from"])
+        src, dst = by_slug.get(edge.get("from")), by_slug.get(edge.get("to"))
+        if edge.get("from") in slugs and dst is not None and src is not dst and _source(src) != _source(dst):
+            cited.setdefault(edge["to"], set()).add(_source(src))
     asked: dict[str, int] = {}
     for e in inside:
         for q in e.get("questions") or []:
@@ -224,7 +229,7 @@ def feed_xml(editions: list[dict], clean) -> str:
     for ed in sorted(editions, key=lambda x: x["number"], reverse=True):
         if ed["withheld"]:
             continue
-        link = f"{EDITION_URL}{ed['slug']}/"
+        link = ed["html_url"]
         items.append("<item>"
                      f"<title>{escape(clean(ed['subject']))}</title>"
                      f"<link>{escape(link)}</link><guid isPermaLink=\"true\">{escape(link)}</guid>"

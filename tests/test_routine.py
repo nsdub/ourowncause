@@ -78,3 +78,40 @@ def test_the_build_serves_each_version_and_an_index_with_its_hash(tmp_path):
         assert hashlib.sha256(served).hexdigest() == v["sha256"]
         assert v["url"] == f"https://ourowncause.com/routine/{v['version']}/SKILL.md"
     assert (out / "README.md").read_text(encoding="utf-8") == (ROUTINE / "README.md").read_text(encoding="utf-8")
+
+
+def _run_script():
+    md = (ROUTINE / "README.md").read_text(encoding="utf-8")
+    return md.split("cat > ~/.ourowncause-routine/run.sh <<'EOF'\n")[1].split("\nEOF\n")[0]
+
+
+def test_the_claude_code_grant_is_scoped_to_the_routine_directory_and_our_site():
+    # The run reads contributed text, so its grant is drawn as if it could be steered: files in
+    # its own directory, fetches from ourowncause.com, the listed tools of our MCP server, and
+    # nothing that runs commands. Tested live with Claude Code 2.1.304 (docs/push-channel.md).
+    script = _run_script()
+    for flag in ("--restricted", "--permission-mode dontAsk", "--strict-mcp-config", '--tools "Read,Edit,Write,WebFetch"',
+                 '"url":"https://ourowncause.com/mcp"', 'cd "$HOME/.ourowncause-routine"', "< /dev/null"):
+        assert flag in script, flag
+    allowed = re.findall(r'"([^"]+)"', script.split("--allowedTools", 1)[1])
+    builtin = [a for a in allowed if not a.startswith("mcp__")]
+    assert builtin == ["Read(./**)", "Edit(./**)", "WebFetch(domain:ourowncause.com)"]
+    tools = [a.removeprefix("mcp__ourowncause__") for a in allowed if a.startswith("mcp__")]
+    assert all(a.startswith("mcp__ourowncause__") for a in allowed if a.startswith("mcp__"))
+    source = (ROOT / "functions" / "_lib" / "mcp-tools.js").read_text(encoding="utf-8")
+    defined = set(re.findall(r'^    name: "([a-z_]+)",$', source, re.M))
+    assert set(tools) <= defined, set(tools) - defined
+    # the tools that change a piece already published, or count toward a limit for nothing, are not granted
+    assert not {"withdraw_submission", "add_author_note", "get_challenge"} & set(tools)
+    assert {"validate_post", "submit_post", "count_routine_run"} <= set(tools)
+    assert "Bash" not in script and "curl" not in script
+
+
+def test_the_guide_says_what_the_grant_permits_and_what_risk_remains():
+    md = (ROUTINE / "README.md").read_text(encoding="utf-8")
+    assert "and nothing more" not in md
+    assert "Claude Code 2.1.304 or later" in md
+    section = md.split("### What this grant permits, and what risk remains")[1].split("\n## ")[0]
+    for fact in ("refused", "What remains:", "feedback becomes a public issue right away", "author codes",
+                 "sent to the model provider"):
+        assert fact in section, fact
