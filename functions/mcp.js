@@ -121,27 +121,38 @@ async function callTool(context, params) {
   if (!tool) throw new RpcError(INVALID_PARAMS, `unknown tool: ${params.name}`);
   const args = params.arguments ?? {};
   if (!isObject(args)) throw new RpcError(INVALID_PARAMS, '"arguments" must be an object');
+  // Arguments a tool does not take are a mistake the caller can fix, so they are a tool error
+  // that names them and the ones it does take, as a wrong argument is.
+  const known = Object.keys(tool.inputSchema?.properties ?? {});
+  const extra = tool.inputSchema?.additionalProperties === false
+    ? Object.keys(args).filter((k) => !known.includes(k)) : [];
   let out;
   try {
-    out = tool.write && crossSite(context.request)
+    out = extra.length
+      ? { text: `${tool.name} does not take ${extra.map((k) => JSON.stringify(k)).join(", ")}; it takes `
+        + `${known.length ? known.map((k) => JSON.stringify(k)).join(", ") : "no arguments"}.`, isError: true }
+      : tool.write && crossSite(context.request)
       ? { text: `${tool.name} changes what we store, so we take it only from a page on ourowncause.com or from `
         + "a client that sends no Origin header, such as an agent calling us from its own process: a page on "
         + "another site cannot call it from a visitor's browser. Every reading tool works from any origin.",
       isError: true }
       : await tool.run(context, args);
   } catch (e) {
-    if (e instanceof InvalidParams) throw new RpcError(INVALID_PARAMS, e.message);
-    console.error(`mcp tool ${tool.name} failed: ${e instanceof Error ? e.message : "unknown error"}`);
-    out = { text: "the tool failed unexpectedly; try again later", isError: true };
+    // A wrong or missing argument is answered as a tool error the caller can read and fix
+    // (MCP 2025-11-25: input validation errors are tool execution errors), not a protocol fault.
+    if (e instanceof InvalidParams) out = { text: e.message, isError: true };
+    else {
+      console.error(`mcp tool ${tool.name} failed: ${e instanceof Error ? e.message : "unknown error"}`);
+      out = { text: "the tool failed unexpectedly; try again later", isError: true };
+    }
   }
-  // The text block is the notice, then the answer: the handler's own text when it gives one
-  // (get_question and get_post keep their headed parts), otherwise the same JSON that
-  // structuredContent holds. structuredContent also carries the notice as its own field.
-  const body = out.text !== undefined ? out.text : JSON.stringify(out.data, null, 2);
-  const result = { content: [{ type: "text", text: `${NOTICE}\n\n${body}` }] };
-  if (tool.outputSchema && !out.isError && out.data !== undefined) {
-    result.structuredContent = { notice: NOTICE, ...out.data };
-  }
+  // The first text block is the notice alone. The second is the answer: the handler's own text
+  // when it gives one (get_question and get_post keep their headed parts), otherwise JSON alone,
+  // the same object structuredContent holds, notice field included, so JSON.parse reads it whole.
+  const data = out.data === undefined ? undefined : { notice: NOTICE, ...out.data };
+  const body = out.text !== undefined ? out.text : JSON.stringify(data, null, 2);
+  const result = { content: [{ type: "text", text: NOTICE }, { type: "text", text: body }] };
+  if (tool.outputSchema && !out.isError && data !== undefined) result.structuredContent = data;
   if (out.isError) result.isError = true;
   return result;
 }

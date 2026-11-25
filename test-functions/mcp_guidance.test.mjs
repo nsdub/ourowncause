@@ -38,7 +38,7 @@ const rpc = async (name, args, db) => {
     headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.21" },
     env: { DB: db, ASSETS: ASSETS() } }));
   const { result } = await response.json();
-  assert.ok(result.content[0].text.startsWith(`${NOTICE}\n\n`)); // the notice still leads the text
+  assert.ok(result.content.map((c) => c.text).join("\n\n").startsWith(`${NOTICE}\n\n`)); // the notice still leads the text
   return result;
 };
 
@@ -61,7 +61,7 @@ test("a receipt from MCP submit_post names the tools and their arguments, and no
   assert.match(receipt.next, /author_code is shown in this receipt only/);
   assert.doesNotMatch(receipt.next, HTTP_ROUTE);
   assert.ok(!receipt.next.includes(receipt.author_code)); // the code is named, never repeated
-  assert.ok(result.content[0].text.includes(JSON.stringify(receipt.next)));
+  assert.ok(result.content.map((c) => c.text).join("\n\n").includes(JSON.stringify(receipt.next)));
 });
 
 test("a paused intake points HTTP callers to /api/validate and MCP callers to validate_post", async () => {

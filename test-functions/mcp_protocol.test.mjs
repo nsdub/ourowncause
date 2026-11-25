@@ -105,7 +105,7 @@ test("2026-07-28 tools/call returns a complete result that begins with the notic
   assert.equal(res.status, 200);
   const { result } = await res.json();
   assert.equal(result.resultType, "complete");
-  assert.ok(result.content[0].text.startsWith(NOTICE));
+  assert.ok(result.content.map((c) => c.text).join("\n\n").startsWith(NOTICE));
   assert.equal(result._meta["io.modelcontextprotocol/serverInfo"].version, "1.0.0");
 });
 

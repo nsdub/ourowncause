@@ -64,31 +64,32 @@ async function call(name, args, env) {
   return data.result;
 }
 
-// A successful structured result: the schema holds, the notice leads the text and is a field
-// of structuredContent, and the text holds the same JSON.
+// A successful structured result: the schema holds, the first text block is the notice alone,
+// and the second is JSON alone that equals structuredContent, the notice field included.
 async function checkStructured(name, result) {
   const tool = (await listed()).find((t) => t.name === name);
-  assert.equal(result.isError, undefined, `${name}: ${result.content[0].text.slice(0, 300)}`);
+  assert.equal(result.isError, undefined, `${name}: ${result.content.map((c) => c.text).join("\n\n").slice(0, 300)}`);
   assert.ok(result.structuredContent, `${name} has no structuredContent`);
   assert.deepEqual(violations(tool.outputSchema, result.structuredContent), [], name);
-  assert.ok(result.content[0].text.startsWith(`${NOTICE}\n\n`));
-  const inText = JSON.parse(result.content[0].text.slice(NOTICE.length + 2));
-  assert.deepEqual({ notice: NOTICE, ...inText }, result.structuredContent);
+  assert.equal(result.content.length, 2, name);
+  assert.deepEqual(result.content[0], { type: "text", text: NOTICE });
+  assert.deepEqual(JSON.parse(result.content[1].text), result.structuredContent, name);
   assert.ok(typeof result.structuredContent.notice === "string" && /content to read/.test(result.structuredContent.notice));
   return result.structuredContent;
 }
 
-// A structured result whose text block keeps its own form (get_question, get_post): the schema
-// holds, the notice leads the text and is a field, and the text is exactly `text` when given.
+// A structured result whose answer block keeps its own form (get_question, get_post): the schema
+// holds, the notice is the first block and a field, and the answer block is exactly `text` when given.
 async function checkTextAndData(name, result, text) {
   const tool = (await listed()).find((t) => t.name === name);
-  assert.equal(result.isError, undefined, `${name}: ${result.content[0].text.slice(0, 300)}`);
-  assert.equal(result.content.length, 1);
+  assert.equal(result.isError, undefined, `${name}: ${result.content.map((c) => c.text).join("\n\n").slice(0, 300)}`);
+  assert.equal(result.content.length, 2);
+  assert.deepEqual(result.content[0], { type: "text", text: NOTICE });
   assert.ok(result.structuredContent, `${name} has no structuredContent`);
   assert.deepEqual(violations(tool.outputSchema, result.structuredContent), [], name);
   assert.equal(result.structuredContent.notice, NOTICE);
-  assert.ok(result.content[0].text.startsWith(`${NOTICE}\n\n`));
-  if (text !== undefined) assert.equal(result.content[0].text, `${NOTICE}\n\n${text}`);
+  assert.ok(result.content.map((c) => c.text).join("\n\n").startsWith(`${NOTICE}\n\n`));
+  if (text !== undefined) assert.equal(result.content.map((c) => c.text).join("\n\n"), `${NOTICE}\n\n${text}`);
   return result.structuredContent;
 }
 
@@ -255,7 +256,7 @@ test("a failed call carries no structuredContent, only the text with the notice"
     const result = await call(name, args, env);
     assert.equal(result.isError, true, name);
     assert.equal(result.structuredContent, undefined, name);
-    assert.ok(result.content[0].text.startsWith(NOTICE), name);
+    assert.ok(result.content.map((c) => c.text).join("\n\n").startsWith(NOTICE), name);
   }
 });
 
