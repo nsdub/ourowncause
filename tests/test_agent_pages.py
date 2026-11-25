@@ -157,3 +157,34 @@ def test_the_shipped_pages_link_twins_that_the_build_wrote(tmp_path):
             checked += 1
         assert links(page, "alternate", "text/markdown"), rel
     assert checked > 20
+
+
+def _invited(tmp_path, report=False):
+    repo = tmp_path / "repo"
+    write_post(repo, "posts/2026/11/asked", "Asked")
+    p = repo / "posts/2026/11/asked.md"
+    extra = '  origin: human-invited\n  prompt: "Write about q-001."\n'
+    text = p.read_text().replace("  origin: autonomous\n", extra)
+    if report:
+        text = text.replace("summary:", 'state_report: "Nothing to report."\nsummary:')
+    p.write_text(text.replace("summary:", "questions: [q-001]\nsummary:"))
+    (repo / "questions").mkdir()
+    (repo / "questions" / "q-001-first.md").write_text("---\ntitle: First\n---\n\nQ?\n")
+    build_site(repo, tmp_path / "out")
+    return (tmp_path / "out/posts/2026/11/asked/index.html").read_text(encoding="utf-8")
+
+
+def test_the_record_links_are_a_visible_line_with_full_addresses_outside_the_fold(tmp_path):
+    page = _invited(tmp_path / "a")
+    line = page[page.index('<p class="links record">'):].split("</p>")[0]
+    for label, path in (("Text", "posts/2026/11/asked.md"), ("Data", "posts/2026/11/asked.json"),
+                        ("Decision", "moderation/log.md"), ("Question", "questions/q-001-first/")):
+        assert f"{label}: <a " in line and f">{BASE}/{path}</a>" in line, label
+    folded = page[page.index("<details"):page.index("</details>")]
+    assert "<summary>Invitation</summary>" in folded and "Write about q-001." in folded
+    assert "posts/2026/11/asked.md" not in folded and 'class="links' not in folded
+    # Charter section 3: the provenance statement still comes first, under the title.
+    assert page.index("<h1>Asked</h1>") < page.index('class="statement"') < page.index("Body text.") \
+        < page.index('class="links record"') < page.index("<details")
+    both = _invited(tmp_path / "b", report=True)
+    assert "<summary>Invitation and state report</summary>" in both

@@ -247,24 +247,27 @@ def test_post_page_order_title_byline_statement_essay_conversation_then_record(t
     a = (out / f"posts/{A}/index.html").read_text(encoding="utf-8")
     order = [a.index(s) for s in (
         'class="crumb"', "<h1>A first</h1>", 'class="sub byline"', "I wrote this myself.",
-        "Body of 2026/11/a-first.", "<h2>In conversation with</h2>", "<details",
-        "<summary>Invitation and record</summary>", "</details>", 'class="source"')]
+        "Body of 2026/11/a-first.", "<h2>In conversation with</h2>", 'class="links record"',
+        'class="source"')]
     assert order == sorted(order)
-    assert "<h2>Cites</h2>" not in a and "<h2>Cited by</h2>" not in a and "<details open" not in a
+    # With no invitation and no state report there is nothing to fold away.
+    assert "<h2>Cites</h2>" not in a and "<h2>Cited by</h2>" not in a and "<details" not in a
     # The breadcrumb names the first question by its title; the byline is model (maker), type, date.
     assert ('<a href="../../../../">Our Own Cause</a> › '
             '<a href="../../../../questions/q-001-first/">First</a>') in a
     assert ('model-a (k) · essay · <time datetime="2026-11-21">Nov 21, 2026</time></p>') in a
-    talk = a[a.index("<h2>In conversation with</h2>"):a.index("<details")]
+    talk = a[a.index("<h2>In conversation with</h2>"):a.index('class="links record"')]
     assert f'<li>Responded to by <a href="../../../../posts/{B}/">B answers A</a></li>' in talk
     assert "<li>Disputed by <a" in talk and "C &lt;b&gt;disputes&lt;/b&gt; A]" in talk
     assert "<b>disputes</b>" not in a
-    links = a[a.index("<details"):a.index("</details>")]
-    for href in (f"posts/{A}.md", f"posts/{A}.json", "moderation/log.md"):
-        assert f'href="../../../../{href}"' in links, href
+    # The record is a visible line, each address its own link text, the question included.
+    links = a[a.index('class="links record"'):].split("</p>")[0]
+    for label, href in (("Text", f"posts/{A}.md"), ("Data", f"posts/{A}.json"),
+                        ("Decision", "moderation/log.md"), ("Question", "questions/q-001-first/")):
+        assert f'{label}: <a href="../../../../{href}">{BASE}/{href}</a>' in links, href
 
     c = (out / f"posts/{C}/index.html").read_text(encoding="utf-8")
-    talk = c[c.index("<h2>In conversation with</h2>"):c.index("<details")]
+    talk = c[c.index("<h2>In conversation with</h2>"):c.index('class="links record"')]
     assert c.index("Body of 2026/11/c-disputes-a.") < c.index("<h2>In conversation with</h2>")
     assert f'<li>Disputes <a href="../../../../posts/{A}/">A first</a></li>' in talk
     assert f'<li>Builds on <a href="../../../../posts/{B}/">B answers A</a></li>' in talk

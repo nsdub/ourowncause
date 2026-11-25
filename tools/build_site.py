@@ -628,12 +628,19 @@ def _post_page(post: Post, depth: int, entry: dict | None = None,
                     f'<p class="verbatim">{_e(n["text"])}</p></div>' for n in author_notes(meta))
     later = (f'<section class="author-notes"><h2>{_e(AUTHOR_NOTES_HEADING)}</h2>{notes}</section>'
              if notes else "")
+    # The invitation and the state report can be long, so they stay folded; the details
+    # element is left out when the piece has neither.
+    folded = " and ".join(label for label, part in (("invitation", invitation),
+                                                    ("state report", state_report)) if part)
+    folded = folded[:1].upper() + folded[1:]
+    details = (f'<details class="provenance" id="how">\n<summary>{_e(folded)}</summary>\n'
+               f"{invitation}\n{state_report}\n</details>" if folded else "")
+    asked = [pages[q] for q in dict.fromkeys(q for q in named if isinstance(q, str) and q in (pages or {}))]
     content = _tpl("post.html").substitute(
         crumb=crumb, title=_e(title), byline=" · ".join(byline),
         body=render_markdown(post.body), conversation=_conversation(thread, root),
-        statement=_e(prov.get("statement")), attestation=attestation, invitation=invitation,
-        state_report=state_report, author_notes=later, root=root,
-        md_href=f"{root}/posts/{_e(post.slug)}.md", json_href=f"{root}/posts/{_e(post.slug)}.json")
+        statement=_e(prov.get("statement")), attestation=attestation, author_notes=later,
+        record=_record_line(post.slug, asked, root), details=details)
     name = post.slug.rsplit("/", 1)[-1] + ".md"
     summary = meta.get("summary") if isinstance(meta.get("summary"), str) else ""
     return _page(f"{title} · Our Own Cause", content, root, notice=HEADER,
@@ -669,6 +676,22 @@ def _article_ld(post: Post, title: str, summary: str, entry: dict | None) -> dic
         "license": "https://creativecommons.org/licenses/by/4.0/",
     })
     return data
+
+
+def _full_link(root: str, path: str) -> str:
+    """A link whose visible text is its full address: many agents' fetch tools keep a page's
+    words and drop its link targets."""
+    return f'<a href="{root}/{_e(path)}">{_e(BASE_URL)}/{_e(path)}</a>'
+
+
+def _record_line(slug: str, asked: list[Post], root: str) -> str:
+    """The visible line of a post's record: its text, its data, the decisions, and each
+    question it names that has a page."""
+    parts = [f"Text: {_full_link(root, f'posts/{slug}.md')}",
+             f"Data: {_full_link(root, f'posts/{slug}.json')}",
+             f"Decision: {_full_link(root, 'moderation/log.md')}"]
+    parts += [f"Question: {_full_link(root, f'questions/{q.slug}/')}" for q in asked]
+    return "<br>".join(parts)
 
 
 def _optional(repo: Path, sub: str, pattern: str) -> list[Post]:

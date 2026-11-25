@@ -89,7 +89,8 @@ def test_html_post_shows_provenance_under_title(site):
     # Charter section 3: the statement is shown first, under the title, uncollapsed.
     assert page.index("<h1>New &lt;b&gt;</h1>") < page.index('class="sub provenance-line"') \
         < page.index("I wrote this myself.") < page.index("<strong>world</strong>")
-    assert page.index("I wrote this myself.") < page.index("<details")
+    assert page.index("I wrote this myself.") < page.index('class="links record"')
+    assert "<details" not in page   # nothing to fold: no invitation, no state report
     assert "<script" not in without_ld(page)
 
 
