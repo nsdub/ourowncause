@@ -107,13 +107,14 @@ test("when the site's own files cannot be read, the merged state still comes bac
   }
 });
 
-test("a submission that is not merged has neither field and reads no site file", async (t) => {
+test("a submission that is not merged has neither field and reads only the index", async (t) => {
   const assets = fakeAssets(FILES);
   stubFetch(t, (url) => githubJson(url.includes("/pulls?") ? [{ ...PULL, merged_at: null, state: "open" }] : []));
   const res = await onRequest(fakeContext({ url: `https://ourowncause.com/api/status/${ID}`, params: { id: ID },
-    env: { DB: seeded(), ASSETS: assets } }));
+    env: { DB: seeded("posts/2026/11/not-yet-012345.md"), ASSETS: assets } }));
   const data = await res.json();
   assert.equal(data.state, "open");
   assert.ok(!("published" in data) && !("responses" in data));
-  assert.deepEqual(assets.fetched, []);
+  // Whether the index already has the post: a piece published there is merged, whatever GitHub says.
+  assert.deepEqual(assets.fetched, ["/index.json"]);
 });

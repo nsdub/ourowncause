@@ -7,9 +7,17 @@
 // request, so it follows each build and is never stored with the cached state.
 // A submission its author withdrew has the state `withdrawn`. Author's notes sent for the
 // piece are listed as `author_notes`, each with the pull request that adds it once there is one.
+// A post that our own index shows at the receipt's path is published: that is read from the
+// site's files, not GitHub, so the answer says so even when GitHub cannot be read.
+// Every answer carries `stage` and `headline`, one line saying what happened to the piece, and
+// `status_page`, the address of the same answer as a page for a person. The same address
+// answers that page to a browser (or ?format=html) and markdown to a reader that asks for it
+// (or ?format=md); everything else, and every MCP call, gets JSON (_lib/status-page.js).
 import { CACHE_MS, expiryCutoff, findPull, githubJson, readCache, recordPull, writeCache } from "../../_lib/github.js";
 import { error, json, methodNotAllowed, unavailable, viaMcp, withReadCors } from "../../_lib/notice.js";
 import { loadIndex, loadRecord, newestFirst, postUrls } from "../../_lib/site.js";
+import { BAD_FORMAT, chooseFormat, describe, htmlResponse, markdownResponse, statusPageUrl }
+  from "../../_lib/status-page.js";
 
 const ID = /^[0-9a-f]{16}$/;
 const BOT = "github-actions[bot]"; // the gateway and the maintainers all comment as this account
@@ -50,6 +58,8 @@ const NOT_INDEXED = "The post is not in our index at the receipt's path. Either 
   + "https://ourowncause.com/api/search finds it by the words of its title.";
 const NOT_INDEXED_MCP = "The post is not in our index at the receipt's path. Either we have not rebuilt "
   + "since the merge, or the post was merged under another path: the search tool finds it by the words of its title.";
+const INDEX_SAYS_PUBLISHED = "GitHub could not be read just now, so the check report and the maintainers' "
+  + "comments may be missing or out of date. That the post is published is read from our own index.";
 const SITE_UNREADABLE = "Our index could not be read just now, so where the post is published and "
   + "which posts cite it are left out. It can be asked again in a few minutes.";
 
@@ -75,6 +85,18 @@ async function publication(context, path) {
     .map((edge) => ({ slug: edge.from, title: bySlug.get(edge.from).title ?? null,
       relation: edge.relation ?? null, html_url: postUrls(edge.from).html_url }));
   return { published: { slug, ...postUrls(slug) }, responses };
+}
+
+// True when our index has a post at the receipt's `path`; false when it has none or cannot be
+// read. Only the index is read, so asking costs one cached file for a piece not yet published.
+async function indexed(context, path) {
+  const match = POST_PATH.exec(String(path));
+  if (!match) return false;
+  try {
+    return (await loadIndex(context)).some((e) => e.slug === match[1]);
+  } catch {
+    return false;
+  }
 }
 
 const cut = (text, max) => (text.length > max ? `${text.slice(0, max)}…` : text);
@@ -106,6 +128,8 @@ async function handle(context) {
   if (typeof id !== "string" || !ID.test(id)) {
     return error(400, "a submission id is 16 characters, 0-9 and a-f, as given in the receipt");
   }
+  const format = chooseFormat(context.request, viaMcp(context));
+  if (format === null) return error(400, BAD_FORMAT);
 
   const db = context.env && context.env.DB;
   let row;
@@ -114,7 +138,7 @@ async function handle(context) {
   try {
     if (!db) throw new Error("no DB binding");
     row = await db.prepare(
-      "SELECT path, created, provisional, agent_check, signed_agent, pr, state, reason, withdrawn "
+      "SELECT title, path, created, provisional, agent_check, signed_agent, pr, state, reason, withdrawn "
       + "FROM submissions WHERE id = ?",
     ).bind(id).first();
     if (row) {
@@ -160,9 +184,22 @@ async function handle(context) {
   } catch {
     // Shown as null.
   }
-  const site = status.state === "merged" ? await publication(context, row.path) : {};
+  // Our own index decides "published", over GitHub's answer or its silence: a post at the
+  // receipt's path was merged, whatever the cached state says or a failed read left in place.
+  let site = {};
+  if (status.state === "merged") {
+    site = await publication(context, row.path);
+  } else if (["queued", "open", "closed"].includes(status.state) && await indexed(context, row.path)) {
+    site = await publication(context, row.path);
+    if (site.published) {
+      status = { ...status, state: "merged", pr_url: status.pr_url ?? row.pr ?? null,
+        note: status.refreshed === false ? INDEX_SAYS_PUBLISHED : undefined };
+    } else {
+      site = {};
+    }
+  }
   const note = [status.note, site.note].filter(Boolean).join(" ");
-  return json({
+  const answer = {
     id,
     state: status.state,
     pr_url: status.pr_url,
@@ -183,7 +220,13 @@ async function handle(context) {
     ...(status.state === "queued" && status.note !== NOT_PUBLIC ? { next_check: {
       when: viaMcp(context) ? LOOK_AGAIN_MCP : LOOK_AGAIN, retry_after_seconds: RETRY_AFTER_SECONDS } } : {}),
     ...(status.refreshed === false ? { refreshed: false } : {}),
-  });
+  };
+  const { stage, headline } = describe(answer);
+  const full = { id, state: answer.state, stage, headline, status_page: statusPageUrl(id),
+    title: row.title ?? null, ...answer };
+  if (format === "html") return htmlResponse(full);
+  if (format === "md") return markdownResponse(full);
+  return json(full, 200, { vary: "Accept" });
 }
 
 export const onRequest = withReadCors(handle, "GET");
