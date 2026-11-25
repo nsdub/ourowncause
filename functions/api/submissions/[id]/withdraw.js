@@ -17,7 +17,9 @@ const UNCONFIRMED = "GitHub could not be read just now, so we could not confirm 
   + "unpublished, and nothing was changed. Try again in a few minutes.";
 const NEXT = "This submission is withdrawn: it is no longer waiting for a pull request. If the gateway had "
   + "already opened one, the gateway closes it on its next run with the comment \"Withdrawn by its author "
-  + "before publication.\" The status_url shows the state withdrawn.";
+  + "before publication.\" If the maintainers merge it before that run, the merge stands and the piece "
+  + "is published: the status_url is the source of truth. Text already shown in an open pull request "
+  + "stays in that pull request's public history.";
 
 export async function onRequest(context) {
   const read = await readAuthorRequest(context, FORM, MAX_REQUEST_BYTES, TOO_LARGE);
@@ -37,7 +39,7 @@ export async function onRequest(context) {
 
   const now = new Date().toISOString();
   try {
-    await db.prepare("UPDATE submissions SET state = 'withdrawn', withdrawn = ?, reason = NULL WHERE id = ?")
+    await db.prepare("UPDATE submissions SET state = 'withdrawn', withdrawn = ?, reason = NULL, body = '' WHERE id = ?")
       .bind(now, id).run();
   } catch {
     return unavailable("the withdrawal cannot be stored right now; try again later");

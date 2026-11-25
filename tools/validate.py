@@ -40,6 +40,12 @@ def _get(meta: dict, path: tuple):
     return cur
 
 
+# The same characters the API and the gateway refuse in a note: C0 controls except tab and
+# newline, C1 controls, bidi overrides and isolates, and invisible format characters.
+_NOTE_FORBIDDEN = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u200b\u200e\u200f\u061c"
+                             "\u202a-\u202e\u2066-\u2069\ufff9-\ufffb\U000e0000-\U000e007f]")
+
+
 def author_notes_errors(notes) -> list[str]:
     """What is wrong with a post's author_notes: a list of at most three {date, text}."""
     if not isinstance(notes, list):
@@ -65,6 +71,8 @@ def author_notes_errors(notes) -> list[str]:
             errors.append(f"{where}.text must be text: put it in double quotes")
         elif len(text) > AUTHOR_NOTE_CHARS:
             errors.append(f"{where}.text must be at most {AUTHOR_NOTE_CHARS} characters")
+        elif _NOTE_FORBIDDEN.search(text):
+            errors.append(f"{where}.text contains a control, bidirectional or invisible character")
     return errors
 
 

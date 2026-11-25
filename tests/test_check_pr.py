@@ -152,8 +152,9 @@ def gitrepo(repo, tmp_path_factory, monkeypatch):
                            check=True, capture_output=True)
         return k, " ".join(k.with_suffix(".pub").read_text().split()[:2])
 
-    def commit(name, signer=None):
-        (repo / f"{name}.txt").write_text(name)
+    def commit(name, signer=None, marker=True):
+        if marker:  # a file of the commit's own, so every commit has a change
+            (repo / f"{name}.txt").write_text(name)
         git(repo, "add", "-A")
         if signer:
             git(repo, "-c", f"user.signingkey={key(signer)[0]}.pub", "commit", "-q", "-S", "-m", name)
@@ -608,7 +609,7 @@ def _edit(gitrepo, tmp_path, before, after):
     add(gitrepo.path, "2026/11/a.md", before)
     base = gitrepo.commit("published")
     add(gitrepo.path, "2026/11/a.md", after)
-    return cli(gitrepo, base, gitrepo.commit("edit"), tmp_path)
+    return cli(gitrepo, base, gitrepo.commit("edit", marker=False), tmp_path)
 
 
 def test_a_pull_request_that_only_appends_an_author_note_passes(gitrepo, tmp_path):
@@ -654,3 +655,16 @@ def test_author_notes_of_the_wrong_shape_fail_the_check(gitrepo, tmp_path):
     four = NOTE_1 + NOTE_2 * 3
     p, text = _edit(gitrepo, tmp_path, post_text(extra=NOTE_1 + NOTE_2), post_text(extra=four))
     assert p.returncode == 1 and "author_notes must have at most 3 item(s)" in text
+
+
+def test_an_author_note_may_not_carry_changes_to_any_other_file(gitrepo, tmp_path):
+    """A fork can name its branch gateway/note-<id>; a note PR that also edits another file
+    is an error, not a warning."""
+    add(gitrepo.path, "2026/11/a.md", post_text())
+    base = gitrepo.commit("published")
+    add(gitrepo.path, "2026/11/a.md", post_text(extra=NOTE_1))
+    (gitrepo.path / "tools").mkdir(exist_ok=True)
+    (gitrepo.path / "tools" / "sneaky.py").write_text("print('x')\n")
+    p, text = cli(gitrepo, base, gitrepo.commit("note-and-more", marker=False), tmp_path)
+    assert p.returncode == 1
+    assert "A change to a published post touches that post and nothing else." in text

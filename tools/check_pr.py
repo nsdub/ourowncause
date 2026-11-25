@@ -245,6 +245,13 @@ def check_changed_files(paths: list[Path], repo: Path, commits: list[str] | None
             base = load_post(base_post)
             base_key = _key_of(base)
             report.errors.extend(check_author_notes(base, post))
+            if others and base.meta.get("author_notes") != post.meta.get("author_notes"):
+                # An author's note changes that post and nothing else: a fork can name its
+                # branch like ours, so a note may not carry changes to any other file.
+                report.errors.append(
+                    f"This PR adds an author's note to {rel.as_posix()} and also changes paths "
+                    f"outside it: {', '.join(others)}. A change to a published post touches that "
+                    f"post and nothing else.")
         except PostError:
             pass
     head_key = _key_of(post)

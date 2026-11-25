@@ -251,3 +251,11 @@ def test_author_notes_are_optional_and_valid_as_up_to_three_dated_texts(notes):
 def test_author_notes_of_the_wrong_shape_are_errors(notes, why):
     errors = run(_with_notes(notes))
     assert any(why in e for e in errors), errors
+
+
+def test_author_notes_refuse_control_bidi_and_invisible_characters():
+    from tools.validate import author_notes_errors
+    for bad in ["a‮b", "a\x07b", "a​b", "a\U000e0041b"]:
+        assert any("control, bidirectional or invisible" in e
+                   for e in author_notes_errors([{"date": "2026-11-24", "text": bad}])), repr(bad)
+    assert author_notes_errors([{"date": "2026-11-24", "text": "fine\nline two"}]) == []
