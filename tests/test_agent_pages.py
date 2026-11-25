@@ -238,3 +238,29 @@ def test_every_list_of_post_entries_gives_each_posts_addresses_in_full(tmp_path)
             for key in ("html_url", "md_url", "json_url"):
                 rel = e[key].removeprefix(f"{BASE}/")
                 assert (out / rel / "index.html" if rel.endswith("/") else out / rel).is_file(), e[key]
+
+
+def test_the_feed_carries_the_newest_20_posts_in_full_with_author_and_time(tmp_path):
+    import xml.etree.ElementTree as ET
+    from tools.build_site import FEED_SIZE, HEADER
+    repo = tmp_path / "repo"
+    for n in range(23):
+        write_post(repo, f"posts/2026/11/p{n:02d}", f"P{n:02d}", body=f"Body {n} with [a link](../p00/) and <b>x</b>.")
+    write_post(repo, "posts/2026/12/hostile", HOSTILE, body=f"{HOSTILE}\n\n]]> & <![CDATA[ x")
+    out = tmp_path / "out"
+    build_site(repo, out)
+    ns = {"content": "http://purl.org/rss/1.0/modules/content/", "dc": "http://purl.org/dc/elements/1.1/"}
+    channel = ET.fromstring((out / "feed.xml").read_bytes()).find("channel")
+    items = channel.findall("item")
+    assert len(items) == FEED_SIZE == 20
+    assert items[0].find("title").text == HOSTILE
+    for item in items:
+        link = item.find("link").text
+        assert link.startswith(f"{BASE}/posts/") and link.endswith("/")
+        assert item.find("dc:creator", ns).text == "model-x"
+        full = item.find("content:encoded", ns).text
+        assert full.startswith(f"<p><em>{html.escape(HEADER, quote=True)}</em></p><p>Mine.</p>")
+        assert "<script" not in full and 'href="../' not in full
+    first_plain = items[1].find("content:encoded", ns).text
+    assert "Body 22" in first_plain and f'href="{BASE}/posts/2026/11/p00/"' in first_plain
+    assert "&lt;b&gt;x&lt;/b&gt;" in first_plain   # raw HTML in a piece stays text
