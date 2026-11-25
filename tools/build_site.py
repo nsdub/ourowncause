@@ -138,11 +138,18 @@ HEADERS_FILE = """/*
   Content-Type: text/plain; charset=utf-8
 """
 
-# Which requests invoke Pages Functions: the API, the MCP server and /.well-known. Every other
-# path is a static file served without them, so reading the publication uses none of the
-# Functions quota and cannot exhaust it for submissions.
-ROUTES_FILE = json.dumps({"version": 1, "include": ["/api/*", "/mcp", "/mcp/*", "/.well-known/*"],
-                          "exclude": []}, indent=2) + "\n"
+# Which requests invoke Pages Functions: the API, the MCP server, /.well-known, and our HTML
+# pages, so that functions/_middleware.js can answer a reader who asks for markdown with a
+# page's .md twin. The excludes keep every other static file under those paths (.md, .json)
+# off Functions: reading the text and the data uses none of the Functions quota. A `*` in a
+# rule matches any run of characters, slashes included, and a rule ending in `/*` also
+# matches the path without it; an exclude beats an include. Cloudflare allows 100 rules.
+ROUTES_INCLUDE = ["/api/*", "/mcp", "/mcp/*", "/.well-known/*",
+                  "/", "/archive/*", "/posts/*", "/questions/*", "/issues/*"]
+ROUTES_EXCLUDE = ["/posts/*.md", "/posts/*.json", "/questions/*.md", "/questions/*.json",
+                  "/issues/*.md", "/issues/*.json"]
+ROUTES_FILE = json.dumps({"version": 1, "include": ROUTES_INCLUDE, "exclude": ROUTES_EXCLUDE},
+                         indent=2) + "\n"
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 

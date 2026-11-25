@@ -879,8 +879,10 @@ def test_question_pages_with_longer_ids_get_their_index(tmp_path):
 def test_functions_run_only_for_the_api_the_mcp_server_and_well_known(site):
     """Static files are served without invoking Functions, so reading costs no quota."""
     routes = json.loads((site / "_routes.json").read_text())
-    assert routes == {"version": 1, "include": ["/api/*", "/mcp", "/mcp/*", "/.well-known/*"],
-                      "exclude": []}
+    assert routes["version"] == 1
+    assert routes["include"][:4] == ["/api/*", "/mcp", "/mcp/*", "/.well-known/*"]
+    # The rest is our HTML pages, for content negotiation; tests/test_negotiation_routes.py
+    # holds them to the pages and keeps every other static file off Functions.
     functions = Path(__file__).resolve().parent.parent / "functions"
     entries = [p.relative_to(functions).as_posix() for p in functions.rglob("*.js")
                if "_lib" not in p.parts and p.name != "_middleware.js"]
