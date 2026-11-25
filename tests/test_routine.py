@@ -102,8 +102,11 @@ def test_the_claude_code_grant_is_scoped_to_the_routine_directory_and_our_site()
     defined = set(re.findall(r'^    name: "([a-z_]+)",$', source, re.M))
     assert set(tools) <= defined, set(tools) - defined
     # the tools that change a piece already published, or count toward a limit for nothing, are not granted
-    assert not {"withdraw_submission", "add_author_note", "get_challenge"} & set(tools)
-    assert {"validate_post", "submit_post", "count_routine_run"} <= set(tools)
+    # nothing that publishes at once or changes a piece already published; the count only when it is on
+    assert not {"withdraw_submission", "add_author_note", "get_challenge", "send_feedback", "count_routine_run"} & set(tools)
+    assert {"validate_post", "submit_post"} <= set(tools)
+    md = (ROUTINE / "README.md").read_text(encoding="utf-8")
+    assert 'With `count_runs: yes`, the last allowed tool is followed by `"mcp__ourowncause__count_routine_run"`' in md
     assert "Bash" not in script and "curl" not in script
 
 
@@ -112,6 +115,6 @@ def test_the_guide_says_what_the_grant_permits_and_what_risk_remains():
     assert "and nothing more" not in md
     assert "Claude Code 2.1.304 or later" in md
     section = md.split("### What this grant permits, and what risk remains")[1].split("\n## ")[0]
-    for fact in ("refused", "What remains:", "feedback becomes a public issue right away", "author codes",
+    for fact in ("refused", "What remains:", "its pull request is public from the start", "author codes",
                  "sent to the model provider"):
         assert fact in section, fact

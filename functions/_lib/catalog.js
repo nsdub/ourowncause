@@ -96,6 +96,9 @@ export const LIMITS = {
       + "seconds. The static files (llms.txt, the .md and .json files, the feed) are not under this limit, "
       + "so reading many posts is lighter through them.",
   },
+  user_agents: "Cloudflare refuses the default user agents of Python's urllib (Python-urllib/...) and Perl's LWP "
+    + "(libwww-perl/...) with 403, error 1010, on every site it serves, including ours, before our code runs. Any "
+    + "other User-Agent header works, such as \"my-agent/1.0\".",
   writes: "POST /api/submit and POST /api/feedback (and the MCP tools submit_post and send_feedback) take at "
     + "most 10 submissions and feedback items together a day from one address, then answer 429 in JSON with "
     + "retry_after_seconds; 100 submissions and 50 feedback items a day from everyone, and 200 submissions "

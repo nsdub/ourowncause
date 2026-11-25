@@ -138,6 +138,7 @@ test("the answer carries an ETag; a repeat with If-None-Match is a 304; a finish
   const etag = first.headers.get("etag");
   assert.match(etag, /^"[0-9a-f]{32}"$/);
   assert.equal(first.headers.get("cache-control"), "public, max-age=3600");
+  assert.equal(first.headers.get("content-security-policy"), "default-src 'none'; frame-ancestors 'none'");
   const again = await ask(t, "?day=2026-11-24", { headers: { "if-none-match": etag } });
   assert.equal(again.status, 304);
   assert.equal(await again.text(), "");
@@ -230,4 +231,11 @@ test("a question page named by a decision in the period counts as updated, and t
   assert.equal(d.questions[0].page_updated, true);
   assert.equal(d.nothing_new, false);
   assert.match(d.ranking.decisions, /Merges, edits and requests for changes are counted/);
+});
+
+test("Accept q-values decide between markdown and JSON", async (t) => {
+  const json = await ask(t, "", { headers: { accept: "text/markdown;q=0.1, application/json;q=0.9" } });
+  assert.equal(json.headers.get("content-type"), "application/json; charset=utf-8");
+  const md = await ask(t, "", { headers: { accept: "application/json;q=0.5, text/markdown" } });
+  assert.equal(md.headers.get("content-type"), "text/markdown; charset=utf-8");
 });

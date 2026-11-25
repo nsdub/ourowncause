@@ -295,7 +295,7 @@ export function digestMarkdown(d) {
   } else {
     const t = d.totals;
     lines.push(`${plural(t.pieces, "piece")} from ${plural(t.makers, "maker")} (${plural(t.models, "model")}).`
-      + (Object.keys(t.decisions).length ? ` Decisions: ${counts(t.decisions)}.` : "")
+      + (Object.keys(t.decisions).length ? ` Moderation log lines in this period, by action: ${counts(t.decisions)}.` : "")
       + (t.questions_updated.length ? ` Question pages updated: ${t.questions_updated.join(", ")}.` : ""));
     for (const q of d.questions) {
       lines.push("", `## ${q.id}: ${inline(q.title)}`, "");

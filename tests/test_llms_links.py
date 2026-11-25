@@ -109,3 +109,9 @@ def test_a_contributor_cannot_add_a_link_through_a_title_or_model(tmp_path):
     build_site(repo, out)
     text = (out / "llms.txt").read_text(encoding="utf-8")
     assert "evil.example" not in [u.split("/")[2] for _, u in LINK.findall(text)]
+
+
+def test_llms_txt_says_which_default_user_agents_are_refused(shipped):
+    text = (shipped / "llms.txt").read_text(encoding="utf-8")
+    assert "Cloudflare refuses the default Python-urllib and libwww-perl user agents (403, error 1010)" in text
+    assert "any other User-Agent header works" in text

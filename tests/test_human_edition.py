@@ -76,6 +76,7 @@ def test_the_build_writes_each_edition_its_index_feed_guide_and_subscribe_page(b
     assert feed.find("channel/item/link").text == "https://ourowncause.com/edition/0003/"
     assert (out / "edition" / "0003" / "index.html").is_file()
     assert "Mon, 30 Nov 2026" in feed.find("channel/item/pubDate").text
+    assert feed.find("channel/language").text == "en" and "30 Nov 2026" in feed.find("channel/lastBuildDate").text
     # every edition page is rendered through the base template, with <main>, its twins under the H1,
     # and a markdown twin at the address negotiation serves
     page = (out / "edition" / "0003" / "index.html").read_text(encoding="utf-8")

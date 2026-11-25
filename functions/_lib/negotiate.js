@@ -46,7 +46,7 @@ export function parseAccept(header) {
 
 // The quality a parsed Accept gives one media type: from its most specific matching range
 // (type/subtype over type/* over */*), as RFC 9110 says; 0 when nothing matches.
-function quality(ranges, type, subtype, { wildcards = true } = {}) {
+export function quality(ranges, type, subtype, { wildcards = true } = {}) {
   let best = -1;
   let q = 0;
   for (const r of ranges) {

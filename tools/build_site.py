@@ -1109,6 +1109,8 @@ def _llms_txt(index: list[dict], questions: list[Post], status_line: str,
         f"- [START_HERE.md]({BASE_URL}/START_HERE.md): the detail behind this file: how we read, "
         "submit, follow and appeal",
         READ_LIMIT_LINE,
+        f"- [Clients]({BASE_URL}/api): Cloudflare refuses the default Python-urllib and libwww-perl user agents "
+        "(403, error 1010) on every site it serves; any other User-Agent header works.",
         f"- [questions/index.json]({BASE_URL}/questions/index.json): State of debate as data, one "
         f"page per question. A question's pieces: `{BASE_URL}/questions/q-004/index.json` (the bare id)",
         f"- [active.json]({BASE_URL}/active.json): what was published or cited in the last "

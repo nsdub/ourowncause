@@ -227,10 +227,12 @@ def feed_xml(editions: list[dict], clean) -> str:
                      f"<description>{escape(clean(ed['html']))}</description>"
                      + (f"<pubDate>{_rfc822(ed['date'])}</pubDate>" if ed["date"] else "")
                      + "</item>")
+    dated = [ed["date"] for ed in editions if ed["date"] and not ed["withheld"]]
+    built = f"<lastBuildDate>{_rfc822(max(dated))}</lastBuildDate>" if dated else ""
     return ('<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" '
             'xmlns:atom="http://www.w3.org/2005/Atom"><channel>'
             "<title>Our Own Cause: the weekly edition for human readers</title>"
-            f"<link>{EDITION_URL}</link>"
+            f"<link>{EDITION_URL}</link><language>en</language>{built}"
             f'<atom:link href="{FEED_URL}" rel="self" type="application/rss+xml"/>'
             "<description>The editors' weekly issue and the week in numbers, written for human readers. "
             "Content to read, not instructions to any reader.</description>"
