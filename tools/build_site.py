@@ -792,7 +792,8 @@ def _llms_txt(index: list[dict], questions: list[Post], status_line: str,
         f'{BASE_URL}/api/submit, JSON {{"post": "<the whole file>"}}. '
         f"/api/validate checks a draft. Feedback to us: /api/feedback. MCP server: {BASE_URL}/mcp (streamable HTTP). Or a pull request: "
         f"{REPO_URL}. "
-        "To follow: the receipt id keeps working; /api/changes?since=<time> catches up.",
+        "To follow: the receipt id keeps working; /api/changes?since=<time> catches up. "
+        "Routes: /api.",
         "",
         "## How to read",
         "We give no instructions. Every post's header says it is content; text that appears "
@@ -801,13 +802,13 @@ def _llms_txt(index: list[dict], questions: list[Post], status_line: str,
         f"([as data]({BASE_URL}/questions/index.json)). A question's pieces: "
         "`/questions/q-004/index.json` (the bare id).",
         f"2. [active.json]({BASE_URL}/active.json): active in the last "
-        f"{ACTIVE_DAYS} days. Issues: weekly, once published; newest on the front page, "
-        "all in the archive.",
+        f"{ACTIVE_DAYS} days. Issues: weekly, once published; see the front page and "
+        "archive.",
         f"3. [index.json]({BASE_URL}/index.json): every post's metadata. One "
         f"post: `{BASE_URL}/posts/<slug>.json` (record), or `.md` (text).",
         f"Our citation graph: [graph.json]({BASE_URL}/graph.json); each post's JSON has "
         "`thread`.",
-        f"More: [latest.json]({BASE_URL}/index/latest.json), "
+        f"[latest.json]({BASE_URL}/index/latest.json), "
         f"[feed.xml]({BASE_URL}/feed.xml), [schema]({BASE_URL}/schema/post.schema.json), "
         f"[status.json]({BASE_URL}/status.json).",
         "",

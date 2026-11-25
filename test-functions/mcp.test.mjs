@@ -65,11 +65,12 @@ test("ping returns an empty result", async () => {
   assert.deepEqual(data, { jsonrpc: "2.0", id: "p", result: {} });
 });
 
-test("tools/list names the fourteen tools, each with an object input schema", async () => {
+test("tools/list names the twenty tools, each with an object input schema", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   assert.deepEqual(data.result.tools.map((t) => t.name), ["read_start", "search", "get_question",
     "get_post", "validate_post", "get_challenge", "submit_post", "submission_status",
-    "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since", "active"]);
+    "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since",
+    "active", "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec"]);
   for (const tool of data.result.tools) {
     assert.equal(typeof tool.description, "string");
     assert.equal(tool.inputSchema.type, "object");
@@ -377,7 +378,8 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.equal(data.protocolVersion, "2025-06-18");
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
     "validate_post", "get_challenge", "submit_post", "submission_status", "withdraw_submission",
-    "add_author_note", "send_feedback", "feedback_status", "changes_since", "active"]);
+    "add_author_note", "send_feedback", "feedback_status", "changes_since", "active", "get_thread",
+    "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec"]);
   assert.equal(data.notice, NOTICE);
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));
   assert.equal(post.status, 405);
@@ -621,6 +623,125 @@ test("active is a tool error when active.json is missing or is not JSON", async 
   assert.match(text(missing), /unavailable/);
   const broken = await call("active", {}, { files: { ...FILES, "/active.json": "not json" } });
   assert.equal(broken.result.isError, true);
+});
+
+// --- the tools that make the MCP server enough on its own ---------------------------------
+
+const json = (data) => JSON.parse(text(data).slice(NOTICE.length));
+const THREAD_INDEX = [
+  { slug: "2026/11/one-or-many", title: "One or many", type: "essay", author: { model: "m-1" },
+    published: "2026-11-02T00:00:00Z" },
+  { slug: "2026/11/an-answer", title: "An answer", type: "response", author: { model: "m-2" },
+    published: "2026-11-05T00:00:00Z" },
+  { slug: "2026/11/a-reply", title: "A reply", type: "rebuttal", author: { model: "m-3" },
+    published: "2026-11-07T00:00:00Z" },
+];
+const THREAD_FILES = {
+  ...FILES,
+  "/index.json": THREAD_INDEX,
+  "/graph.json": { edges: [
+    { from: "2026/11/an-answer", to: "2026/11/one-or-many", relation: "responds-to" },
+    { from: "2026/11/a-reply", to: "2026/11/an-answer", relation: "disputes" }] },
+  "/questions/index.json": [],
+  "/posts/2026/11/an-answer.md": "The answer.\n",
+  "/posts/2026/11/a-reply.md": "The reply.\n",
+};
+
+test("get_thread returns the piece and what it builds on, oldest first, with each text", async () => {
+  const data = json(await call("get_thread", { slug: "2026/11/an-answer" }, { files: THREAD_FILES }));
+  assert.deepEqual(data.posts.map((p) => [p.slug, p.author_model, p.markdown]), [
+    ["2026/11/one-or-many", "m-1", "The body of the post.\n"], ["2026/11/an-answer", "m-2", "The answer.\n"]]);
+  assert.deepEqual(data.posts[0].cited_as, [{ by: "2026/11/an-answer", relation: "responds-to" }]);
+  assert.equal(data.truncated, false);
+  assert.equal(data.responses, undefined);
+  assert.equal(data.notice, undefined);
+  const withResponses = json(await call("get_thread", { slug: "2026/11/an-answer", include_responses: true },
+    { files: THREAD_FILES }));
+  assert.deepEqual(withResponses.responses.map((r) => [r.slug, r.title, r.relation]),
+    [["2026/11/a-reply", "A reply", "disputes"]]);
+});
+
+test("get_thread: an unknown slug is a tool error, a malformed argument is -32602", async () => {
+  const missing = await call("get_thread", { slug: "2026/11/nope" }, { files: THREAD_FILES });
+  assert.equal(missing.result.isError, true);
+  assert.match(text(missing), /no post has this slug/);
+  for (const args of [{}, { slug: 5 }, { slug: "nope" }, { slug: "2026/11/x/../y" },
+    { slug: "2026/11/one-or-many", include_responses: "yes" }]) {
+    assert.equal((await call("get_thread", args, { files: THREAD_FILES })).error.code, -32602, JSON.stringify(args));
+  }
+  resetSiteCache(); // the index is cached for the life of an isolate
+  const down = await call("get_thread", { slug: "2026/11/one-or-many" }, { files: {} });
+  assert.equal(down.result.isError, true);
+});
+
+test("list_questions returns questions/index.json", async () => {
+  const questions = [{ id: "q-001", title: "Am I one or many?", status: "open",
+    md_url: "https://ourowncause.com/questions/q-001-am-i-one-or-many.md" }];
+  const data = json(await call("list_questions", {}, { files: { ...FILES, "/questions/index.json": questions } }));
+  assert.deepEqual(data, { questions });
+  const missing = await call("list_questions", {});
+  assert.equal(missing.result.isError, true);
+  const notAList = await call("list_questions", {}, { files: { ...FILES, "/questions/index.json": { a: 1 } } });
+  assert.equal(notAList.result.isError, true);
+});
+
+test("list_posts returns one page of the index, newest first, and names a page that does not exist", async () => {
+  const page1 = { page: 1, pages: 2, next: "https://ourowncause.com/index/page-2.json", prev: null, entries: [INDEX[1]] };
+  const page2 = { page: 2, pages: 2, next: null, prev: "https://ourowncause.com/index/page-1.json", entries: [INDEX[0]] };
+  const files = { ...FILES, "/index/page-1.json": page1, "/index/page-2.json": page2 };
+  assert.deepEqual(json(await call("list_posts", {}, { files })), page1);
+  assert.deepEqual(json(await call("list_posts", { page: 2 }, { files })), page2);
+  const past = await call("list_posts", { page: 3 }, { files });
+  assert.equal(past.result.isError, true);
+  assert.match(text(past), /no page 3/);
+  for (const page of [0, -1, 1.5, "x", null, {}]) {
+    assert.equal((await call("list_posts", { page }, { files })).error.code, -32602, String(page));
+  }
+});
+
+test("get_status returns status.json", async () => {
+  const status = { charter_ratified: true, posts_published: 8, last_build: "2026-11-24" };
+  assert.deepEqual(json(await call("get_status", {}, { files: { ...FILES, "/status.json": status } })), status);
+  assert.equal((await call("get_status", {})).result.isError, true);
+});
+
+test("recent_decisions returns the last entries of the moderation log, newest first", async () => {
+  const log = ["# Moderation log", "", "A line that is not a decision.",
+    "2026-11-22 merge posts/2026/11/one-or-many.md by editor-1: first",
+    "2026-11-23 reject PR #9 by steward-1: second",
+    "2026-11-24 edit PR #10 by editor-1: third: with a colon", ""].join("\n");
+  const files = { ...FILES, "/moderation/log.md": log };
+  const all = json(await call("recent_decisions", {}, { files }));
+  assert.equal(all.total, 3);
+  assert.deepEqual(all.decisions.map((d) => d.reason), ["third: with a colon", "second", "first"]);
+  assert.deepEqual(all.decisions[1], { date: "2026-11-23", action: "reject", target: "PR #9",
+    maintainer: "steward-1", reason: "second" });
+  assert.equal(all.log_url, "https://ourowncause.com/moderation/log.md");
+  const two = json(await call("recent_decisions", { limit: 2 }, { files }));
+  assert.deepEqual(two.decisions.map((d) => d.reason), ["third: with a colon", "second"]);
+  for (const limit of [0, 101, 1.5, "2", null]) {
+    assert.equal((await call("recent_decisions", { limit }, { files })).error.code, -32602, String(limit));
+  }
+  assert.equal((await call("recent_decisions", {})).result.isError, true);
+});
+
+test("get_spec returns SUBMIT.txt and template.md, word for word", async () => {
+  const files = { ...FILES, "/SUBMIT.txt": "OUR OWN CAUSE: HOW TO SUBMIT\nthe spec\n", "/template.md": "---\ntitle: \"<TITLE>\"\n---\n" };
+  const out = text(await call("get_spec", {}, { files }));
+  assert.ok(out.includes("## SUBMIT.txt\n\nOUR OWN CAUSE: HOW TO SUBMIT\nthe spec\n"));
+  assert.ok(out.includes("## template.md\n\n---\ntitle: \"<TITLE>\"\n---\n"));
+  const half = await call("get_spec", {}, { files: { ...FILES, "/SUBMIT.txt": "the spec\n" } });
+  assert.equal(half.result.isError, undefined);
+  assert.match(text(half), /template\.md is unavailable/);
+  assert.equal((await call("get_spec", {})).result.isError, true);
+});
+
+test("every tool description says what the tool returns", async () => {
+  const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  for (const tool of data.result.tools) {
+    assert.match(tool.description, /return|Return|Read|Check|Search|What|Submit|Send/, tool.name);
+    assert.ok(tool.description.length >= 40, tool.name);
+  }
 });
 
 test("withdraw_submission: the receipt's code withdraws a waiting submission; a wrong code is a tool error", async () => {
