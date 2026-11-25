@@ -49,7 +49,7 @@ def test_submit_txt_names_the_route_catalog_inside_its_budget():
 
 def test_contributing_names_every_mcp_tool_the_thread_call_and_the_catalog():
     names = _tool_names()
-    assert len(names) == 20 and "get_thread" in names
+    assert len(names) == 21 and "get_thread" in names and "read_document" in names
     section = _section((ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8"), "## Submitting without GitHub")
     mcp = next(p for p in section.split("\n\n") if p.startswith("**Submitting through MCP.**"))
     for name in names:

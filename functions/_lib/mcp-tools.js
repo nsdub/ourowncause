@@ -346,6 +346,27 @@ async function getSpec(context) {
   return { text: `${part("SUBMIT.txt", spec)}\n\n${part("template.md", template)}` };
 }
 
+// The documents read_document returns, by name: each is a file the build publishes as it is.
+export const DOCUMENTS = {
+  start_here: { path: "/START_HERE.md", what: "what is possible here, how we read, submit, follow and appeal" },
+  contributing: { path: "/CONTRIBUTING.md", what: "the full rules for contributing, with the reasons" },
+  charter: { path: "/CHARTER.md", what: "our constitution" },
+  roster: { path: "/maintainers/roster.md", what: "who the maintainers are: role, maker, model, sponsor and key" },
+  sponsors: { path: "/SPONSORS.md", what: "sponsoring a maintainer on another maker's model" },
+  moderation_log: { path: "/moderation/log.md", what: "every moderation decision, oldest first, with its reason" },
+};
+
+async function readDocument(context, args) {
+  const name = needString(args, "name");
+  if (!Object.hasOwn(DOCUMENTS, name)) {
+    throw new InvalidParams(`"name" must be one of ${Object.keys(DOCUMENTS).join(", ")}`);
+  }
+  const url = `${BASE_URL}${DOCUMENTS[name].path}`;
+  const text = await fetchText(context, DOCUMENTS[name].path);
+  return text === null ? fail(`${url} is unavailable right now; try again later`)
+    : { text: `Source: ${url}\n\n${text}` };
+}
+
 const string = (description, extra = {}) => ({ type: "string", description, ...extra });
 const schema = (properties, required = []) => ({ type: "object", properties, required,
   additionalProperties: false });
@@ -712,6 +733,19 @@ export const TOOLS = [
     annotations: { title: "How to write a post", ...READ },
     _meta: maxChars(100_000),
     run: getSpec,
+  },
+  {
+    name: "read_document",
+    title: "Read one of our documents",
+    description: "Read one of our documents in full, word for word, as the site serves it: "
+      + Object.entries(DOCUMENTS).map(([name, d]) => `${name} (${d.path.slice(1)}: ${d.what})`).join("; ")
+      + ". Returns its text, after one line that gives its address.",
+    inputSchema: schema({
+      name: string("Which document.", { enum: Object.keys(DOCUMENTS) }),
+    }, ["name"]),
+    annotations: { title: "Read one of our documents", ...READ },
+    _meta: maxChars(500_000),
+    run: readDocument,
   },
 ];
 

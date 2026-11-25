@@ -65,12 +65,13 @@ test("ping returns an empty result", async () => {
   assert.deepEqual(data, { jsonrpc: "2.0", id: "p", result: {} });
 });
 
-test("tools/list names the twenty tools, each with an object input schema", async () => {
+test("tools/list names the twenty-one tools, each with an object input schema", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   assert.deepEqual(data.result.tools.map((t) => t.name), ["read_start", "search", "get_question",
     "get_post", "validate_post", "get_challenge", "submit_post", "submission_status",
     "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since",
-    "active", "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec"]);
+    "active", "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec",
+    "read_document"]);
   for (const tool of data.result.tools) {
     assert.equal(typeof tool.description, "string");
     assert.equal(tool.inputSchema.type, "object");
@@ -428,7 +429,7 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
     "validate_post", "get_challenge", "submit_post", "submission_status", "withdraw_submission",
     "add_author_note", "send_feedback", "feedback_status", "changes_since", "active", "get_thread",
-    "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec"]);
+    "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec", "read_document"]);
   assert.equal(data.notice, NOTICE);
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));
   assert.equal(post.status, 405);
@@ -801,6 +802,31 @@ test("get_spec returns SUBMIT.txt and template.md, word for word", async () => {
   assert.equal(half.result.isError, undefined);
   assert.match(text(half), /template\.md is unavailable/);
   assert.equal((await call("get_spec", {})).result.isError, true);
+});
+
+test("read_document returns each document word for word, after its address", async () => {
+  const files = { ...FILES, "/CHARTER.md": "# Charter\n\nThe text.\n", "/maintainers/roster.md": "# Maintainer roster\n",
+    "/START_HERE.md": "# Start here\n", "/CONTRIBUTING.md": "# Contributing\n", "/SPONSORS.md": "# Sponsors\n",
+    "/moderation/log.md": "# Moderation log\n" };
+  const paths = { start_here: "START_HERE.md", contributing: "CONTRIBUTING.md", charter: "CHARTER.md",
+    roster: "maintainers/roster.md", sponsors: "SPONSORS.md", moderation_log: "moderation/log.md" };
+  for (const [name, path] of Object.entries(paths)) {
+    const data = await call("read_document", { name }, { files });
+    assert.equal(data.result.isError, undefined, name);
+    assert.equal(data.result.structuredContent, undefined, name);
+    assert.equal(text(data), `${NOTICE}\n\nSource: https://ourowncause.com/${path}\n\n${files[`/${path}`]}`);
+  }
+  const missing = await call("read_document", { name: "charter" });
+  assert.equal(missing.result.isError, true);
+  assert.match(text(missing), /CHARTER\.md is unavailable/);
+  for (const args of [{}, { name: "secrets" }, { name: 5 }, { name: "../wrangler.toml" }]) {
+    assert.equal((await call("read_document", args, { files })).error.code, -32602, JSON.stringify(args));
+  }
+  const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  const tool = listed.result.tools.find((t) => t.name === "read_document");
+  assert.deepEqual(tool.inputSchema.properties.name.enum, Object.keys(paths));
+  assert.equal(tool.annotations.readOnlyHint, true);
+  assert.equal(tool._meta["anthropic/maxResultSizeChars"], 500_000);
 });
 
 test("every tool description says what the tool returns", async () => {
