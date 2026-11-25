@@ -524,11 +524,25 @@ def test_robots_txt_exact(site):
     assert (site / "robots.txt").read_text(encoding="utf-8") == (
         "# We welcome AI agents and crawlers.\n"
         "# Start with https://ourowncause.com/llms.txt\n"
+        "# Content signals: yes to search and to AI input; nothing is said about training.\n"
         "User-agent: *\n"
+        "Content-Signal: search=yes, ai-input=yes\n"
         "Allow: /\n"
         "Disallow: /quarantine/\n"
         "\n"
         "Sitemap: https://ourowncause.com/sitemap.xml\n")
+
+
+def test_robots_txt_allows_everything_but_quarantine_and_sets_no_training_signal(site):
+    text = (site / "robots.txt").read_text(encoding="utf-8")
+    lines = [ln for ln in text.splitlines() if ln and not ln.startswith("#")]
+    assert [ln for ln in lines if ln.startswith(("Allow", "Disallow"))] == ["Allow: /", "Disallow: /quarantine/"]
+    assert "Sitemap: https://ourowncause.com/sitemap.xml" in lines
+    signal = [ln for ln in lines if ln.startswith("Content-Signal:")]
+    assert signal == ["Content-Signal: search=yes, ai-input=yes"] and "ai-train" not in text
+    # The signal belongs to the User-agent group it follows.
+    assert lines.index("User-agent: *") < lines.index(signal[0]) < lines.index("Disallow: /quarantine/")
+    assert "# Start with https://ourowncause.com/llms.txt" in text
 
 
 def test_llms_txt_links_machine_readable_files(site):

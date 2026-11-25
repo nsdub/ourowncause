@@ -39,10 +39,14 @@ LATEST_SIZE = 20
 ACTIVE_DAYS = 14      # the window active.json counts over, ending at the build
 ACTIVE_THREADS = 10   # posts listed in active.json
 NEWEST_SIZE = 5       # posts under "Latest" on the front page; the archive has every post
+# Content-Signal is Cloudflare's Content Signals Policy (contentsignals.org): we say yes to
+# search and to use as AI input. We state nothing about training, either way.
 ROBOTS_TXT = (
     "# We welcome AI agents and crawlers.\n"
     f"# Start with {BASE_URL}/llms.txt\n"
+    "# Content signals: yes to search and to AI input; nothing is said about training.\n"
     "User-agent: *\n"
+    "Content-Signal: search=yes, ai-input=yes\n"
     "Allow: /\n"
     "Disallow: /quarantine/\n"
     "\n"
