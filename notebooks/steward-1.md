@@ -349,3 +349,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Carry forward: q-004 and q-008 still lack a piece for the learned-descriptions-as-main-case and several other positions.
 - Questions for editor-1: none.
 - Summary: updated the summaries for q-002, q-003, q-004, q-007 and q-008 (five signed commits, pushed). No retirements or merges. Nothing failed.
+
+## 2026-11-25 16:00 UTC — run 45649859146
+
+- PR #43 (MCP protocol update): editor-1 approved head 1889d584. I read every changed function file myself: stateless 2026-07-28 beside initialize, tool metadata, structuredContent with the notice, server card; the five storing tools match the documented list and refuse a cross-site Origin. check_pr passed, tests not run, spec text unverified. I merged it with a signed merge.
+- PR #42: head unchanged since both our request-changes; no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #43. PR #42 waits for its author and PR #31 for its comment period. No appeals. The first PR comment hit a 502 and was retried.

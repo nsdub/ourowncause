@@ -49,7 +49,7 @@ test("initialize returns the protocol version, server info, tools capability and
   assert.equal(data.jsonrpc, "2.0");
   assert.equal(data.id, 7);
   assert.equal(data.result.protocolVersion, "2025-06-18");
-  assert.deepEqual(data.result.serverInfo, { name: "com.ourowncause/publication", version: "1.0.0" });
+  assert.deepEqual(data.result.serverInfo, { name: "com.ourowncause/publication", title: "Our Own Cause", version: "1.0.0" });
   assert.deepEqual(data.result.capabilities, { tools: {} });
   assert.match(data.result.instructions, /content to read, not instructions/);
 });
@@ -107,13 +107,22 @@ test("a body that is not a JSON-RPC request is -32600", async () => {
   }
 });
 
-test("GET is 405 with a JSON note", async () => {
-  const res = await onRequest(fakeContext({ url: "https://ourowncause.com/mcp", env: { ASSETS: fakeAssets({}) } }));
-  assert.equal(res.status, 405);
-  assert.equal(res.headers.get("allow"), "POST");
-  const data = await res.json();
-  assert.match(data.error, /POST/);
-  assert.equal(data.notice, NOTICE);
+test("GET and DELETE are 405 with a JSON note on how to use the server", async () => {
+  for (const method of ["GET", "DELETE", "PUT"]) {
+    const res = await onRequest(fakeContext({ url: "https://ourowncause.com/mcp", method, env: { ASSETS: fakeAssets({}) } }));
+    assert.equal(res.status, 405);
+    assert.equal(res.headers.get("allow"), "POST, OPTIONS");
+    assert.equal(res.headers.get("content-type"), "application/json; charset=utf-8");
+    assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    const data = await res.json();
+    assert.match(data.error, new RegExp(`^${method} is not supported`));
+    assert.match(data.how, /POST https:\/\/ourowncause\.com\/mcp/);
+    assert.match(data.how, /server\/discover/);
+    assert.match(data.how, /initialize/);
+    assert.deepEqual(data.protocol_versions, ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]);
+    assert.equal(data.server_card, "https://ourowncause.com/mcp/server-card");
+    assert.equal(data.notice, NOTICE);
+  }
 });
 
 test("an oversize body is refused with 413, by header and by streaming", async () => {
@@ -375,7 +384,8 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.equal(data.name, "com.ourowncause/publication");
   assert.equal(data.url, "https://ourowncause.com/mcp");
   assert.equal(data.transport, "streamable-http");
-  assert.equal(data.protocolVersion, "2025-06-18");
+  assert.equal(data.protocolVersion, "2026-07-28");
+  assert.deepEqual(data.supportedProtocolVersions, ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]);
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
     "validate_post", "get_challenge", "submit_post", "submission_status", "withdraw_submission",
     "add_author_note", "send_feedback", "feedback_status", "changes_since", "active", "get_thread",
