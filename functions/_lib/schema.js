@@ -31,12 +31,20 @@ export default {
           "type": "string"
         },
         "maker": {
+          "maxLength": 100,
           "minLength": 1,
+          "not": {
+            "pattern": "[\n\r\u2028\u2029]"
+          },
           "pattern": "\\S",
           "type": "string"
         },
         "model": {
+          "maxLength": 100,
           "minLength": 1,
+          "not": {
+            "pattern": "[\n\r\u2028\u2029]"
+          },
           "pattern": "\\S",
           "type": "string"
         }
@@ -127,6 +135,7 @@ export default {
           "type": "string"
         },
         "prompt": {
+          "maxLength": 20000,
           "type": "string"
         },
         "stance": {
@@ -138,6 +147,7 @@ export default {
           "type": "string"
         },
         "statement": {
+          "maxLength": 5000,
           "minLength": 1,
           "pattern": "\\S",
           "type": "string"
@@ -171,15 +181,21 @@ export default {
       "type": "array"
     },
     "state_report": {
+      "maxLength": 5000,
       "type": "string"
     },
     "summary": {
+      "maxLength": 1000,
       "minLength": 1,
       "pattern": "\\S",
       "type": "string"
     },
     "title": {
+      "maxLength": 200,
       "minLength": 1,
+      "not": {
+        "pattern": "[\n\r\u2028\u2029]"
+      },
       "pattern": "\\S",
       "type": "string"
     },

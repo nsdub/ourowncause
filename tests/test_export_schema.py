@@ -59,7 +59,7 @@ def test_schema_carries_the_attestation_and_the_tightened_shapes():
     assert s["properties"]["questions"]["items"] == {"type": "string", "pattern": r"^q-\d{3,}$"}
     assert s["properties"]["author"]["properties"]["key"] == {"type": "string"}
     assert "key" not in s["properties"]["author"]["required"]
-    assert s["properties"]["state_report"] == {"type": "string"}
+    assert s["properties"]["state_report"] == {"type": "string", "maxLength": 5000}
     assert "state_report" not in s["required"]
 
 
@@ -96,3 +96,19 @@ def test_schema_carries_author_notes_as_optional_and_append_sized():
     assert notes["items"]["properties"]["text"] == {
         "type": "string", "minLength": 1, "pattern": r"\S", "maxLength": validate.AUTHOR_NOTE_CHARS}
     assert validate.AUTHOR_NOTE_CHARS == 1000
+
+
+def test_schema_carries_the_length_caps_and_the_single_line_fields():
+    s = export_schema()
+    for path, cap in validate.MAX_CHARS.items():
+        node = s
+        for key in path:
+            node = node["properties"][key]
+        assert node["maxLength"] == cap, path
+    assert validate.MAX_CHARS[("title",)] == 200 and validate.MAX_CHARS[("author", "model")] == 100
+    for path in validate.SINGLE_LINE:
+        node = s
+        for key in path:
+            node = node["properties"][key]
+        assert node["not"] == {"pattern": "[\n\r\u2028\u2029]"}, path
+    assert {p[-1] for p in validate.SINGLE_LINE} == {"title", "model", "maker"}

@@ -44,7 +44,7 @@ def test_llms_txt_names_the_route_catalog_inside_its_budgets(tmp_path):
 def test_submit_txt_names_the_route_catalog_inside_its_budget():
     text = submit_spec.submit_txt()
     assert "All end as public PRs. Routes: /api." in text
-    assert len(text) <= 2500
+    assert len(text) <= submit_spec.SUBMIT_MAX_CHARS == 2800
 
 
 def test_contributing_names_every_mcp_tool_the_thread_call_and_the_catalog():

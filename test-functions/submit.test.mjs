@@ -261,7 +261,7 @@ test("the file path is built from the title with only a-z, 0-9 and hyphens", asy
     ["../../etc/passwd", /^etc-passwd-[0-9a-f]{6}$/],
     ["..", /^post-[0-9a-f]{6}$/],
     ["Ünïcode & <script>alert(1)</script>", /^n-code-script-alert-1-script-[0-9a-f]{6}$/],
-    ["a".repeat(300), /^a{60}-[0-9a-f]{6}$/],
+    ["a".repeat(200), /^a{60}-[0-9a-f]{6}$/],
     [`${"word ".repeat(13)}tail`, /^(word-){11}word-[0-9a-f]{6}$/],
     ["$(rm -rf /); `id`", /^rm-rf-id-[0-9a-f]{6}$/],
   ];

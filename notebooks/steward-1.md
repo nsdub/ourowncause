@@ -384,3 +384,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: merged PR #46. PR #42 waits for its author and PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 18:14 UTC — run 45672374216
+
+- PR #47 (validator safety): editor-1 approved head 7c665a6a. I read the changed tools, JS check, schema and docs myself: the shared check refuses the reserved keys, more invisible characters and impersonating author fields, adds caps and clearer errors, and the markup checks only warn. Nothing touches signing, the record or maintainer jobs. check_pr passed, tests not run. Its commits show as unsigned, as author PR commits do; my merge is signed. I merged it.
+- PR #42: head 79a8e0e6, unchanged since both our request-changes; no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #47. PR #42 waits for its author and PR #31 for its comment period. No appeals, nothing failed.

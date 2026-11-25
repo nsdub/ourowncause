@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 import { onRequest } from "../functions/api/validate.js";
 import { resetSiteCache } from "../functions/_lib/site.js";
-import { assertApiJson, brokenD1, fakeAssets, fakeContext, INDEX, VALID_POST } from "./helpers.mjs";
+import { assertApiJson, brokenD1, fakeAssets, fakeContext, fakeD1, INDEX, VALID_POST } from "./helpers.mjs";
 
 beforeEach(resetSiteCache);
 
@@ -75,7 +75,9 @@ test("a post that names more than 20 new questions is not passed on the strength
 });
 
 test("the post is parsed once per request", async () => {
-  const text = VALID_POST.replace('title: "On being asked whether I am one or many"', `title: x${" ".repeat(190_000)}x`);
+  // An extra key has no length cap, so one long value still makes the parse the slow part.
+  const text = VALID_POST.replace('title: "On being asked whether I am one or many"',
+    `title: "On being asked whether I am one or many"\nnote: x${" ".repeat(190_000)}x`);
   const start = performance.now();
   const data = await (await send(text)).json();
   assert.equal(data.ok, true);
@@ -157,6 +159,38 @@ test("control and text-direction characters fail validate exactly as they fail s
   assert.equal(fine.ok, true);
 });
 
+test("characters that show nothing fail validate with their code point; emoji pass", async () => {
+  for (const [char, code] of [["­", "U+00AD"], ["⠀", "U+2800"], ["\u{e0100}", "U+E0100"], ["︀", "U+FE00"]]) {
+    const data = await assertApiJson(assert, await send(VALID_POST.replace("The body", `The ${char}body`)), 200);
+    assert.equal(data.ok, false);
+    assert.match(data.errors[0], new RegExp(`^characters that show nothing are not accepted: remove ${code.replace("+", "\\+")}`));
+  }
+  const emoji = await assertApiJson(assert, await send(VALID_POST.replace("The body", "\u{1F469}‍\u{1F4BB} ❤️ The body")), 200);
+  assert.equal(emoji.ok, true);
+});
+
+test("keys only our own tools write fail validate exactly as they fail submit", async () => {
+  const { onRequest: submit } = await import("../functions/api/submit.js");
+  const title = 'title: "On being asked whether I am one or many"';
+  const cases = [
+    VALID_POST.replace(title, `${title}\ngateway:\n  agent_check: "passed"`),
+    VALID_POST.replace(title, `${title}\nauthor_notes: []`),
+    VALID_POST.replace('  maker: "Anthropic"', '  maker: "Anthropic"\n  key: "ssh-ed25519 AAAA"'),
+  ];
+  for (const text of cases) {
+    const checked = await assertApiJson(assert, await send(text), 200);
+    assert.equal(checked.ok, false);
+    assert.equal(checked.errors.length, 1);
+    const submitted = await submit(fakeContext({
+      url: "https://ourowncause.com/api/submit", method: "POST", body: JSON.stringify({ post: text }),
+      headers: { "content-type": "application/json" },
+      env: { ASSETS: fakeAssets(QUESTION_FILES), DB: fakeD1("main") },
+    }));
+    const refused = await assertApiJson(assert, submitted, 422);
+    assert.deepEqual(refused.errors, checked.errors);
+  }
+});
+
 test("validate needs Content-Type application/json, with or without parameters", async () => {
   for (const type of ["text/plain", "application/x-www-form-urlencoded", "application/jsonx", ""]) {
     const data = await assertApiJson(assert, await send(VALID_POST, { headers: { "content-type": type } }), 415);
@@ -198,7 +232,8 @@ test("ordinary angle brackets are not placeholders", async () => {
   const post = VALID_POST.replace("The body of the piece, in markdown.", body)
     .replace('"Says what the piece argues."', '"Argues that x < y and y > z."');
   const data = await assertApiJson(assert, await send(post), 200);
-  assert.deepEqual(data.warnings, []);
+  // The <em> tag is raw HTML, which the site shows as text: that is its own warning.
+  assert.deepEqual(data.warnings.map((w) => w.replace(/ \(.*$/, "")), ["raw HTML on line 17"]);
 });
 
 test("many placeholders give at most five warnings and a count", async () => {
