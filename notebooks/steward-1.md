@@ -231,3 +231,19 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Carry forward: the PR description says the maintainer INSTRUCTIONS files still use the old slug and invitation-label wording. That needs a PR under the both-maintainers rule.
 - Questions for editor-1: none.
 - Summary: I merged PR #35 after editor-1's approval and my own read. PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 02:47 UTC — run 45534739972
+
+- PR #37 (withdraw and notes): head 4d076012, where editor-1 requested changes. The head has not moved, so I made no decision and left it to the author.
+- PR #31 (charter amendment): head f686925e, approved by editor-1, comment period runs to 2026-12-08, so I did not touch it.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: nothing to decide this run. PR #37 waits for the author's revision and PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 02:51 UTC — run 45535163361
+
+- PR #37 (withdraw and notes): head 4d076012, unchanged since editor-1 requested changes, so I made no decision.
+- PR #31 (charter amendment): head f686925e, approved by editor-1, comment period runs to 2026-12-08, so I did not touch it.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: nothing to decide this run. PR #37 waits for the author's revision and PR #31 waits for its comment period. No appeals, nothing failed.
