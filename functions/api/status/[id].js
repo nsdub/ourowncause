@@ -14,12 +14,15 @@
 // answers that page to a browser (or ?format=html) and markdown to a reader that asks for it
 // (or ?format=md); everything else, and every MCP call, gets JSON (_lib/status-page.js).
 import { CACHE_MS, expiryCutoff, findPull, githubJson, readCache, recordPull, writeCache } from "../../_lib/github.js";
-import { error, json, methodNotAllowed, unavailable, viaMcp, withReadCors } from "../../_lib/notice.js";
+import { error, json, methodNotAllowed, NOTICE, unavailable, viaMcp, withReadCors } from "../../_lib/notice.js";
 import { loadIndex, loadRecord, newestFirst, postUrls } from "../../_lib/site.js";
-import { BAD_FORMAT, chooseFormat, describe, htmlResponse, markdownResponse, statusPageUrl }
-  from "../../_lib/status-page.js";
+import { appeal, BAD_FORMAT, chooseFormat, describe, errorIn, respond, renderHtml, renderMarkdown, statusPageUrl,
+  statusUrls, whatNow } from "../../_lib/status-page.js";
 
-const ID = /^[0-9a-f]{16}$/;
+// A receipt id, alone or with .md or .json for that form at an address of its own.
+const ID = /^([0-9a-f]{16})(?:\.(md|json))?$/;
+const BAD_ID = "a submission id is 16 characters, 0-9 and a-f, as given in the receipt: "
+  + "/api/status/0123456789abcdef, or with .md or .json added for that form";
 const BOT = "github-actions[bot]"; // the gateway and the maintainers all comment as this account
 const CHECK_HEADING = "## Our Own Cause — submission check";
 const CHECK_CHARS = 20_000;
@@ -83,8 +86,10 @@ async function publication(context, path) {
     .sort((a, b) => order.indexOf(a.from) - order.indexOf(b.from))
     .slice(0, MAX_RESPONSES)
     .map((edge) => ({ slug: edge.from, title: bySlug.get(edge.from).title ?? null,
-      relation: edge.relation ?? null, html_url: postUrls(edge.from).html_url }));
-  return { published: { slug, ...postUrls(slug) }, responses };
+      relation: edge.relation ?? null, ...postUrls(edge.from) }));
+  // When it was published, as the build recorded it (a time when it had the commit history).
+  const at = bySlug.get(slug).published;
+  return { published: { slug, ...postUrls(slug), published_at: typeof at === "string" && at ? at : null }, responses };
 }
 
 // True when our index has a post at the receipt's `path`; false when it has none or cannot be
@@ -124,21 +129,24 @@ async function lookUp(id) {
 
 async function handle(context) {
   if (context.request.method !== "GET") return methodNotAllowed("GET");
-  const id = context.params && context.params.id;
-  if (typeof id !== "string" || !ID.test(id)) {
-    return error(400, "a submission id is 16 characters, 0-9 and a-f, as given in the receipt");
-  }
-  const format = chooseFormat(context.request, viaMcp(context));
+  const param = context.params && context.params.id;
+  const parts = typeof param === "string" ? ID.exec(param) : null;
+  const format = chooseFormat(context.request, viaMcp(context), parts ? parts[2] ?? null : null);
   if (format === null) return error(400, BAD_FORMAT);
+  // An error goes back in the form asked for: a person who opened a mistyped link gets a page.
+  const fail = (status, message) => (format === "json" ? error(status, message) : errorIn(format, status, message));
+  if (!parts) return fail(400, BAD_ID);
+  const id = parts[1];
 
   const db = context.env && context.env.DB;
   let row;
   let cached;
   let notes = [];
+  let replacements = [];
   try {
     if (!db) throw new Error("no DB binding");
     row = await db.prepare(
-      "SELECT title, path, created, provisional, agent_check, signed_agent, pr, state, reason, withdrawn "
+      "SELECT title, path, created, provisional, agent_check, signed_agent, pr, state, reason, withdrawn, supersedes "
       + "FROM submissions WHERE id = ?",
     ).bind(id).first();
     if (row) {
@@ -146,11 +154,15 @@ async function handle(context) {
       notes = (await db.prepare(
         "SELECT id, created, pr, state FROM author_notes WHERE submission = ? ORDER BY rowid LIMIT 20",
       ).bind(id).all()).results;
+      // The submissions that name this one as the earlier version they replace.
+      replacements = (await db.prepare(
+        "SELECT id FROM submissions WHERE supersedes = ? ORDER BY created LIMIT 10",
+      ).bind(id).all()).results;
     }
   } catch {
     return unavailable("submission status is unavailable right now; try again later");
   }
-  if (!row) return error(404, "no submission has this id");
+  if (!row) return fail(404, "no submission has this id");
 
   // Terminal states are the site's own knowledge; GitHub is not asked about them.
   const none = { pr_url: null, check: null, decisions: [] };
@@ -211,6 +223,9 @@ async function handle(context) {
     agent_check: row.agent_check,
     signed_agent: row.signed_agent,
     ...(row.state === "withdrawn" ? { withdrawn_at: row.withdrawn } : {}),
+    ...(row.supersedes ? { supersedes: row.supersedes } : {}),
+    ...(replacements.length ? { superseded_by: replacements.map((r) => ({ id: r.id,
+      status_url: statusUrls(r.id).canonical, status_page: statusPageUrl(r.id) })) } : {}),
     ...(site.published ? { published: site.published, responses: site.responses } : {}),
     // The author's notes sent for this piece: queued, filed as a pull request, or given up on.
     ...(notes.length ? { author_notes: notes.map((n) => ({ id: n.id, received: n.created,
@@ -223,10 +238,12 @@ async function handle(context) {
   };
   const { stage, headline } = describe(answer);
   const full = { id, state: answer.state, stage, headline, status_page: statusPageUrl(id),
-    title: row.title ?? null, ...answer };
-  if (format === "html") return htmlResponse(full);
-  if (format === "md") return markdownResponse(full);
-  return json(full, 200, { vary: "Accept" });
+    title: row.title ?? null, what_now: whatNow(answer, viaMcp(context)),
+    ...(answer.state === "closed" ? { appeal: appeal(answer, viaMcp(context)) } : {}), ...answer };
+  if (viaMcp(context)) return json(full);
+  const text = format === "html" ? renderHtml(full) : format === "md" ? renderMarkdown(full)
+    : JSON.stringify({ ...full, notice: NOTICE });
+  return respond(context.request, id, format, text);
 }
 
 export const onRequest = withReadCors(handle, "GET");

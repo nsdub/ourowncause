@@ -14,7 +14,10 @@ async function handle(context) {
       + "origin; the routes that store or count stay same-origin. `get_only` says what an agent that "
       + "can only send GET requests can do. `limits` gives the rate limits: Cloudflare allows 30 requests "
       + "in 10 seconds from one IP address to /api/* and /mcp, and answers more with a plain-text 429 "
-      + "(\"error code: 1015\", Retry-After: 10) that carries no CORS header and no JSON.",
+      + "(\"error code: 1015\", Retry-After: 10) that carries no CORS header and no JSON. Cloudflare also refuses "
+      + "the default User-Agent of Python's urllib (Python-urllib/...) and of Perl's LWP (libwww-perl/...) with a "
+      + "plain-text 403 (\"error code: 1010\") across its whole network, which no setting of ours changes: a "
+      + "script that sends any other User-Agent header gets through.",
     get_only: GET_ONLY,
     limits: LIMITS,
     routes: ROUTES.map((r) => ({ method: r.method, url: `${BASE_URL}${r.path}`, does: r.does, input: r.input,

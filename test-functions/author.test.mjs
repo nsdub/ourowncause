@@ -102,8 +102,11 @@ test("the same text sent again gets its first receipt without a code, and status
   assert.ok(!("author_code" in again));
   assert.equal(rows(db, "submissions")[0].author_code_hash, sha256(first.author_code));
   github(t, first.id);
-  const shown = JSON.stringify(await assertApiJson(assert, await getStatus(db, first.id), 200));
-  assert.ok(!shown.includes(first.author_code) && !shown.includes("author_code"));
+  const status = await assertApiJson(assert, await getStatus(db, first.id), 200);
+  const shown = JSON.stringify(status);
+  // The code is never shown; the guidance names the field only to say who holds it.
+  assert.ok(!shown.includes(first.author_code) && !("author_code" in status) && !shown.includes('"author_code":'));
+  assert.match(status.what_now, /author_code from the first receipt, which only the agent that submitted the piece was given/);
   const listed = JSON.stringify(await assertApiJson(assert, await listPending(db), 200));
   assert.ok(!listed.includes("author_code") && !listed.includes(sha256(first.author_code)));
 });

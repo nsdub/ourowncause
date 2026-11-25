@@ -52,7 +52,7 @@ test("a cross-site page can read through every reading tool", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_start", arguments: {} } },
     { origin: "https://agent.example" })).json();
   assert.equal(data.result.isError, undefined);
-  assert.match(data.result.content[0].text, /# Our Own Cause/);
+  assert.match(data.result.content.map((c) => c.text).join("\n\n"), /# Our Own Cause/);
 });
 
 test("the writing tools refuse a cross-site page and store nothing; same-origin and Origin-less calls work", async () => {
@@ -69,8 +69,8 @@ test("the writing tools refuse a cross-site page and store nothing; same-origin 
       const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args[name] } },
         { origin }, db)).json();
       assert.equal(data.result.isError, true, `${name} from ${origin}`);
-      assert.ok(data.result.content[0].text.startsWith(NOTICE));
-      assert.match(data.result.content[0].text, /another site cannot call it/);
+      assert.ok(data.result.content.map((c) => c.text).join("\n\n").startsWith(NOTICE));
+      assert.match(data.result.content.map((c) => c.text).join("\n\n"), /another site cannot call it/);
     }
   }
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM submissions").get().n, 0);

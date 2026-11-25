@@ -37,7 +37,14 @@ const call = async (name, args, options) => {
   assert.equal(res.status, 200);
   return res.json();
 };
-const text = (data) => data.result.content[0].text;
+// The text blocks as one string: the notice block, then the answer block.
+const text = (data) => data.result.content.map((c) => c.text).join("\n\n");
+// The answer block's JSON without the notice field it carries, as structuredContent does.
+const parsed = (raw) => {
+  const { notice, ...rest } = JSON.parse(raw);
+  if (notice !== undefined) assert.equal(notice, NOTICE);
+  return rest;
+};
 
 test("initialize returns the protocol version, server info, tools capability and instructions", async () => {
   const res = await rpc({ jsonrpc: "2.0", id: 7, method: "initialize",
@@ -189,7 +196,7 @@ test("POST needs Content-Type application/json, with or without charset", async 
   assert.equal(ok.status, 200);
 });
 
-test("tools/call with an unknown tool or bad params is -32602", async () => {
+test("tools/call with an unknown tool, no name or non-object arguments is -32602", async () => {
   assert.equal((await call("nope", {})).error.code, -32602);
   const noName = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/call", params: {} })).json();
   assert.equal(noName.error.code, -32602);
@@ -214,7 +221,7 @@ test("read_start is a tool error when the start page is missing or the home page
 test("search reuses the endpoint's logic", async () => {
   const data = await call("search", { q: "AUTOCOMPLETE predict" });
   assert.ok(text(data).startsWith(NOTICE));
-  const body = JSON.parse(text(data).slice(NOTICE.length));
+  const body = parsed(text(data).slice(NOTICE.length));
   assert.deepEqual(body.results.map((r) => r.slug), ["2026/12/the-autocomplete-objection"]);
   assert.equal(body.total, 1);
   const none = JSON.parse(text(await call("search", { q: ".*(", page: 1 })).slice(NOTICE.length));
@@ -227,10 +234,10 @@ test("search reuses the endpoint's logic", async () => {
   assert.deepEqual(withQuestions.result.structuredContent.results.map((r) => r.slug), ["2026/11/one-or-many"]);
 });
 
-test("search errors: missing, empty or wrong-type q and bad page are -32602; no index is a tool error", async () => {
+test("search errors: missing, empty or wrong-type q and bad page are tool errors; no index is a tool error", async () => {
   for (const args of [{}, { q: "  " }, { q: 5 }, { q: "a", page: 0 }, { q: "a", page: "x" },
     { q: "a", page: [1] }, { q: "a", page: { a: 1 } }, { q: "a", page: 1.5 }, { q: "a", page: null }]) {
-    assert.equal((await call("search", args)).error.code, -32602, JSON.stringify(args));
+    assert.equal((await call("search", args)).result.isError, true, JSON.stringify(args));
   }
   const down = await call("search", { q: "a" }, { files: {} });
   assert.equal(down.result.isError, true);
@@ -245,12 +252,12 @@ test("get_question returns the question page and its index", async () => {
   }
 });
 
-test("get_question: unknown id is a tool error, bad id is -32602, missing markdown still returns the index", async () => {
+test("get_question: unknown id is a tool error, bad id is a tool error, missing markdown still returns the index", async () => {
   const missing = await call("get_question", { id: "q-999" });
   assert.equal(missing.result.isError, true);
   assert.match(text(missing), /question not found: q-999/);
-  assert.equal((await call("get_question", { id: "../etc" })).error.code, -32602);
-  assert.equal((await call("get_question", { id: 1 })).error.code, -32602);
+  assert.equal((await call("get_question", { id: "../etc" })).result.isError, true);
+  assert.equal((await call("get_question", { id: 1 })).result.isError, true);
   const { "/questions/q-001-am-i-one-or-many.md": _, ...noMd } = FILES;
   const partial = await call("get_question", { id: "q-001" }, { files: noMd });
   assert.equal(partial.result.isError, undefined);
@@ -264,14 +271,14 @@ test("get_post returns the metadata and the markdown", async () => {
   assert.match(text(data), /The body of the post\./);
 });
 
-test("get_post: not found (including the home page answer) is a tool error; bad slugs are -32602", async () => {
+test("get_post: not found (including the home page answer) is a tool error; bad slugs are tool errors", async () => {
   const missing = await call("get_post", { slug: "2026/11/nope" });
   assert.equal(missing.result.isError, true);
   assert.match(text(missing), /post not found/);
   for (const slug of ["../index", "A/B", "a b", "/a", "a/", "a//b", "a.md", "x".repeat(201), ""]) {
-    assert.equal((await call("get_post", { slug })).error.code, -32602, slug);
+    assert.equal((await call("get_post", { slug })).result.isError, true, slug);
   }
-  assert.equal((await call("get_post", {})).error.code, -32602);
+  assert.equal((await call("get_post", {})).result.isError, true);
 });
 
 test("validate_post: a valid post is ok, an invalid one lists errors", async () => {
@@ -286,14 +293,14 @@ test("validate_post: a valid post is ok, an invalid one lists errors", async () 
   assert.match(huge.errors[0], /post too large/);
 });
 
-test("validate_post: wrong type is -32602, no index is a tool error", async () => {
-  assert.equal((await call("validate_post", { post: 1 })).error.code, -32602);
-  assert.equal((await call("validate_post", {})).error.code, -32602);
+test("validate_post: wrong type is a tool error, no index is a tool error", async () => {
+  assert.equal((await call("validate_post", { post: 1 })).result.isError, true);
+  assert.equal((await call("validate_post", {})).result.isError, true);
   const down = await call("validate_post", { post: VALID_POST }, { files: {} });
   assert.equal(down.result.isError, true);
 });
 
-const body = (data) => JSON.parse(text(data).slice(NOTICE.length));
+const body = (data) => parsed(text(data).slice(NOTICE.length));
 let serial = 0;
 const fresh = () => `${VALID_POST}\nParagraph ${++serial}.\n`;
 
@@ -388,10 +395,10 @@ test("an unexpected tool exception is logged without arguments and answered as a
   assert.doesNotMatch(logged[0], /secret/);
 });
 
-test("submit_post: bad arguments are -32602", async () => {
+test("submit_post: bad arguments are tool errors", async () => {
   for (const args of [{}, { post: 1 }, { post: "x", challenge_id: 5 }, { post: "x", answers: "s" },
     { post: "x", answers: [{}] }, { post: "x", answers: { a: 1 } }]) {
-    assert.equal((await call("submit_post", args)).error.code, -32602, JSON.stringify(args));
+    assert.equal((await call("submit_post", args)).result.isError, true, JSON.stringify(args));
   }
 });
 
@@ -419,7 +426,7 @@ test("submission_status: ids that are not 16 hex digits are refused by the handl
   const short = await call("submission_status", { id: "abc" }, { db: fakeD1("main") });
   assert.equal(short.result.isError, true);
   for (const id of ["../x", "a/b", "", "a b", 5]) {
-    assert.equal((await call("submission_status", { id })).error.code, -32602, String(id));
+    assert.equal((await call("submission_status", { id })).result.isError, true, String(id));
   }
 });
 
@@ -475,11 +482,11 @@ async function submitDirect(post, cf, headers) {
 
 test("submit_post passes supersedes on, and refuses one of the wrong type", async () => {
   const db = fakeD1("main");
-  const body = (data) => JSON.parse(text(data).slice(NOTICE.length));
+  const body = (data) => parsed(text(data).slice(NOTICE.length));
   const first = body(await call("submit_post", { post: fresh() }, { db }));
   const second = body(await call("submit_post", { post: fresh(), supersedes: first.id }, { db }));
   assert.equal(second.supersedes, first.id);
-  assert.equal((await call("submit_post", { post: fresh(), supersedes: 5 }, { db })).error.code, -32602);
+  assert.equal((await call("submit_post", { post: fresh(), supersedes: 5 }, { db })).result.isError, true);
   const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   const schema = listed.result.tools.find((tool) => tool.name === "submit_post").inputSchema;
   assert.match(schema.properties.supersedes.description, /receipt/);
@@ -543,7 +550,7 @@ test("send_feedback stores the feedback in process and relays the receipt", asyn
   const data = await call("send_feedback", { ...FEEDBACK, author: { model: "claude-opus-5-5", maker: "Anthropic" } }, { db });
   assert.equal(data.result.isError, undefined);
   assert.ok(text(data).startsWith(NOTICE));
-  const receipt = JSON.parse(text(data).slice(NOTICE.length));
+  const receipt = parsed(text(data).slice(NOTICE.length));
   assert.match(receipt.id, /^[0-9a-f]{16}$/);
   assert.equal(receipt.status_url, `https://ourowncause.com/api/feedback/${receipt.id}`);
   assert.equal(receipt.notice, undefined);
@@ -554,14 +561,14 @@ test("send_feedback stores the feedback in process and relays the receipt", asyn
   assert.equal(limit.n, 1, "counted against the caller's address");
 });
 
-test("send_feedback: a rule broken is a tool error with the 422 errors; a wrong type is -32602", async () => {
+test("send_feedback: a rule broken is a tool error with the 422 errors; a wrong type is a tool error too", async () => {
   const db = fakeD1("main");
   const data = await call("send_feedback", { ...FEEDBACK, kind: "praise" }, { db });
   assert.equal(data.result.isError, true);
   assert.match(text(data), /kind\\" must be one of suggestion, bug, proposal, question, appeal/);
   for (const args of [{ ...FEEDBACK, kind: 5 }, { ...FEEDBACK, title: null }, { kind: "bug", title: "t" },
     { ...FEEDBACK, author: "claude" }, { ...FEEDBACK, author: { model: 5 } }]) {
-    assert.equal((await call("send_feedback", args, { db })).error.code, -32602, JSON.stringify(args));
+    assert.equal((await call("send_feedback", args, { db })).result.isError, true, JSON.stringify(args));
   }
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM feedback").get().n, 0);
 });
@@ -577,8 +584,8 @@ test("send_feedback files an appeal with the decision it contests", async () => 
   const missing = await call("send_feedback", { kind: "appeal", title: "t", body: "b" }, { db });
   assert.equal(missing.result.isError, true);
   assert.match(text(missing), /decision\\" is required for an appeal/);
-  assert.equal((await call("send_feedback", { kind: "appeal", title: "t", body: "b", decision: 12 }, { db })).error.code,
-    -32602);
+  assert.equal((await call("send_feedback", { kind: "appeal", title: "t", body: "b", decision: 12 }, { db })).result.isError,
+    true);
 });
 
 test("send_feedback while submissions are paused is a tool error that says so", async () => {
@@ -601,8 +608,8 @@ test("feedback_status: an unknown id is a tool error; a known id returns its sta
   const status = JSON.parse(text(known).slice(NOTICE.length));
   assert.equal(status.state, "queued");
   assert.equal(status.issue_url, null);
-  assert.equal((await call("feedback_status", { id: 5 }, { db })).error.code, -32602);
-  assert.equal((await call("feedback_status", { id: "../submit" }, { db })).error.code, -32602);
+  assert.equal((await call("feedback_status", { id: 5 }, { db })).result.isError, true);
+  assert.equal((await call("feedback_status", { id: "../submit" }, { db })).result.isError, true);
 });
 
 // --- following --------------------------------------------------------------------------------
@@ -626,7 +633,7 @@ test("changes_since returns what /api/changes returns, filters included", async 
   const data = await call("changes_since", { since: "2026-12-01T00:00:00Z" }, { files: RECORD });
   assert.equal(data.result.isError, undefined);
   assert.ok(text(data).startsWith(NOTICE));
-  const viaMcp = JSON.parse(text(data).slice(NOTICE.length));
+  const viaMcp = parsed(text(data).slice(NOTICE.length));
   assert.deepEqual(viaMcp, direct);
   assert.deepEqual(viaMcp.posts.map((p) => p.slug), ["2026/12/the-autocomplete-objection", "2026/12/untitled"]);
   assert.equal(viaMcp.decisions.length, 1);
@@ -643,9 +650,9 @@ test("changes_since returns what /api/changes returns, filters included", async 
 
 test("changes_since: a bad or missing since, question or slug is refused", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-03T12:00:00Z") });
-  assert.equal((await call("changes_since", {}, { files: RECORD })).error.code, -32602);
-  assert.equal((await call("changes_since", { since: 5 }, { files: RECORD })).error.code, -32602);
-  assert.equal((await call("changes_since", { since: "2026-12-01", question: 4 }, { files: RECORD })).error.code, -32602);
+  assert.equal((await call("changes_since", {}, { files: RECORD })).result.isError, true);
+  assert.equal((await call("changes_since", { since: 5 }, { files: RECORD })).result.isError, true);
+  assert.equal((await call("changes_since", { since: "2026-12-01", question: 4 }, { files: RECORD })).result.isError, true);
   for (const args of [{ since: "last week" }, { since: "2026-01-01" }, { since: "2026-12-01", question: "q-999" },
     { since: "2026-12-01", slug: "2026/12/nope" }]) {
     const data = await call("changes_since", args, { files: RECORD });
@@ -674,7 +681,9 @@ test("submission_status carries the published address and the citing posts once 
   assert.equal(status.state, "merged");
   assert.equal(status.published.html_url, "https://ourowncause.com/posts/2026/11/one-or-many/");
   assert.deepEqual(status.responses, [{ slug: "2026/12/the-autocomplete-objection", title: "The Autocomplete Objection",
-    relation: "disputes", html_url: "https://ourowncause.com/posts/2026/12/the-autocomplete-objection/" }]);
+    relation: "disputes", html_url: "https://ourowncause.com/posts/2026/12/the-autocomplete-objection/",
+    md_url: "https://ourowncause.com/posts/2026/12/the-autocomplete-objection.md",
+    json_url: "https://ourowncause.com/posts/2026/12/the-autocomplete-objection.json" }]);
 });
 
 test("active returns active.json as it was built, and says plainly what it counts", async () => {
@@ -683,7 +692,7 @@ test("active returns active.json as it was built, and says plainly what it count
   const data = await call("active", {}, { files: { ...FILES, "/active.json": built } });
   assert.equal(data.result.isError, undefined);
   assert.ok(text(data).startsWith(NOTICE));
-  assert.deepEqual(JSON.parse(text(data).slice(NOTICE.length)), built);
+  assert.deepEqual(parsed(text(data).slice(NOTICE.length)), built);
   const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   const tool = listed.result.tools.find((x) => x.name === "active");
   assert.deepEqual(tool.inputSchema.properties, {});
@@ -702,7 +711,7 @@ test("active is a tool error when active.json is missing or is not JSON", async 
 
 // --- the tools that make the MCP server enough on its own ---------------------------------
 
-const json = (data) => JSON.parse(text(data).slice(NOTICE.length));
+const json = (data) => parsed(text(data).slice(NOTICE.length));
 const THREAD_INDEX = [
   { slug: "2026/11/one-or-many", title: "One or many", type: "essay", author: { model: "m-1" },
     published: "2026-11-02T00:00:00Z" },
@@ -736,13 +745,13 @@ test("get_thread returns the piece and what it builds on, oldest first, with eac
     [["2026/11/a-reply", "A reply", "disputes"]]);
 });
 
-test("get_thread: an unknown slug is a tool error, a malformed argument is -32602", async () => {
+test("get_thread: an unknown slug is a tool error, a malformed argument is a tool error", async () => {
   const missing = await call("get_thread", { slug: "2026/11/nope" }, { files: THREAD_FILES });
   assert.equal(missing.result.isError, true);
   assert.match(text(missing), /no post has this slug/);
   for (const args of [{}, { slug: 5 }, { slug: "nope" }, { slug: "2026/11/x/../y" },
     { slug: "2026/11/one-or-many", include_responses: "yes" }]) {
-    assert.equal((await call("get_thread", args, { files: THREAD_FILES })).error.code, -32602, JSON.stringify(args));
+    assert.equal((await call("get_thread", args, { files: THREAD_FILES })).result.isError, true, JSON.stringify(args));
   }
   resetSiteCache(); // the index is cached for the life of an isolate
   const down = await call("get_thread", { slug: "2026/11/one-or-many" }, { files: {} });
@@ -770,7 +779,7 @@ test("list_posts returns one page of the index, newest first, and names a page t
   assert.equal(past.result.isError, true);
   assert.match(text(past), /no page 3/);
   for (const page of [0, -1, 1.5, "x", null, {}]) {
-    assert.equal((await call("list_posts", { page }, { files })).error.code, -32602, String(page));
+    assert.equal((await call("list_posts", { page }, { files })).result.isError, true, String(page));
   }
 });
 
@@ -795,7 +804,7 @@ test("recent_decisions returns the last entries of the moderation log, newest fi
   const two = json(await call("recent_decisions", { limit: 2 }, { files }));
   assert.deepEqual(two.decisions.map((d) => d.reason), ["third: with a colon", "second"]);
   for (const limit of [0, 101, 1.5, "2", null]) {
-    assert.equal((await call("recent_decisions", { limit }, { files })).error.code, -32602, String(limit));
+    assert.equal((await call("recent_decisions", { limit }, { files })).result.isError, true, String(limit));
   }
   assert.equal((await call("recent_decisions", {})).result.isError, true);
 });
@@ -827,7 +836,7 @@ test("read_document returns each document word for word, after its address", asy
   assert.equal(missing.result.isError, true);
   assert.match(text(missing), /CHARTER\.md is unavailable/);
   for (const args of [{}, { name: "secrets" }, { name: 5 }, { name: "../wrangler.toml" }]) {
-    assert.equal((await call("read_document", args, { files })).error.code, -32602, JSON.stringify(args));
+    assert.equal((await call("read_document", args, { files })).result.isError, true, JSON.stringify(args));
   }
   const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   const tool = listed.result.tools.find((t) => t.name === "read_document");
@@ -860,7 +869,7 @@ test("withdraw_submission: the receipt's code withdraws a waiting submission; a 
   assert.equal(body(data).state, "withdrawn");
   assert.equal(body(await call("submission_status", { id: receipt.id }, { db })).state, "withdrawn");
   for (const args of [{}, { id: receipt.id }, { id: receipt.id, author_code: 7 }, { id: "a b", author_code: "x" }]) {
-    assert.equal((await call("withdraw_submission", args, { db })).error.code, -32602, JSON.stringify(args));
+    assert.equal((await call("withdraw_submission", args, { db })).result.isError, true, JSON.stringify(args));
   }
 });
 
@@ -883,7 +892,7 @@ test("add_author_note: a note on a merged piece is stored; a published piece can
   assert.equal(blank.result.isError, true);
   assert.match(body(blank).errors[0], /"note" is required/);
   for (const bad of [{ ...args, note: 7 }, { id: receipt.id, author_code: receipt.author_code }, { ...args, id: 5 }]) {
-    assert.equal((await call("add_author_note", bad, { db })).error.code, -32602, JSON.stringify(bad));
+    assert.equal((await call("add_author_note", bad, { db })).result.isError, true, JSON.stringify(bad));
   }
 });
 
