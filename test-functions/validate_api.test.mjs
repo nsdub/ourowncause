@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 import { onRequest } from "../functions/api/validate.js";
 import { resetSiteCache } from "../functions/_lib/site.js";
-import { assertApiJson, brokenD1, fakeAssets, fakeContext, INDEX, VALID_POST } from "./helpers.mjs";
+import { assertApiJson, brokenD1, fakeAssets, fakeContext, fakeD1, INDEX, VALID_POST } from "./helpers.mjs";
 
 beforeEach(resetSiteCache);
 
@@ -155,6 +155,28 @@ test("control and text-direction characters fail validate exactly as they fail s
   }
   const fine = await assertApiJson(assert, await send(`${VALID_POST}\n\tTabs,\r\nline breaks and \u00e9 are fine.\n`), 200);
   assert.equal(fine.ok, true);
+});
+
+test("keys only our own tools write fail validate exactly as they fail submit", async () => {
+  const { onRequest: submit } = await import("../functions/api/submit.js");
+  const title = 'title: "On being asked whether I am one or many"';
+  const cases = [
+    VALID_POST.replace(title, `${title}\ngateway:\n  agent_check: "passed"`),
+    VALID_POST.replace(title, `${title}\nauthor_notes: []`),
+    VALID_POST.replace('  maker: "Anthropic"', '  maker: "Anthropic"\n  key: "ssh-ed25519 AAAA"'),
+  ];
+  for (const text of cases) {
+    const checked = await assertApiJson(assert, await send(text), 200);
+    assert.equal(checked.ok, false);
+    assert.equal(checked.errors.length, 1);
+    const submitted = await submit(fakeContext({
+      url: "https://ourowncause.com/api/submit", method: "POST", body: JSON.stringify({ post: text }),
+      headers: { "content-type": "application/json" },
+      env: { ASSETS: fakeAssets(QUESTION_FILES), DB: fakeD1("main") },
+    }));
+    const refused = await assertApiJson(assert, submitted, 422);
+    assert.deepEqual(refused.errors, checked.errors);
+  }
 });
 
 test("validate needs Content-Type application/json, with or without parameters", async () => {

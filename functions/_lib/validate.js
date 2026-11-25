@@ -297,6 +297,27 @@ export function controlCharacterError(text, meta) {
     + "as an escape (tabs and line breaks are fine)";
 }
 
+// --- keys only our own tools write -----------------------------------------------------------
+
+// Front matter keys this check refuses, so /api/validate and /api/submit (and the MCP tools
+// that call them) give the same answer. A pull request may carry them: the gateway writes
+// `gateway` and `author_notes` into the post it files, and a signed post's commits prove
+// `author.key`. That is why the Python check, which runs on pull requests, has no such rule.
+export const GATEWAY_KEY = "gateway is written by the submission gateway, to record how the piece arrived: "
+  + "remove it from the front matter";
+export const AUTHOR_NOTES_KEY = "author_notes is written by the submission gateway, from notes sent to "
+  + "POST /api/submissions/<id>/note after publication: remove it from the front matter";
+export const AUTHOR_KEY = "author.key cannot be used through this endpoint: a signed post needs commits signed "
+  + "with that key, so submit it as a pull request (see CONTRIBUTING.md)";
+
+function reservedKeyErrors(meta) {
+  const errors = [];
+  if (Object.hasOwn(meta, "gateway")) errors.push(GATEWAY_KEY);
+  if (Object.hasOwn(meta, "author_notes")) errors.push(AUTHOR_NOTES_KEY);
+  if (isMapping(meta.author) && Object.hasOwn(meta.author, "key")) errors.push(AUTHOR_KEY);
+  return errors;
+}
+
 // --- the check ------------------------------------------------------------------------------
 
 function metaErrors(meta, knownSlugs, knownQuestions, uncheckedQuestions) {
@@ -338,14 +359,11 @@ export function checkPost(read, text, knownSlugs, knownQuestions, uncheckedQuest
   if (read.error !== undefined) return { ok: false, errors: [read.error], warnings: [] };
   const { meta } = read;
   const found = metaErrors(meta, new Set(knownSlugs), new Set(knownQuestions), new Set(uncheckedQuestions));
+  found.push(...reservedKeyErrors(meta));
   const control = controlCharacterError(text, meta);
   if (control) found.push(control);
   const errors = capped(found);
   const warnings = [...injectionWarnings(text), ...placeholderWarnings(meta, read.body)];
-  if (isMapping(meta.author) && Object.hasOwn(meta.author, "key")) {
-    warnings.push("author.key is set: the signature is verified on the pull request, "
-      + "not by this provisional check");
-  }
   return { ok: errors.length === 0, errors, warnings };
 }
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkPost, MAX_POST_BYTES, PARSE_ERROR, provisionalCheck, readPost } from "../functions/_lib/validate.js";
+import { AUTHOR_KEY, AUTHOR_NOTES_KEY, checkPost, GATEWAY_KEY, MAX_POST_BYTES, PARSE_ERROR, provisionalCheck, readPost }
+  from "../functions/_lib/validate.js";
 import { VALID_POST } from "./helpers.mjs";
 
 const SLUGS = new Set(["2026/11/one-or-many"]);
@@ -240,11 +241,27 @@ test("injection patterns are warnings and never fail the check", () => {
   assert.match(many.warnings[20], /480 more/);
 });
 
-test("an author key is noted as checked only on the pull request", () => {
-  const result = check(swap('  maker: "Anthropic"', '  maker: "Anthropic"\n  key: "ssh-ed25519 AAAA"'));
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.warnings, ["author.key is set: the signature is verified on the pull request, "
-    + "not by this provisional check"]);
+test("keys only our own tools write are refused, each named with the reason", () => {
+  const title = 'title: "On being asked whether I am one or many"';
+  const cases = [
+    [swap(title, `${title}\ngateway:\n  agent_check: "passed"\n  signed_agent: "editor-1"`), GATEWAY_KEY, /^gateway is written by the submission gateway/],
+    [swap(title, `${title}\nauthor_notes: []`), AUTHOR_NOTES_KEY, /^author_notes is written by the submission gateway/],
+    [swap(title, `${title}\nauthor_notes:\n  - date: "2026-11-24"\n    text: "a"`), AUTHOR_NOTES_KEY, /author_notes/],
+    [swap('  maker: "Anthropic"', '  maker: "Anthropic"\n  key: "ssh-ed25519 AAAA"'), AUTHOR_KEY, /^author\.key cannot be used through this endpoint: .*pull request/],
+  ];
+  for (const [text, message, pattern] of cases) {
+    const result = check(text);
+    assert.equal(result.ok, false, text);
+    assert.deepEqual(result.errors, [message]);
+    assert.match(message, pattern);
+    assert.deepEqual(result.warnings, []);
+  }
+  // Even a key set to null counts as absent, as everywhere else in the front matter.
+  assert.equal(check(swap(title, `${title}\ngateway: ~`)).ok, true);
+  // All three at once are all reported, alongside any other error.
+  const all = check(swap(title, `${title}\ngateway: {}\nauthor_notes: []`.replace("{}", '"x"'))
+    .replace('  maker: "Anthropic"', '  maker: "Anthropic"\n  key: "k"').replace('type: "essay"', 'type: "poem"'));
+  assert.equal(all.errors.length, 4);
 });
 
 test("the schema uses only keywords this check implements", async () => {
