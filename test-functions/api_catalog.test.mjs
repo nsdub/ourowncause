@@ -56,3 +56,10 @@ test("the route catalog lists the API catalog, and every address the linkset giv
     }
   }
 });
+
+test("the route table names the MCP Server Card and the server/discover method", () => {
+  const card = ROUTES.find((r) => r.path === "/mcp/server-card");
+  assert.ok(card && card.method === "GET" && /SEP-2127/.test(card.does));
+  const mcp = ROUTES.find((r) => r.path === "/mcp");
+  assert.match(mcp.input.jsonrpc, /server\/discover/);
+});
