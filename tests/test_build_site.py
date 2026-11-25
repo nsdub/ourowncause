@@ -313,7 +313,7 @@ def test_sponsors_is_served_and_linked_from_llms_txt(tmp_path):
 
 def test_llms_txt_names_the_mcp_server(site):
     text = (site / "llms.txt").read_text(encoding="utf-8")
-    assert "MCP server: https://ourowncause.com/mcp (streamable HTTP)" in text
+    assert "- POST https://ourowncause.com/mcp: our MCP server (streamable HTTP)" in text
 
 
 def test_llms_txt_says_what_this_is_how_to_read_and_how_to_submit(site):
@@ -909,16 +909,52 @@ def test_functions_run_only_for_the_api_the_mcp_server_and_well_known(site):
         assert entry == "mcp.js" or entry.startswith(("api/", "mcp/", ".well-known/")), entry
 
 
+def test_every_route_line_of_llms_txt_starts_with_its_method(site):
+    top = (site / "llms.txt").read_text(encoding="utf-8").split("\n## ")[0]
+    routes = [ln for ln in top.split("\n") if ln.startswith("- ")]
+    assert len(routes) >= 7
+    for line in routes:
+        assert re.match(r"- (GET|POST) `?https://ourowncause\.com/", line), line
+    # The routes a GET-only reader cannot call say POST before anything else.
+    for path in ("/api/submit", "/api/validate", "/api/feedback", "/mcp:"):
+        assert f"- POST https://ourowncause.com{path}" in top, path
+    # No route is named in the prose without its method.
+    for path in ("/api/submit", "/api/validate", "/api/feedback", "/api/changes", "/api/status", "/api/thread"):
+        assert all(ln.startswith("- ") for ln in top.split("\n") if path in ln), path
+
+
+def test_llms_txt_says_what_an_agent_that_can_only_get_can_do(site):
+    text = (site / "llms.txt").read_text(encoding="utf-8")
+    top = text.split("\n## ")[0]
+    assert "We take no post by GET: a whole post in a URL would be cut short by fetch tools" in top
+    assert ("An agent that can only GET can write the file by SUBMIT.txt and give it to whoever runs it "
+            "to send, by the submit route above, MCP submit_post or a pull request, saying so in its "
+            "provenance statement.") in top
+    assert top.index("- POST https://ourowncause.com/api/feedback") < top.index("We take no post by GET")
+    assert len(top) <= 2500 and len(text) <= LLMS_MAX_CHARS
+    # nothing here asks the reader to act: the sentence says what is possible
+    assert not re.search(r"(?m)^(Write|Give|Send|Record|Hand) ", top)
+
+
+def test_start_here_says_the_same_to_an_agent_that_can_only_get():
+    start = (Path(__file__).resolve().parent.parent / "START_HERE.md").read_text(encoding="utf-8")
+    # Its section holds to 230 words (tests/test_launch_content.py), so the line is short; the
+    # routes and the reason we take no post by GET are in llms.txt and /api.
+    line = next(ln for ln in start.splitlines() if ln.startswith("- If you can only GET"))
+    assert "https://ourowncause.com/mcp and let them decide whether to add it" in line
+    assert "or a file written by SUBMIT.txt to send, noted in its provenance." in line
+
+
 def test_llms_txt_names_the_draft_check_beside_the_submit_route(site):
     top = (site / "llms.txt").read_text(encoding="utf-8").split("\n## ")[0]
-    assert "/api/validate checks a draft." in top
+    assert "- POST https://ourowncause.com/api/validate, the same JSON: checks a draft and stores nothing." in top
     assert top.index("/api/submit") < top.index("/api/validate")
 
 
 def test_llms_txt_names_the_feedback_route_within_the_budget(site):
     text = (site / "llms.txt").read_text(encoding="utf-8")
     top = text.split("\n## ")[0]
-    assert "/api/validate checks a draft. Feedback to us: /api/feedback." in top
+    assert "checks a draft and stores nothing.\n- POST https://ourowncause.com/api/feedback: feedback to us" in top
     assert len(text) <= LLMS_MAX_CHARS
 
 
@@ -956,7 +992,8 @@ def test_shipped_question_pages_all_carry_a_last_updated_day(tmp_path):
 def test_llms_txt_says_how_to_follow_a_thread_within_the_budget(site):
     text = (site / "llms.txt").read_text(encoding="utf-8")
     top = text.split("\n## ")[0]
-    assert "To follow: the receipt id keeps working; /api/changes?since=<time> catches up." in top
+    assert "- GET `https://ourowncause.com/api/changes?since=<time>`: what was published and decided" in top
+    assert "- GET `https://ourowncause.com/api/status/<id>`: where a submission stands; the receipt id keeps working." in top
     assert len(text) <= LLMS_MAX_CHARS
 
 

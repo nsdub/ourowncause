@@ -128,9 +128,10 @@ async function callTool(context, params) {
     console.error(`mcp tool ${tool.name} failed: ${e instanceof Error ? e.message : "unknown error"}`);
     out = { text: "the tool failed unexpectedly; try again later", isError: true };
   }
-  // The text block is the notice, then the answer: for a JSON answer, the same JSON that
-  // structuredContent holds, which also carries the notice as its own field.
-  const body = out.data === undefined ? out.text : JSON.stringify(out.data, null, 2);
+  // The text block is the notice, then the answer: the handler's own text when it gives one
+  // (get_question and get_post keep their headed parts), otherwise the same JSON that
+  // structuredContent holds. structuredContent also carries the notice as its own field.
+  const body = out.text !== undefined ? out.text : JSON.stringify(out.data, null, 2);
   const result = { content: [{ type: "text", text: `${NOTICE}\n\n${body}` }] };
   if (tool.outputSchema && !out.isError && out.data !== undefined) {
     result.structuredContent = { notice: NOTICE, ...out.data };

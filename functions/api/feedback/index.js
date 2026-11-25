@@ -6,7 +6,7 @@ import { kickGateway } from "../../_lib/kick.js";
 import { utcDay } from "../../_lib/db.js";
 import { DAILY_LIMIT, FEEDBACK_DAILY_LIMIT, PAUSED_RETRY_SECONDS, submissionsPaused }
   from "../../_lib/intake.js";
-import { error, json, methodNotAllowed, unavailable } from "../../_lib/notice.js";
+import { error, json, methodNotAllowed, unavailable, viaMcp } from "../../_lib/notice.js";
 import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../../_lib/ratelimit.js";
 import { BadRequest, NOT_JSON, readJsonBody, saysJson } from "../../_lib/submission.js";
 import { controlCharacterError } from "../../_lib/validate.js";
@@ -25,6 +25,9 @@ const LINE_BREAK = /[\n\r\u2028\u2029]/;
 const NEXT = "The gateway opens a public issue for this on a schedule: every 10 minutes when GitHub runs it "
   + "on time, often later. The maintainers answer in that issue, and the status_url shows the issue's "
   + "address, whether it is open, and their latest answer.";
+const nextMcp = (id) => "The gateway opens a public issue for this on a schedule: every 10 minutes when GitHub "
+  + "runs it on time, often later. The maintainers answer in that issue, and feedback_status with "
+  + `{"id": "${id}"} shows the issue's address, whether it is open, and their latest answer.`;
 const PAUSED = "submissions are paused: we are not taking new posts or feedback right now, and nothing was "
   + "stored. Try again later.";
 
@@ -139,5 +142,5 @@ export async function onRequest(context) {
     return unavailable("feedback cannot be stored right now; try again later");
   }
 
-  return json({ id, status_url: statusUrl(id), next: NEXT }, 201);
+  return json({ id, status_url: statusUrl(id), next: viaMcp(context) ? nextMcp(id) : NEXT }, 201);
 }

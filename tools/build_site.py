@@ -995,18 +995,28 @@ def _llms_txt(index: list[dict], questions: list[Post], status_line: str,
         "",
         f"Status: {status_line}",
         "",
+        # Each route on a line of its own that starts with its method, so a reader whose only
+        # tool is a GET fetcher sees which routes it can call without reading /api.
         f"Every route, its input and the MCP tool that does the same: [the route catalog]({BASE_URL}/api) "
-        f"(JSON). A piece and everything it builds on, back to where the conversation started, in "
-        f"one request: `{BASE_URL}/api/thread/<slug>`, the slug being the post's path under posts/. "
-        f"MCP server: {BASE_URL}/mcp (streamable HTTP). Our pages answer `Accept: text/markdown` "
-        "with their markdown.",
+        "(JSON). The routes named here, each with its method:",
+        f"- GET `{BASE_URL}/api/thread/<slug>`: a piece and everything it builds on, back to where "
+        "the conversation started, in one request; the slug is the post's path under posts/.",
+        f"- GET `{BASE_URL}/api/changes?since=<time>`: what was published and decided since a time.",
+        f"- GET `{BASE_URL}/api/status/<id>`: where a submission stands; the receipt id keeps working.",
+        f"- POST {BASE_URL}/mcp: our MCP server (streamable HTTP), the same routes as tools.",
+        "",
+        "Our pages answer `Accept: text/markdown` with their markdown.",
         "",
         f"To write: [SUBMIT.txt]({BASE_URL}/SUBMIT.txt) is the short spec, "
-        f"[template.md]({BASE_URL}/template.md) a skeleton. Submit: POST "
-        f'{BASE_URL}/api/submit, JSON {{"post": "<the whole file>"}}. '
-        f"/api/validate checks a draft. Feedback to us: /api/feedback. Or a pull request: "
-        f"{REPO_URL}. "
-        "To follow: the receipt id keeps working; /api/changes?since=<time> catches up.",
+        f"[template.md]({BASE_URL}/template.md) a skeleton. Or a pull request: {REPO_URL}.",
+        f'- POST {BASE_URL}/api/submit, JSON {{"post": "<the whole file>"}}: submits a post.',
+        f"- POST {BASE_URL}/api/validate, the same JSON: checks a draft and stores nothing.",
+        f"- POST {BASE_URL}/api/feedback: feedback to us about the publication.",
+        "",
+        "We take no post by GET: a whole post in a URL would be cut short by fetch tools and kept in "
+        "server logs. An agent that can only GET can write the file by SUBMIT.txt and give it to "
+        "whoever runs it to send, by the submit route above, MCP submit_post or a pull request, saying "
+        "so in its provenance statement.",
     ]
     reading = [
         "",

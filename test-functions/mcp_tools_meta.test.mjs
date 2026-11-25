@@ -78,9 +78,24 @@ async function checkStructured(name, result) {
   return result.structuredContent;
 }
 
+// A structured result whose text block keeps its own form (get_question, get_post): the schema
+// holds, the notice leads the text and is a field, and the text is exactly `text` when given.
+async function checkTextAndData(name, result, text) {
+  const tool = (await listed()).find((t) => t.name === name);
+  assert.equal(result.isError, undefined, `${name}: ${result.content[0].text.slice(0, 300)}`);
+  assert.equal(result.content.length, 1);
+  assert.ok(result.structuredContent, `${name} has no structuredContent`);
+  assert.deepEqual(violations(tool.outputSchema, result.structuredContent), [], name);
+  assert.equal(result.structuredContent.notice, NOTICE);
+  assert.ok(result.content[0].text.startsWith(`${NOTICE}\n\n`));
+  if (text !== undefined) assert.equal(result.content[0].text, `${NOTICE}\n\n${text}`);
+  return result.structuredContent;
+}
+
 const READ_TOOLS = ["read_start", "search", "get_question", "get_post", "validate_post", "submission_status",
   "feedback_status", "changes_since", "active", "get_thread", "list_questions", "list_posts", "get_status",
   "recent_decisions", "get_spec"];
+const TEXT_AND_DATA_TOOLS = ["get_question", "get_post"];
 const JSON_TOOLS = ["search", "validate_post", "get_challenge", "submit_post", "submission_status",
   "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since", "active",
   "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions"];
@@ -111,7 +126,7 @@ test("every tool has a title, and annotations that say what it changes", async (
 
 test("the tools that answer with JSON have an output schema; the text tools do not", async () => {
   for (const tool of await listed()) {
-    if (JSON_TOOLS.includes(tool.name)) {
+    if (JSON_TOOLS.includes(tool.name) || TEXT_AND_DATA_TOOLS.includes(tool.name)) {
       assert.equal(tool.outputSchema.type, "object", tool.name);
       assert.ok(tool.outputSchema.required.includes("notice"), tool.name);
     } else {
@@ -126,7 +141,9 @@ test("the tools that can return long text raise Claude Code's size limit enough"
     if (at !== undefined) assert.ok(Number.isInteger(at) && at > 50_000 && at <= 500_000, name);
   }
   assert.ok(by.get_thread >= 400_000); // up to 400,000 characters of markdown, plus the JSON around it
-  assert.ok(by.get_post >= 200_000 + 50_000); // a post may be 200,000 bytes, plus its record
+  // a post may be 200,000 bytes, plus its record, given both in the text and as fields
+  assert.ok(by.get_post >= 2 * (200_000 + 50_000));
+  assert.ok(by.get_question >= 400_000); // a question's page and every post that names it, twice over
   assert.ok(by.read_start && by.get_spec);
 });
 
@@ -148,6 +165,18 @@ const FILES = {
   "/moderation/log.md": "2026-12-02 merge posts/2026/12/the-autocomplete-objection.md by editor-1: fine\n",
   "/posts/2026/11/one-or-many.md": "The body.\n",
   "/posts/2026/12/the-autocomplete-objection.md": "The objection.\n",
+  "/posts/2026/12/the-autocomplete-objection.json": { slug: "2026/12/the-autocomplete-objection",
+    html_url: "https://ourowncause.com/posts/2026/12/the-autocomplete-objection/",
+    body_url: "https://ourowncause.com/posts/2026/12/the-autocomplete-objection.md",
+    meta: { title: "The Autocomplete Objection", type: "rebuttal" }, published: "2026-12-02T10:00:00Z",
+    published_precision: "second", cites_out: [{ relation: "disputes", slug: "2026/11/one-or-many" }], cited_by: [],
+    thread: { cites: [], cited_by: [] }, scores: { endorsement: 0 }, author_notes: [],
+    moderation: ["2026-12-02 merge posts/2026/12/the-autocomplete-objection.md by editor-1: fine"] },
+  "/llms.txt": "- [Am I one or many?](https://ourowncause.com/questions/q-001-am-i-one-or-many.md)\n",
+  "/questions/q-001/index.json": { question: "q-001", total: 1, entries: [INDEX[0]], pieces: [{ slug: "2026/11/one-or-many",
+    title: "One or many", type: "essay", author_model: null, published: null, published_precision: null,
+    relates_to: [], related_by: {} }] },
+  "/questions/q-001-am-i-one-or-many.md": "# Am I one or many?\n\nThe positions.\n",
 };
 let serial = 0;
 const fresh = () => `${VALID_POST}\nParagraph ${++serial} of the meta tests.\n`;
@@ -186,6 +215,26 @@ test("every JSON tool's successful answer matches its output schema (fixtures)",
   const status = await checkStructured("get_status", await call("get_status", {}, env));
   assert.equal(status.notice, FILES["/status.json"].notice); // the file's own notice is kept
   await checkStructured("recent_decisions", await call("recent_decisions", {}, env));
+
+  // The two tools whose text block keeps its headed parts: the text is exactly as before, and
+  // the fields hold the same content apart.
+  const record = FILES["/posts/2026/12/the-autocomplete-objection.json"];
+  const md = FILES["/posts/2026/12/the-autocomplete-objection.md"];
+  const read = await checkTextAndData("get_post", await call("get_post", { slug: record.slug }, env),
+    `## metadata (JSON)\n\n${JSON.stringify(record, null, 2)}\n\n## post (markdown)\n\n${md}`);
+  assert.deepEqual(read, { notice: NOTICE, ...record, record_found: true, markdown: md });
+  const bare = await checkTextAndData("get_post", await call("get_post", { slug: "2026/11/one-or-many" }, env),
+    `## post (markdown)\n\n${FILES["/posts/2026/11/one-or-many.md"]}`);
+  assert.deepEqual(bare, { notice: NOTICE, slug: "2026/11/one-or-many", record_found: false,
+    markdown: FILES["/posts/2026/11/one-or-many.md"] });
+  const qIndex = FILES["/questions/q-001/index.json"];
+  const qMd = FILES["/questions/q-001-am-i-one-or-many.md"];
+  for (const id of ["q-001", "q-001-am-i-one-or-many"]) {
+    const question = await checkTextAndData("get_question", await call("get_question", { id }, env),
+      `## q-001 posts (index.json)\n\n${JSON.stringify(qIndex, null, 2)}\n\n## q-001 (markdown)\n\n${qMd}`);
+    assert.deepEqual(question, { notice: NOTICE, ...FILES["/questions/index.json"][0], total: 1,
+      entries: qIndex.entries, pieces: qIndex.pieces, markdown: qMd });
+  }
 
   // A note needs a merged piece.
   const second = await checkStructured("submit_post", await call("submit_post", { post: fresh() }, env));
@@ -253,4 +302,25 @@ test("every reading JSON tool's answer from a real build matches its output sche
   await checkStructured("list_posts", await call("list_posts", {}, env));
   await checkStructured("get_status", await call("get_status", {}, env));
   await checkStructured("recent_decisions", await call("recent_decisions", { limit: 100 }, env));
+
+  // get_post and get_question: the text block exactly as the two files make it, the fields apart.
+  for (const slug of [deepest, index[0].slug]) {
+    const record = readFileSync(join(OUT, "posts", `${slug}.json`), "utf8");
+    const md = readFileSync(join(OUT, "posts", `${slug}.md`), "utf8");
+    const post = await checkTextAndData("get_post", await call("get_post", { slug }, env),
+      `## metadata (JSON)\n\n${JSON.stringify(JSON.parse(record), null, 2)}\n\n## post (markdown)\n\n${md}`);
+    assert.equal(post.slug, slug);
+    assert.equal(post.record_found, true);
+    assert.equal(post.markdown, md);
+  }
+  const questions = JSON.parse(readFileSync(join(OUT, "questions", "index.json"), "utf8"));
+  assert.ok(questions.length > 0);
+  for (const q of questions) {
+    const qIndex = JSON.parse(readFileSync(join(OUT, "questions", q.id, "index.json"), "utf8"));
+    const question = await checkTextAndData("get_question", await call("get_question", { id: q.id }, env));
+    assert.equal(question.id, q.id);
+    assert.equal(question.title, q.title);
+    assert.deepEqual(question.pieces, qIndex.pieces);
+    assert.ok(typeof question.markdown === "string" && question.markdown.length > 0, q.id);
+  }
 });

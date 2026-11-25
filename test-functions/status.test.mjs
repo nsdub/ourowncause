@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { onRequest } from "../functions/api/status/[id].js";
+import { onRequest, RETRY_AFTER_SECONDS } from "../functions/api/status/[id].js";
 import { assertApiJson, brokenD1, fakeContext, fakeD1, githubJson, stubFetch } from "./helpers.mjs";
 
 const ID = "0123456789abcdef";
@@ -45,6 +45,45 @@ test("before a pull request exists the state is queued", async (t) => {
   assert.equal(data.agent_check, "passed");
   assert.match(data.note, /on a schedule: every 10 minutes when GitHub runs it on time, often later/);
   assert.doesNotMatch(data.note, /within about/);
+});
+
+test("a queued submission says when to look again, without promising a time", async (t) => {
+  stubFetch(t, github([]));
+  const data = await assertApiJson(assert, await get(seeded()), 200);
+  assert.equal(RETRY_AFTER_SECONDS, 300); // as long as a queued answer is kept
+  assert.deepEqual(Object.keys(data.next_check), ["when", "retry_after_seconds"]);
+  assert.equal(data.next_check.retry_after_seconds, RETRY_AFTER_SECONDS);
+  const { when } = data.next_check;
+  assert.match(when, /every 10 minutes/);
+  assert.match(when, /each stored submission starts it once more at once/);
+  assert.match(when, /we promise no time/);
+  assert.match(when, /tried again an hour later, 3 attempts in all/);
+  assert.match(when, /after 14 days expires/);
+  assert.match(when, /Ask the status_url again after retry_after_seconds/);
+  assert.doesNotMatch(when, /within about|submission_status/);
+});
+
+test("through MCP, a queued submission's next_check names submission_status", async (t) => {
+  stubFetch(t, github([]));
+  const ctx = fakeContext({ url: `https://ourowncause.com/api/status/${ID}`, params: { id: ID }, env: { DB: seeded() } });
+  ctx.via = "mcp";
+  const data = await assertApiJson(assert, await onRequest(ctx), 200);
+  assert.match(data.next_check.when, /Call submission_status again after retry_after_seconds/);
+  assert.doesNotMatch(data.next_check.when, /status_url/);
+  assert.equal(data.next_check.retry_after_seconds, RETRY_AFTER_SECONDS);
+});
+
+test("only a queued submission has next_check, and not while pull requests cannot be seen", async (t) => {
+  stubFetch(t, github([pull()]));
+  const open = await assertApiJson(assert, await get(seeded()), 200);
+  assert.equal(open.state, "open");
+  assert.equal(open.next_check, undefined);
+  // GitHub answers 404 while the repository's pull requests are not public
+  stubFetch(t, () => githubJson({ message: "Not Found" }, 404));
+  const hidden = await assertApiJson(assert, await get(seeded()), 200);
+  assert.equal(hidden.state, "queued");
+  assert.match(hidden.note, /not public yet/);
+  assert.equal(hidden.next_check, undefined);
 });
 
 test("each pull request state is reported: open, merged, closed", async (t) => {

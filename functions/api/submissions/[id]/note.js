@@ -6,7 +6,7 @@
 import { pullState, readAuthorRequest, statusUrl } from "../../../_lib/author.js";
 import { utcDay } from "../../../_lib/db.js";
 import { kickGateway } from "../../../_lib/kick.js";
-import { error, json, unavailable } from "../../../_lib/notice.js";
+import { error, json, unavailable, viaMcp } from "../../../_lib/notice.js";
 import { hex } from "../../../_lib/ratelimit.js";
 import { controlCharacterError } from "../../../_lib/validate.js";
 
@@ -20,6 +20,9 @@ const TOO_LARGE = `request body too large: the limit is ${MAX_REQUEST_BYTES} byt
 const NOT_PUBLISHED = "an author's note is added to a published piece, and this one is not published. "
   + "Before publication, POST /api/submissions/<id>/withdraw withdraws it, and a revision is a new "
   + "submission that names this id in \"supersedes\"";
+const NOT_PUBLISHED_MCP = "an author's note is added to a published piece, and this one is not published. "
+  + "Before publication, withdraw_submission, with the same id and author_code, withdraws it, and a revision "
+  + "is a new submit_post that names this id in \"supersedes\"";
 const WITHDRAWN = "this submission was withdrawn before publication, so there is no piece to add a note to";
 const FULL = `a piece carries at most ${MAX_NOTES} author's notes, and this one has ${MAX_NOTES}`;
 const UNCONFIRMED = "GitHub could not be read just now, so we could not confirm that this piece is "
@@ -57,7 +60,7 @@ export async function onRequest(context) {
   } catch {
     return unavailable(UNCONFIRMED);
   }
-  if (state !== "merged") return error(409, NOT_PUBLISHED, { status_url: statusUrl(id) });
+  if (state !== "merged") return error(409, viaMcp(context) ? NOT_PUBLISHED_MCP : NOT_PUBLISHED, { status_url: statusUrl(id) });
 
   const now = new Date();
   const noteId = hex(crypto.getRandomValues(new Uint8Array(8)));
