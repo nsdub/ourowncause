@@ -17,7 +17,9 @@ def function_routes() -> set[str]:
     """The addresses Functions answer that hold no placeholder: /api, /mcp and each file under
     functions/.well-known, read from the function files themselves."""
     well_known = ROOT / "functions" / ".well-known"
-    return {"/api", "/api/", "/mcp"} | {f"/.well-known/{p.stem}" for p in well_known.glob("*.js")}
+    api = ROOT / "functions" / "api"
+    return ({"/api", "/api/", "/mcp"} | {f"/.well-known/{p.stem}" for p in well_known.glob("*.js")}
+            | {f"/api/{p.stem}" for p in api.glob("*.js") if "[" not in p.name and p.stem != "index"})
 
 
 def resolves(out: Path, url: str) -> bool:
