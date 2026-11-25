@@ -92,6 +92,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install dependencies
+        run: pip install pyyaml markdown
+
       - name: Ask the maintainers to review
         env:
           GH_TOKEN: ${{ github.token }}
