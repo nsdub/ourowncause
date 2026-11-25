@@ -452,19 +452,31 @@ def _last_commit_times(repo: Path) -> dict[str, str]:
 
 
 def page_lastmod(repo: Path, index: list[dict], questions: list[Post], issues: list[Post],
-                 pieces: dict[str, list[dict]]) -> dict[str, str]:
+                 pieces: dict[str, list[dict]], graph: dict | None = None) -> dict[str, str]:
     """Page address -> when it last changed, for sitemap.xml.
 
-    A post's page: the newest commit to its file, else the time it was published. A question's
-    page: the later of its file's newest commit (else its last `Last updated:` day) and its
-    newest piece. An issue's page: its file's newest commit. The front page, the archive and
-    the questions index list all of these, so each takes the latest of them."""
+    A post's page: the latest of the time it was published, the newest commit to its file and
+    the time the newest post that cites it was published, since its page then gains that post
+    under "Cited by". (A post's own commits are usually made on its branch before the merge
+    that publishes it, so the newest commit alone is often earlier than the publication.) A
+    question's page: the later of its file's newest commit (else its last `Last updated:` day)
+    and its newest piece. An issue's page: its file's newest commit. The front page, the
+    archive and the questions index list all of these, so each takes the latest of them."""
     commits = _last_commit_times(repo)
+    published = {e["slug"]: str(e["published"]) for e in index if e.get("published")}
+    newest_citer: dict[str, str] = {}
+    for edge in (graph or {}).get("edges", []):
+        when = published.get(edge.get("from"))
+        to = edge.get("to")
+        if when and isinstance(to, str) and when > newest_citer.get(to, ""):
+            newest_citer[to] = when
     out: dict[str, str] = {}
     for e in index:
-        when = commits.get(f"posts/{e['slug']}.md") or e.get("published")
+        slug = e["slug"]
+        candidates = [commits.get(f"posts/{slug}.md"), published.get(slug), newest_citer.get(slug)]
+        when = max((w for w in candidates if w), default=None)
         if when:
-            out[f"{BASE_URL}/posts/{e['slug']}/"] = str(when)
+            out[f"{BASE_URL}/posts/{slug}/"] = when
     for q in questions:
         m = _QID.match(q.path.name)
         own = commits.get(f"questions/{q.path.name}") or _last_updated(q.body)
@@ -1686,7 +1698,7 @@ def build_site(repo: Path, out: Path, today: date | None = None,
         description=SITE_DESCRIPTION))
     pieces = {m.group(1): _question_pieces(m.group(1), index, threads)
               for m in (_QID.match(q.path.name) for q in questions) if m}
-    _write(out / "sitemap.xml", _sitemap(out, page_lastmod(repo, index, questions, issues, pieces)))
+    _write(out / "sitemap.xml", _sitemap(out, page_lastmod(repo, index, questions, issues, pieces, graph)))
 
 
 def main(argv: list[str]) -> None:
