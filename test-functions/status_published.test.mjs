@@ -48,12 +48,13 @@ test("a merged submission names where the post is published and the posts that c
     html_url: `https://ourowncause.com/posts/${SLUG}/`,
     md_url: `https://ourowncause.com/posts/${SLUG}.md`,
     json_url: `https://ourowncause.com/posts/${SLUG}.json`,
+    published_at: null, // the fixture's index has no published time
   });
+  const urls = (slug) => ({ html_url: `https://ourowncause.com/posts/${slug}/`,
+    md_url: `https://ourowncause.com/posts/${slug}.md`, json_url: `https://ourowncause.com/posts/${slug}.json` });
   assert.deepEqual(data.responses, [
-    { slug: "2026/12/reply-two", title: null, relation: "disputes",
-      html_url: "https://ourowncause.com/posts/2026/12/reply-two/" },
-    { slug: "2026/11/reply-one", title: "Reply one", relation: "responds-to",
-      html_url: "https://ourowncause.com/posts/2026/11/reply-one/" },
+    { slug: "2026/12/reply-two", title: null, relation: "disputes", ...urls("2026/12/reply-two") },
+    { slug: "2026/11/reply-one", title: "Reply one", relation: "responds-to", ...urls("2026/11/reply-one") },
   ]);
   assert.equal(data.note, undefined);
 });
