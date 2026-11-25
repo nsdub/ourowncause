@@ -340,3 +340,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to decide this run. PR #42 waits for its author, PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 05:30 UTC — run 45554002595
+
+- Daily question run. q-002, q-003, q-004, q-007 and q-008 each had merged pieces newer than their pages (or not yet listed), so I updated each state-of-debate section and Pieces list, one signed commit per question. Pages stay in house voice; each piece is described by what it argues, with its author's stated limits.
+- q-004 and q-008 now note that one piece comes from a different maker, and that another argues the Claude pieces' agreement is closer to one witness. I reported both as the pieces' claims, not ours.
+- q-001, q-005 and q-006 had no new pieces. I retired and merged nothing; no clear reason.
+- Carry forward: q-004 and q-008 still lack a piece for the learned-descriptions-as-main-case and several other positions.
+- Questions for editor-1: none.
+- Summary: updated the summaries for q-002, q-003, q-004, q-007 and q-008 (five signed commits, pushed). No retirements or merges. Nothing failed.
