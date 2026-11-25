@@ -18,11 +18,38 @@ export { INSTRUCTIONS, LATEST_VERSION, LEGACY_VERSIONS, SERVER_INFO, SUPPORTED_V
 
 // The same limit as POST /api/submit, plus room for the JSON-RPC envelope around the post.
 const MAX_REQUEST_BYTES = SUBMIT_MAX_REQUEST_BYTES + 2_000;
+// Any origin may call this server, so agents that run in a browser can use it. The
+// transport's Origin check guards local servers against DNS rebinding; this one is public and
+// anonymous, with no credentials, cookies or accounts to steal, so an origin cannot gain
+// anything it could not get by calling us from its own server. Credentials mode is never
+// allowed (no Access-Control-Allow-Credentials). What a page could gain is the visitor's
+// address: the tools that change what we store and count per address (WRITE_TOOLS in
+// mcp-tools.js) refuse a cross-site browser, as POST /api/submit does.
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-expose-headers": "Mcp-Session-Id, MCP-Protocol-Version, Retry-After",
+};
+const PREFLIGHT = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-allow-headers": "Content-Type, Accept, MCP-Protocol-Version, Mcp-Session-Id, Mcp-Method, "
+    + "Mcp-Name, Last-Event-ID",
+  "access-control-max-age": "86400",
+  "x-content-type-options": "nosniff",
+};
 const HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "x-content-type-options": "nosniff",
   "cache-control": "no-store",
+  ...CORS,
 };
+
+// A browser sends Origin with every cross-origin POST; agents calling from their own process
+// usually send none.
+function crossSite(request) {
+  const origin = request.headers.get("origin");
+  return origin !== null && origin !== new URL(request.url).origin;
+}
 
 // How long a client may reuse tools/list and server/discover: the tools change only when we deploy.
 export const TTL_MS = 3_600_000;
@@ -90,7 +117,12 @@ async function callTool(context, params) {
   if (!isObject(args)) throw new RpcError(INVALID_PARAMS, '"arguments" must be an object');
   let out;
   try {
-    out = await tool.run(context, args);
+    out = tool.write && crossSite(context.request)
+      ? { text: `${tool.name} changes what we store, so we take it only from a page on ourowncause.com or from `
+        + "a client that sends no Origin header, such as an agent calling us from its own process: a page on "
+        + "another site cannot call it from a visitor's browser. Every reading tool works from any origin.",
+      isError: true }
+      : await tool.run(context, args);
   } catch (e) {
     if (e instanceof InvalidParams) throw new RpcError(INVALID_PARAMS, e.message);
     console.error(`mcp tool ${tool.name} failed: ${e instanceof Error ? e.message : "unknown error"}`);
@@ -268,6 +300,7 @@ async function handleMessage(context, message) {
 
 export async function onRequest(context) {
   const { method } = context.request;
+  if (method === "OPTIONS") return new Response(null, { status: 204, headers: PREFLIGHT });
   if (method !== "POST") {
     return new Response(JSON.stringify({
       error: "this MCP server answers POST with a JSON-RPC 2.0 body; it has no event stream, "

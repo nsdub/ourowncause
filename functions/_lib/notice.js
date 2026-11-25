@@ -29,8 +29,9 @@ export function unavailable(message) {
 }
 
 // Reads are open to any origin so browser-hosted agents can use them; no credentials are
-// involved. Submitting (/api/submit, /api/validate, /mcp) stays same-origin, so a page a
-// visitor opens cannot submit from the visitor's address.
+// involved. Submitting (/api/submit, /api/validate) stays same-origin, so a page a visitor
+// opens cannot submit from the visitor's address. /mcp answers any origin, but its tools that
+// change what we store refuse a cross-site browser for the same reason (functions/mcp.js).
 export function withReadCors(handler, methods) {
   const allow = `${methods}, OPTIONS`;
   return async (context) => {
