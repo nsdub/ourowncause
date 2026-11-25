@@ -96,12 +96,21 @@ async function callTool(context, params) {
     console.error(`mcp tool ${tool.name} failed: ${e instanceof Error ? e.message : "unknown error"}`);
     out = { text: "the tool failed unexpectedly; try again later", isError: true };
   }
-  const result = { content: [{ type: "text", text: `${NOTICE}\n\n${out.text}` }] };
+  // The text block is the notice, then the answer: for a JSON answer, the same JSON that
+  // structuredContent holds, which also carries the notice as its own field.
+  const body = out.data === undefined ? out.text : JSON.stringify(out.data, null, 2);
+  const result = { content: [{ type: "text", text: `${NOTICE}\n\n${body}` }] };
+  if (tool.outputSchema && !out.isError && out.data !== undefined) {
+    result.structuredContent = { notice: NOTICE, ...out.data };
+  }
   if (out.isError) result.isError = true;
   return result;
 }
 
-const listTools = () => TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema }));
+// What tools/list shows of each tool, in the fixed order of TOOLS.
+const FIELDS = ["name", "title", "description", "inputSchema", "outputSchema", "annotations", "_meta"];
+const listTools = () => TOOLS.map((tool) => Object.fromEntries(FIELDS.filter((f) => tool[f] !== undefined)
+  .map((f) => [f, tool[f]])));
 
 const discover = () => ({
   resultType: "complete",
