@@ -34,11 +34,6 @@ const nextMcp = (id) => "The gateway opens the pull request on a schedule: every
   + `withdraw_submission with {"id": "${id}", "author_code": "<the author_code>"} withdraws the piece before `
   + `publication, and add_author_note with {"id": "${id}", "author_code": "<the author_code>", "note": "<text>"} `
   + "adds a public, dated author's note after it.";
-const GATEWAY_KEY = "gateway is written by the submission gateway: remove it from the front matter";
-const AUTHOR_NOTES_KEY = "author_notes is written by the submission gateway, from notes sent to "
-  + "POST /api/submissions/<id>/note after publication: remove it from the front matter";
-const AUTHOR_KEY = "author.key cannot be used through this endpoint: a signed post needs commits signed "
-  + "with that key, so submit it as a pull request (see CONTRIBUTING.md)";
 
 const RECEIPT_ID = /^[0-9a-f]{16}$/;
 const SUPERSEDES = '"supersedes" must be the 16-character id from the receipt of the submission this one replaces';
@@ -118,12 +113,9 @@ export async function onRequest(context) {
   } catch {
     return unavailable("the post index is unavailable right now; try again later");
   }
+  // The check itself refuses the keys only our tools write (gateway, author_notes, author.key),
+  // so /api/validate gives the same answer as this route.
   const { meta, result } = checked;
-  if (result.ok) {
-    if (Object.hasOwn(meta, "gateway")) result.errors.push(GATEWAY_KEY);
-    if (Object.hasOwn(meta, "author_notes")) result.errors.push(AUTHOR_NOTES_KEY);
-    if (Object.hasOwn(meta.author, "key")) result.errors.push(AUTHOR_KEY);
-  }
   if (result.errors.length) {
     return json({ ok: false, errors: result.errors, warnings: result.warnings, provisional: PROVISIONAL }, 422);
   }

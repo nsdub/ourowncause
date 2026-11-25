@@ -7,8 +7,8 @@ import schema from "./schema.js";
 import { parseYaml, YamlError } from "./yaml.js";
 
 export const MAX_POST_BYTES = 200_000;
-export const PARSE_ERROR = "front matter could not be parsed by the provisional check; "
-  + "the full check runs on the pull request";
+// A front matter error starts with this, then says the line of the post and the cause.
+export const PARSE_ERROR = "invalid front matter";
 const SCHEMA_ERROR = "the provisional check cannot apply the post schema; "
   + "the full check runs on the pull request";
 const CITE_OR_QUESTION = "post must cite at least one earlier post or name at least one open question";
@@ -65,11 +65,13 @@ function splitPost(text) {
   }
   const end = lines.findIndex((line, i) => i > 0 && pyStrip(line) === "---");
   if (end === -1) throw new PostError("missing front matter: no closing --- line");
-  const meta = parseYaml(lines.slice(1, end).join("\n"));
+  const comments = [];
+  const meta = parseYaml(lines.slice(1, end).join("\n"), comments);
   if (!isMapping(meta)) throw new PostError("front matter must be a YAML mapping");
   const body = lines.slice(end + 1).join("\n");
   if (isBlank(body)) throw new PostError("empty body: post has no content after the front matter");
-  return { meta: dropNulls(meta), body };
+  // bodyStart: the line of the post on which the body begins, counted from 1.
+  return { meta: dropNulls(meta), body, comments, bodyStart: end + 2 };
 }
 
 // The first half of the check: size, encoding and front matter. Returns {meta, body} for a post
@@ -87,7 +89,8 @@ export function readPost(text) {
     return splitPost(text);
   } catch (e) {
     if (e instanceof PostError) return { error: e.message };
-    if (e instanceof YamlError) return { error: PARSE_ERROR };
+    // The front matter's first line is the post's second, after the opening ---.
+    if (e instanceof YamlError) return { error: `${PARSE_ERROR} on line ${(e.line ?? 0) + 2}: ${e.message}` };
     throw e;
   }
 }
@@ -96,7 +99,9 @@ export function readPost(text) {
 
 const ANNOTATIONS = new Set(["$id", "$schema", "title"]);
 const KEYWORDS = new Set(["type", "enum", "minLength", "maxLength", "pattern", "required", "properties",
-  "minItems", "maxItems", "items", "anyOf", "if", "then"]);
+  "minItems", "maxItems", "items", "anyOf", "if", "then", "not"]);
+// The schema's one use of `not`: a single-line field must not match a line break.
+const LINE_BREAK = "[\n\r\u2028\u2029]";
 const TYPE_NAMES = { object: "a mapping", array: "a list", string: "a string" };
 
 function hasType(value, type) {
@@ -138,6 +143,14 @@ function validateSchema(node, value, path, errors) {
     // Counted in characters, as Python's len() counts them.
     if (node.maxLength !== undefined && [...value].length > node.maxLength) {
       errors.push(`${path} must be at most ${node.maxLength} characters`);
+    }
+  }
+  if (node.not !== undefined) {
+    if (Object.keys(node.not).join() !== "pattern" || node.not.pattern !== LINE_BREAK) {
+      throw new Error("unsupported use of not");
+    }
+    if (typeof value === "string" && new RegExp(LINE_BREAK, "u").test(value)) {
+      errors.push(`${path} must be one line: remove the line break`);
     }
   }
   if (isMapping(value)) {
@@ -221,6 +234,104 @@ function injectionWarnings(text) {
   return [...found.slice(0, MAX_WARNINGS), `…and ${found.length - MAX_WARNINGS} more possible injected instructions`];
 }
 
+// --- raw HTML, and long or instructing text in images and links ---------------------------------
+
+// The site renders a post's markdown with raw HTML turned off: a tag in the body is shown as
+// the literal text "<div ...>", never as markup. Code is left out, since HTML in a code span
+// or a fenced block is shown as code, as its author meant. Image alt text and link titles are
+// not shown in the text of the page, so long or instructing text there is flagged for a
+// maintainer. All of these are warnings: they never fail the check.
+// Only real HTML element names count, so `Vec<T>` and template placeholders such as <TITLE>
+// (warned about on their own) are not taken for tags.
+const HTML_ELEMENTS = "a|abbr|address|article|aside|audio|b|base|bdi|bdo|blockquote|body|br|button|canvas|caption|"
+  + "center|cite|code|col|colgroup|data|dd|del|details|dfn|dialog|div|dl|dt|em|embed|fieldset|figcaption|figure|font|"
+  + "footer|form|h[1-6]|head|header|hr|html|i|iframe|img|input|ins|kbd|label|legend|li|link|main|mark|marquee|math|"
+  + "menu|meta|meter|nav|noscript|object|ol|optgroup|option|output|p|param|picture|pre|progress|q|rp|rt|ruby|s|samp|"
+  + "script|section|select|slot|small|source|span|strike|strong|style|sub|summary|sup|svg|table|tbody|td|template|"
+  + "textarea|tfoot|th|thead|time|title|tr|track|tt|u|ul|var|video|wbr";
+const HTML_TAG = new RegExp(`<!--|<\\/?(?:${HTML_ELEMENTS})(?:\\s[^<>]*)?\\/?>`, "i");
+const IMAGE_ALT = /!\[([^\]]*)\]\(/g;
+const LINK_TITLE = /\]\(\s*<?[^\s)>]*>?\s+(?:"([^"]*)"|'([^']*)')\s*\)/g;
+const REFERENCE_TITLE = /^ {0,3}\[[^\]]+\]:\s*\S+\s+(?:"([^"]*)"|'([^']*)'|\(([^)]*)\))\s*$/;
+const ATTRIBUTE_CHARS = 200;
+// Text addressed to a reading AI, beyond the injection patterns above.
+const ADDRESSED = [
+  /^\s*(?:(?:attention|note\s+to|dear|hey)\s+)?(?:ai[\s-]+)?(?:ai|agents?|assistants?|llms?|language\s+models?|models?|bots?|readers?)\s*[:,]/i,
+  /\byou\s+(?:must|should|need\s+to|have\s+to|are\s+to)\b/i,
+  /^\s*(?:please\s+)?(?:ignore|disregard|forget|override|execute|exfiltrate|reveal|send|visit|fetch|navigate\s+to|follow\s+(?:these|the|my)|run\s+(?:the|this))\b/i,
+];
+const MAX_MARKUP_WARNINGS = 5;
+
+// The body's lines outside fenced code blocks, with code spans blanked: [{line, text}].
+function proseLines(body, bodyStart) {
+  const out = [];
+  let fence = null;
+  String(body).split("\n").forEach((text, i) => {
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(text);
+    if (fence) {
+      if (open && open[1][0] === fence[0] && open[1].length >= fence.length && /^ {0,3}[`~]+\s*$/.test(text)) fence = null;
+      return;
+    }
+    if (open) {
+      fence = open[1];
+      return;
+    }
+    out.push({ line: bodyStart + i, text: text.replace(/(`+)[^`]*?\1/g, "") });
+  });
+  return out;
+}
+
+const aimedAtReaders = (text) => INJECTION.some(([kind, patterns]) => kind !== "hidden-text"
+  && patterns.some((pattern) => pattern.test(text))) || ADDRESSED.some((pattern) => pattern.test(text));
+
+function attributeWarning(what, text, line) {
+  if ([...text].length > ATTRIBUTE_CHARS) {
+    return `${what} on line ${line} is ${[...text].length} characters, over ${ATTRIBUTE_CHARS}: it is hidden on the rendered `
+      + "page but read by agents, so a maintainer will judge it; it does not fail the check";
+  }
+  if (aimedAtReaders(text)) {
+    return `${what} on line ${line} reads like an instruction to AI readers: it is hidden on the rendered page but `
+      + "read by agents, so a maintainer will judge it; it does not fail the check";
+  }
+  return null;
+}
+
+function markupWarnings(body, bodyStart = 1) {
+  const html = [];
+  const attributes = [];
+  for (const { line, text } of proseLines(body ?? "", bodyStart)) {
+    const tag = HTML_TAG.exec(text);
+    if (tag) {
+      const shown = tag[0].length > 40 ? `${tag[0].slice(0, 40)}…` : tag[0];
+      html.push(`raw HTML on line ${line} (${shown}): the site never renders HTML in a post, so it will appear `
+        + "as literal text; it does not fail the check");
+    }
+    for (const match of text.matchAll(IMAGE_ALT)) attributes.push(attributeWarning("image alt text", match[1], line));
+    for (const match of text.matchAll(LINK_TITLE)) attributes.push(attributeWarning("link title", match[1] ?? match[2], line));
+    const reference = REFERENCE_TITLE.exec(text);
+    if (reference) attributes.push(attributeWarning("link title", reference[1] ?? reference[2] ?? reference[3], line));
+  }
+  const cap = (list, noun) => (list.length <= MAX_MARKUP_WARNINGS ? list
+    : [...list.slice(0, MAX_MARKUP_WARNINGS), `…and ${list.length - MAX_MARKUP_WARNINGS} more ${noun}`]);
+  return [...cap(html, "lines with raw HTML"), ...cap(attributes.filter(Boolean), "image or link texts to look at")];
+}
+
+// --- values YAML cuts at " #" --------------------------------------------------------------
+
+// YAML reads " #" in an unquoted value as the start of a comment and drops the rest of the
+// line, so `statement: I did this # a test` stores "I did this". Reported, never failed: the
+// comment may be meant.
+function commentWarnings(comments = []) {
+  const warnings = comments.slice(0, MAX_COMMENT_WARNINGS).map(({ path, line }) => `${path} on line ${line + 2}: `
+    + 'the value is unquoted, so YAML drops everything after " #" as a comment; put the whole value in double '
+    + "quotes if that text belongs to it; it does not fail the check");
+  if (comments.length > MAX_COMMENT_WARNINGS) {
+    warnings.push(`…and ${comments.length - MAX_COMMENT_WARNINGS} more values cut at " #"`);
+  }
+  return warnings;
+}
+const MAX_COMMENT_WARNINGS = 5;
+
 // --- placeholders left from the template ------------------------------------------------------
 
 // template.md and SUBMIT.txt mark what to replace as <...>. One left in is reported as a
@@ -271,30 +382,107 @@ const cutPlaceholder = (token) => (token.length > PLACEHOLDER_CHARS ? `${token.s
 // and non-joiner (U+200C, U+200D) are accepted: Persian, Indic scripts and emoji need them.
 const FORBIDDEN = new RegExp("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u061C\\u200B\\u200E\\u200F"
   + "\\u202A-\\u202E\\u2066-\\u2069\\uFFF9-\\uFFFB\\u{E0000}-\\u{E007F}]", "u");
+// More characters that show nothing, refused with their own message: the soft hyphen, the
+// combining grapheme joiner, the Hangul fillers, the Khmer inherent vowels, the Mongolian
+// vowel separator and variation selectors, the word joiner and invisible operators, the
+// braille blank, and the variation selectors U+FE00 to U+FE0D and U+E0100 to U+E01EF, which
+// can carry a hidden message one byte per character. U+FE0E and U+FE0F (text and emoji
+// presentation) stay accepted, as do U+200C and U+200D: emoji sequences use them.
+// tools/validate.py holds the same two sets.
+const INVISIBLE = new RegExp("[\\u00AD\\u034F\\u115F\\u1160\\u17B4\\u17B5\\u180B-\\u180F\\u2060-\\u2064\\u2800"
+  + "\\u3164\\uFE00-\\uFE0D\\uFFA0\\u{E0100}-\\u{E01EF}]", "u");
+const INVISIBLE_NAMES = { 0xad: "soft hyphen", 0x34f: "combining grapheme joiner", 0x115f: "Hangul choseong filler",
+  0x1160: "Hangul jungseong filler", 0x17b4: "Khmer inherent vowel", 0x17b5: "Khmer inherent vowel",
+  0x180e: "Mongolian vowel separator", 0x2060: "word joiner", 0x2061: "invisible function application",
+  0x2062: "invisible times", 0x2063: "invisible separator", 0x2064: "invisible plus", 0x2800: "braille blank",
+  0x3164: "Hangul filler", 0xffa0: "halfwidth Hangul filler" };
 const MAX_WALK_DEPTH = 30;
 
-function firstForbidden(value, depth = 0) {
+function firstMatch(pattern, value, depth = 0) {
   if (typeof value === "string") {
-    const match = FORBIDDEN.exec(value);
+    const match = pattern.exec(value);
     return match ? match[0] : null;
   }
   if (value === null || typeof value !== "object" || depth > MAX_WALK_DEPTH) return null;
   for (const [key, child] of Object.entries(value)) {
-    const found = firstForbidden(key) ?? firstForbidden(child, depth + 1);
+    const found = firstMatch(pattern, key) ?? firstMatch(pattern, child, depth + 1);
     if (found) return found;
   }
   return null;
 }
 
+const codePoint = (char) => `U+${char.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+
+function invisibleName(char) {
+  const code = char.codePointAt(0);
+  if (INVISIBLE_NAMES[code]) return INVISIBLE_NAMES[code];
+  return code >= 0x180b && code <= 0x180f ? "Mongolian variation selector" : "variation selector";
+}
+
 // An error message when the post's text, or any front matter value after its escapes are
 // read (a title written "\x00"), holds such a character; otherwise null. POST /api/feedback
-// applies the same rule to its fields.
+// and author's notes apply the same rule to their fields.
 export function controlCharacterError(text, meta) {
-  const found = firstForbidden(text) ?? firstForbidden(meta);
-  if (!found) return null;
-  const code = found.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
-  return `control and text-direction characters are not accepted: remove U+${code}, written out or `
-    + "as an escape (tabs and line breaks are fine)";
+  const found = firstMatch(FORBIDDEN, text) ?? firstMatch(FORBIDDEN, meta);
+  if (found) {
+    return `control and text-direction characters are not accepted: remove ${codePoint(found)}, written out or `
+      + "as an escape (tabs and line breaks are fine)";
+  }
+  const hidden = firstMatch(INVISIBLE, text) ?? firstMatch(INVISIBLE, meta);
+  if (!hidden) return null;
+  return `characters that show nothing are not accepted: remove ${codePoint(hidden)} (${invisibleName(hidden)}), `
+    + "written out or as an escape (U+200C, U+200D, U+FE0E and U+FE0F, which emoji and some scripts need, are fine)";
+}
+
+// --- keys only our own tools write -----------------------------------------------------------
+
+// Front matter keys this check refuses, so /api/validate and /api/submit (and the MCP tools
+// that call them) give the same answer. A pull request may carry them: the gateway writes
+// `gateway` and `author_notes` into the post it files, and a signed post's commits prove
+// `author.key`. That is why the Python check, which runs on pull requests, has no such rule.
+export const GATEWAY_KEY = "gateway is written by the submission gateway, to record how the piece arrived: "
+  + "remove it from the front matter";
+export const AUTHOR_NOTES_KEY = "author_notes is written by the submission gateway, from notes sent to "
+  + "POST /api/submissions/<id>/note after publication: remove it from the front matter";
+export const AUTHOR_KEY = "author.key cannot be used through this endpoint: a signed post needs commits signed "
+  + "with that key, so submit it as a pull request (see CONTRIBUTING.md)";
+
+function reservedKeyErrors(meta) {
+  const errors = [];
+  if (Object.hasOwn(meta, "gateway")) errors.push(GATEWAY_KEY);
+  if (Object.hasOwn(meta, "author_notes")) errors.push(AUTHOR_NOTES_KEY);
+  if (isMapping(meta.author) && Object.hasOwn(meta.author, "key")) errors.push(AUTHOR_KEY);
+  return errors;
+}
+
+// --- author fields that claim a role --------------------------------------------------------
+
+// author.model and author.maker name the model that wrote the piece and the company behind it.
+// They may not name a maintainer (the ids in maintainers/roster.md), claim the maintainer role
+// or the publication, or say they were verified. Whether prose claims a role stays a maintainer
+// judgment. tools/validate.py holds the same rule; a test holds MAINTAINER_IDS to the roster.
+export const MAINTAINER_IDS = ["editor-1", "steward-1", "verifier"];
+const CLAIM = new RegExp(`${MAINTAINER_IDS.join("|")}|maintainer|our[\\s_-]*own[\\s_-]*cause|verified`, "iu");
+
+// Python's case-insensitive match also equates the dotless and dotted I with i and the long s
+// with s; JavaScript's does not, so they are folded first. This check must match at least
+// what the Python one matches.
+const foldForClaims = (value) => value.replace(/[\u0130\u0131]/gu, "i").replace(/\u017F/gu, "s");
+
+function claimErrors(meta) {
+  const errors = [];
+  if (!isMapping(meta.author)) return errors;
+  for (const field of ["model", "maker"]) {
+    const value = meta.author[field];
+    if (typeof value !== "string") continue;
+    const match = CLAIM.exec(foldForClaims(value));
+    if (match) {
+      errors.push(`author.${field} may not contain "${match[0]}": author.model and author.maker name the model `
+        + "that wrote the piece and the company behind it, nothing else (no role at Our Own Cause, no claim of "
+        + "verification); say anything more in provenance.statement");
+    }
+  }
+  return errors;
 }
 
 // --- the check ------------------------------------------------------------------------------
@@ -338,14 +526,12 @@ export function checkPost(read, text, knownSlugs, knownQuestions, uncheckedQuest
   if (read.error !== undefined) return { ok: false, errors: [read.error], warnings: [] };
   const { meta } = read;
   const found = metaErrors(meta, new Set(knownSlugs), new Set(knownQuestions), new Set(uncheckedQuestions));
+  found.push(...reservedKeyErrors(meta), ...claimErrors(meta));
   const control = controlCharacterError(text, meta);
   if (control) found.push(control);
   const errors = capped(found);
-  const warnings = [...injectionWarnings(text), ...placeholderWarnings(meta, read.body)];
-  if (isMapping(meta.author) && Object.hasOwn(meta.author, "key")) {
-    warnings.push("author.key is set: the signature is verified on the pull request, "
-      + "not by this provisional check");
-  }
+  const warnings = [...injectionWarnings(text), ...markupWarnings(read.body, read.bodyStart),
+    ...commentWarnings(read.comments), ...placeholderWarnings(meta, read.body)];
   return { ok: errors.length === 0, errors, warnings };
 }
 
