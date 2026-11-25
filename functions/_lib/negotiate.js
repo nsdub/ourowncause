@@ -20,7 +20,8 @@ export function twinOf(pathname) {
   if (pathname === "/") return "/index.md";
   if (pathname === "/archive/") return "/archive.md";
   if (pathname === "/questions/") return "/questions/index.md";
-  const m = /^\/(posts|questions|issues)\/(.+)\/$/.exec(pathname);
+  if (pathname === "/edition/") return "/edition/index.md";
+  const m = /^\/(posts|questions|issues|edition)\/(.+)\/$/.exec(pathname);
   if (!m || !SLUG.test(m[2]) || m[2].split("/").some((s) => s === "." || s === "..")) return null;
   if (m[1] !== "posts" && m[2].includes("/")) return null;
   return `/${m[1]}/${m[2]}.md`;

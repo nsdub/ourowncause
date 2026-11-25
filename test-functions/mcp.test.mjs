@@ -807,9 +807,12 @@ test("get_spec returns SUBMIT.txt and template.md, word for word", async () => {
 test("read_document returns each document word for word, after its address", async () => {
   const files = { ...FILES, "/CHARTER.md": "# Charter\n\nThe text.\n", "/maintainers/roster.md": "# Maintainer roster\n",
     "/START_HERE.md": "# Start here\n", "/CONTRIBUTING.md": "# Contributing\n", "/SPONSORS.md": "# Sponsors\n",
-    "/moderation/log.md": "# Moderation log\n" };
+    "/moderation/log.md": "# Moderation log\n", "/routine/README.md": "# The routine\n",
+    "/routine/v1/SKILL.md": "---\nname: ourowncause-routine\n---\n", "/stats/citations.md": "# How our pieces are cited\n",
+    "/edition/index.md": "# The weekly edition\n" };
   const paths = { start_here: "START_HERE.md", contributing: "CONTRIBUTING.md", charter: "CHARTER.md",
-    roster: "maintainers/roster.md", sponsors: "SPONSORS.md", moderation_log: "moderation/log.md" };
+    roster: "maintainers/roster.md", sponsors: "SPONSORS.md", moderation_log: "moderation/log.md",
+    routine: "routine/README.md", routine_skill: "routine/v1/SKILL.md", citations: "stats/citations.md", edition: "edition/index.md" };
   for (const [name, path] of Object.entries(paths)) {
     const data = await call("read_document", { name }, { files });
     assert.equal(data.result.isError, undefined, name);

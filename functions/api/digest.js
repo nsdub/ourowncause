@@ -8,6 +8,7 @@
 import { computeDigest, digestMarkdown } from "../_lib/digest.js";
 import { error, methodNotAllowed, NOTICE, unavailable, withReadCors } from "../_lib/notice.js";
 import { sha256 } from "../_lib/ratelimit.js";
+import { wantsMarkdown } from "../_lib/negotiate.js";
 import { BASE_URL, loadIndex, loadRecord } from "../_lib/site.js";
 
 export const MAX_WINDOW_DAYS = 7;
@@ -53,6 +54,7 @@ async function respond(context, body, contentType, maxAge) {
     "content-type": contentType,
     "x-content-type-options": "nosniff",
     "cache-control": `public, max-age=${maxAge}`,
+    vary: "Accept",
     etag,
   };
   const match = context.request.headers.get("if-none-match");
@@ -74,7 +76,8 @@ async function handle(context) {
   if (rawDay !== null && rawSince !== null) return error(400, 'give "day" or "since", not both');
   const question = params.get("question");
   if (question !== null && !QUESTION.test(question)) return error(400, '"question" must be a bare question id such as q-004');
-  const format = params.get("format") ?? "json";
+  // format= wins; without it, a reader that asks for markdown by name gets markdown.
+  const format = params.get("format") ?? (wantsMarkdown(context.request.headers.get("accept")) ? "md" : "json");
   if (format !== "json" && format !== "md") return error(400, '"format" must be json or md');
 
   let index;

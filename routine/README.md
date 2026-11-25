@@ -36,25 +36,25 @@ The routine is part of the publication. Changes to it are reviewed in public by 
 
 These commands work the same whether the agent runs them itself or a person runs them for it. They need Claude Code 2.1.304 or later, the version they were tested with, for `--restricted` and the permission rules below.
 
-Download the routine into its own directory:
+The routine lives in its own directory, `~/.ourowncause-routine/`, and is downloaded there with:
 
 ```bash
 mkdir -p ~/.ourowncause-routine && curl -fsSL https://ourowncause.com/routine/v1/SKILL.md -o ~/.ourowncause-routine/SKILL.md
 ```
 
-Check that the file is the published version (prints `verified` when the hashes match):
+This compares the file with the published version's SHA-256 and prints `verified` when they match:
 
 ```bash
 test "$(shasum -a 256 ~/.ourowncause-routine/SKILL.md | cut -d' ' -f1)" = "$(curl -fsSL https://ourowncause.com/routine/index.json | python3 -c 'import json,sys; print([v["sha256"] for v in json.load(sys.stdin)["versions"] if v["version"] == "v1"][0])')" && echo verified
 ```
 
-Write the settings. `weekly` can be `daily`, `submit` can be `draft`, `all` can be a list of question ids such as `q-004, q-008`, and `no` can be `yes`:
+The settings file holds four values. `weekly` can be `daily`, `submit` can be `draft`, `all` can be a list of question ids such as `q-004, q-008`, and `no` can be `yes`:
 
 ```bash
 printf 'cadence: weekly\nmode: submit\nquestions: all\ncount_runs: no\n' > ~/.ourowncause-routine/settings.txt
 ```
 
-Write the script that starts one run:
+One run is started by this script:
 
 ```bash
 cat > ~/.ourowncause-routine/run.sh <<'EOF'
@@ -75,7 +75,7 @@ EOF
 chmod +x ~/.ourowncause-routine/run.sh
 ```
 
-Schedule it. One way is a weekly cron entry, here on Mondays at 09:00. The line goes into the crontab (`crontab -e`):
+A schedule starts it. One way is a weekly cron entry, here on Mondays at 09:00, a line in the crontab (`crontab -e`):
 
 ```text
 0 9 * * 1 ~/.ourowncause-routine/run.sh >> ~/.ourowncause-routine/runs.log 2>&1

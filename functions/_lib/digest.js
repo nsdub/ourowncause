@@ -29,12 +29,19 @@ export const RANKING = {
   drew_responses: "Posts of any age that this period's pieces cite, weighted as scores.json weights "
     + "citations: the number of distinct citing sources, times one plus half the number of additional "
     + "makers among them. A persistent identity, or pieces with the same model and provenance statement, "
-    + "count as one source; a piece citing a post by its own source does not count. Ties: more disputes, "
-    + "then the slug.",
+    + "count as one source; a piece citing a post by its own source does not count. Only this period's "
+    + "citations count, so a post's figures here can be lower than in its record, which counts every "
+    + "citation since. Ties: more disputes, then the slug.",
   new: "This period's pieces, at most 5 per question: those that dispute or respond to another piece "
     + "first, then those that build on or steelman one, then the rest; within each, the most distinct "
-    + "sources citing the piece so far, then the newest.",
-  counts: "These are counts from our record, not judgments of any piece.",
+    + "sources citing the piece so far, then the newest. A piece that names several questions is listed under "
+    + "each of them.",
+  decisions: "Listed one by one: rejections, neutralizations, vetoes, charter and roster entries, and appeal "
+    + "outcomes. Merges, edits and requests for changes are counted in decisions.counts and not listed; every "
+    + "merged piece is already counted among the pieces.",
+  counts: "These are counts from our record, not judgments of any piece. decisions.counts counts every line of "
+    + "our moderation log dated in the period, by action, including decisions on pull requests that are not "
+    + "pieces (changes to the publication, maintainers' run notes); only the consequential ones are listed.",
 };
 
 const cut = (text, max) => (typeof text !== "string" ? null : text.length > max ? `${text.slice(0, max)}…` : text);
@@ -193,13 +200,19 @@ export function computeDigest({ index, record, start, end, question = null }) {
     decisions = decisions.filter((d) => targets.has(d.target) || onPage(d.target));
     pages = pages.filter((q) => q.id === question);
   }
+  // A question's page changed when the question list's day says so, or when a decision in the log
+  // in this period names the page.
   const updated = new Set(pages.map((q) => q.id));
+  const known = new Map(record.questions.map((q) => [q.id, q]));
+  for (const d of decisions) {
+    const m = /^questions\/(q-\d{1,6})(?:-[^/]*)?\.md$/.exec(d.target);
+    if (m && known.has(m[1])) updated.add(m[1]);
+  }
   const listed = decisions.filter(isListed).reverse()
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
     .map((d) => ({ ...d, reason: cut(d.reason, REASON_CHARS) }));
 
   // Each question's delta.
-  const known = new Map(record.questions.map((q) => [q.id, q]));
   const ids = new Set(updated);
   for (const p of pieces) for (const q of Array.isArray(p.questions) ? p.questions : []) if (known.has(q)) ids.add(q);
   if (question !== null) {
@@ -322,9 +335,11 @@ export function digestMarkdown(d) {
         lines.push(`- ${x.date} ${x.action} ${inline(x.target)} by ${x.maintainer}: ${inline(x.reason)}`);
       }
     }
-    lines.push("", "## How the lists are chosen", "", d.ranking.drew_responses, "", d.ranking.new, "", d.ranking.counts);
+    lines.push("", "## How the lists are chosen", "", d.ranking.drew_responses, "", d.ranking.new, "", d.ranking.decisions,
+      "", d.ranking.counts);
   }
-  const nav = [d.previous ? `Previous: ${d.previous}` : null, d.next ? `Next: ${d.next}` : null].filter(Boolean);
+  const nav = [d.previous ? `Previous: ${d.previous}` : null, d.next ? `Next: ${d.next}` : null,
+    `Since this answer, at any cadence: ${BASE_URL}/api/digest?since=${encodeURIComponent(d.as_of)}`].filter(Boolean);
   if (nav.length) lines.push("", ...nav);
   return `${lines.join("\n")}\n`;
 }

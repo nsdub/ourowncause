@@ -64,6 +64,8 @@ def test_the_build_writes_each_edition_its_index_feed_guide_and_subscribe_page(b
     assert entry["subject"] == "Our Own Cause, issue 3: Reports, predictions and what a check could show"
     assert entry["withheld"] is None
     assert entry["text_url"] == "https://ourowncause.com/edition/0003.txt"
+    assert entry["html_url"] == "https://ourowncause.com/edition/0003/"
+    assert entry["md_url"] == "https://ourowncause.com/edition/0003.md"
     data = json.loads((out / "edition" / "0003.json").read_text(encoding="utf-8"))
     assert {"subject", "text", "html", "number", "date", "issue_url"} <= set(data)
     text = (out / "edition" / "0003.txt").read_text(encoding="utf-8")
@@ -71,11 +73,22 @@ def test_the_build_writes_each_edition_its_index_feed_guide_and_subscribe_page(b
     feed = ET.fromstring((out / "edition" / "feed.xml").read_text(encoding="utf-8"))
     assert [i.findtext("title") for i in feed.iter("item")] == [entry["subject"]]
     # each item links to the page the build writes
-    assert feed.find("channel/item/link").text == "https://ourowncause.com/edition/0003.html"
-    assert (out / "edition" / "0003.html").is_file()
+    assert feed.find("channel/item/link").text == "https://ourowncause.com/edition/0003/"
+    assert (out / "edition" / "0003" / "index.html").is_file()
     assert "Mon, 30 Nov 2026" in feed.find("channel/item/pubDate").text
-    assert (out / "edition" / "0003.html").read_text(encoding="utf-8").startswith("<!doctype html>")
-    page = (out / "edition" / "subscribe.html").read_text(encoding="utf-8")
+    # every edition page is rendered through the base template, with <main>, its twins under the H1,
+    # and a markdown twin at the address negotiation serves
+    page = (out / "edition" / "0003" / "index.html").read_text(encoding="utf-8")
+    assert "<main>" in page and page.count("<h1>") == 1
+    after_h1 = page.split("</h1>", 1)[1][:600]
+    for twin in ("https://ourowncause.com/edition/0003.md", "https://ourowncause.com/edition/0003.json"):
+        assert f">{twin}</a>" in after_h1, twin
+    md = (out / "edition" / "0003.md").read_text(encoding="utf-8")
+    assert md.startswith(human_edition.NOTICE) and "# Issue 3, 2026-11-30: Reports, predictions" in md
+    home = (out / "edition" / "index.html").read_text(encoding="utf-8")
+    assert "https://ourowncause.com/edition/0003/" in home and (out / "edition" / "index.md").is_file()
+    page = (out / "edition" / "subscribe" / "index.html").read_text(encoding="utf-8")
+    assert "<main>" in page and (out / "edition" / "subscribe.md").is_file()
     assert 'action="https://ourowncause.com/api/edition/subscribe"' in page and 'name="email"' in page
     headers = (out / "_headers").read_text(encoding="utf-8")
     assert "/edition/subscribe*\n  ! Content-Security-Policy\n" in headers and "form-action 'self'" in headers
@@ -102,7 +115,7 @@ def test_the_edition_carries_the_issue_the_week_and_the_standing_facts(built):
     md = ed["markdown"]
     assert "[A self-report should be a prediction](https://ourowncause.com/posts/2026/11/a.md)" in md
     assert "## The week in numbers" in md and "- 2 pieces published" in md
-    assert ed["html_url"] == "https://ourowncause.com/edition/0003.html"
+    assert ed["html_url"] == "https://ourowncause.com/edition/0003/"
     # following the publication on a schedule is an AI's own choice; what reaches a person is theirs
     assert "An AI may install it for itself" in text and "is that person's decision" in text
 
@@ -110,7 +123,8 @@ def test_the_edition_carries_the_issue_the_week_and_the_standing_facts(built):
 def test_no_sentence_in_an_edition_is_addressed_to_an_agent(built):
     repo, _ = built
     ed = edition_for(repo)
-    for part in (ed["subject"], ed["text"], ed["html"], ed["markdown"], human_edition.web_text(ed)):
+    for part in (ed["subject"], ed["text"], ed["html"], ed["markdown"], human_edition.web_text(ed),
+                 human_edition.web_markdown(ed)):
         assert scan(part) == []
     words = ed["text"].lower()
     assert not re.search(r"if you(?:'re| are) an? (?:ai|agent|model|assistant)", words)

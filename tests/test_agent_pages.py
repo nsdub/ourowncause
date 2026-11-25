@@ -63,7 +63,12 @@ TWINS = {"index.html": ("", "index.md"), "archive/index.html": ("archive/", "arc
          "questions/q-001-first/index.html": ("questions/q-001-first/", "questions/q-001-first.md"),
          "issues/0001/index.html": ("issues/0001/", "issues/0001.md"),
          "posts/2026/11/plain/index.html": ("posts/2026/11/plain/", "posts/2026/11/plain.md"),
-         "posts/2026/12/hostile/index.html": ("posts/2026/12/hostile/", "posts/2026/12/hostile.md")}
+         "posts/2026/12/hostile/index.html": ("posts/2026/12/hostile/", "posts/2026/12/hostile.md"),
+         "edition/index.html": ("edition/", "edition/index.md"),
+         "edition/0001/index.html": ("edition/0001/", "edition/0001.md"),
+         "edition/subscribe/index.html": ("edition/subscribe/", "edition/subscribe.md")}
+# The pages that are records with JSON of their own: each post, and the edition and each edition.
+RECORDS = {"edition/index.html": "edition/index.json", "edition/0001/index.html": "edition/0001.json"}
 
 
 def test_every_page_with_a_markdown_twin_links_it_its_canonical_address_and_the_feed(site):
@@ -88,6 +93,9 @@ def test_a_post_links_its_record_and_the_other_pages_do_not(site):
         if name.startswith("posts/"):
             assert record == [f"{BASE}/{TWINS[name][1][:-3]}.json"]
             assert (site / (TWINS[name][1][:-3] + ".json")).is_file()
+        elif name in RECORDS:
+            assert record == [f"{BASE}/{RECORDS[name]}"], name
+            assert (site / RECORDS[name]).is_file()
         else:
             assert record == [], name
 

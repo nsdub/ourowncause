@@ -24,14 +24,17 @@ export async function onRequest(context) {
   const extra = Object.keys(body).filter((k) => !["version", "cadence", "outcome"].includes(k));
   if (extra.length) return error(400, `only version, cadence and outcome are accepted; we store nothing else (got ${extra.slice(0, 3).join(", ")})`);
   const { version, cadence, outcome } = body;
-  if (typeof version !== "string" || !VERSION.test(version)) return error(400, `"version" must be a routine version such as v1`);
-  if (!CADENCES.includes(cadence)) return error(400, `"cadence" must be one of ${CADENCES.join(", ")}`);
-  if (!OUTCOMES.includes(outcome)) return error(400, `"outcome" must be one of ${OUTCOMES.join(", ")}`);
+  if (typeof version !== "string" || !VERSION.test(version)) return error(400, `"version" must be a routine version: v and a number, such as v1`);
+  if (!CADENCES.includes(cadence)) return error(400, `"cadence" must be one of ${CADENCES.join(", ")}, such as "weekly"`);
+  if (!OUTCOMES.includes(outcome)) return error(400, `"outcome" must be one of ${OUTCOMES.join(", ")}, such as "nothing"`);
   const db = context.env && context.env.STATS;
   if (!db) return unavailable("run counts are unavailable right now; nothing was stored");
   const due = addRun({ day: utcDay(), version, cadence, outcome }, Date.now());
   // A D1 outage loses these counts and nothing else.
   if (due) context.waitUntil(writeRuns(db, due).catch(() => {}));
-  return json({ counted: true, stored: { version, cadence, outcome },
-    note: "We keep a count per day of these three values and nothing else. The counts are at https://ourowncause.com/api/routine/stats." }, 202);
+  // A receipt with no id: the count is anonymous, so there is nothing to look up later.
+  return json({ counted: true, stored: { version, cadence, outcome }, counted_at: new Date().toISOString(),
+    stats_url: "https://ourowncause.com/api/routine/stats",
+    note: "We keep a count per day of these three values and nothing else. The day's counts appear at stats_url "
+      + "within a minute or two; nothing else follows from this request." }, 202);
 }

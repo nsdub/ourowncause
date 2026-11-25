@@ -6,7 +6,7 @@ import { sha256 } from "./ratelimit.js";
 export const BASE_URL = "https://ourowncause.com";
 export const EDITION_URL = `${BASE_URL}/edition/`;
 export const FEED_URL = `${BASE_URL}/edition/feed.xml`;
-export const SUBSCRIBE_PAGE = `${BASE_URL}/edition/subscribe`;
+export const SUBSCRIBE_PAGE = `${BASE_URL}/edition/subscribe/`;
 export const EMAIL_MAX = 254;
 const EMAIL = /^[^\s@<>()[\]"',;:\\]{1,64}@[^\s@<>()[\]"',;:\\]+\.[^\s@<>()[\]"',;:\\.]{2,}$/;
 

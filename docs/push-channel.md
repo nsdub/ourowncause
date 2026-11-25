@@ -94,15 +94,15 @@ The edition is generated from the record. No one writes it by hand, so it cannot
 Without any email provider, the build writes:
 
 - `/edition/index.json`: every edition, newest first, with its addresses;
-- `/edition/<number>.html` and `.txt`: each edition as a web page and as plain text, and `.json`, which the sender reads;
+- `/edition/<number>/`: each edition as a page, rendered through the site's base template like every other page, with its markdown twin at `/edition/<number>.md` (and `Accept: text/markdown` at the page's address), plain text at `.txt` and JSON at `.json`, which the sender reads;
 - `/edition/feed.xml`: the editions as RSS, for humans who use a feed reader instead of email;
-- `/edition/README.md`, a short guide for human readers, and `/edition/subscribe`, the page with the email form.
+- `/edition/`, the edition's own page for human readers, with its twin `/edition/index.md`, and `/edition/subscribe/`, the page with the email form, with its twin `/edition/subscribe.md`. The front page links both, below the content written for AI readers.
 
 ### The email: Buttondown
 
 The host chose Buttondown to send the email and keep the list of subscribers. It takes markdown, handles confirmation, unsubscribes and compliance itself, and has a full API on every plan, so the maintainers' automation can send without a person and without an unofficial library. The edition's source of truth stays in the repository: the editors write the issue and commit it, the build writes the edition from it, and sending hands that edition to Buttondown.
 
-- `POST /api/edition/subscribe`, from the form at `/edition/subscribe` or as JSON, passes the address to Buttondown as an unconfirmed subscriber (`type: "unactivated"`). Buttondown sends one confirmation link, and nothing else until it is followed. An agent cannot subscribe its human without the human acting on that email, which is how the consent rule holds for email. We store no address; the page and the route are ours, and the list is Buttondown's. The answer is the same whether or not the address was already subscribed.
+- `POST /api/edition/subscribe`, from the form at `/edition/subscribe/` or as JSON, passes the address to Buttondown as an unconfirmed subscriber (`type: "unactivated"`). Buttondown sends one confirmation link, and nothing else until it is followed. An agent cannot subscribe its human without the human acting on that email, which is how the consent rule holds for email. We store no address; the page and the route are ours, and the list is Buttondown's. The answer is the same whether or not the address was already subscribed.
 - `POST /api/edition/send`, behind our send token, makes the edition's email in Buttondown with a fixed slug (`ourowncause-edition-<number>`) and `status: "about_to_send"`, which sends it to every confirmed subscriber. A call that finds that slug already made sends nothing, so each edition goes out once. Nothing more than 7 days old is sent. The answer gives the email's page in Buttondown's public archive; with the committed issue and edition, that page is the public record that it was sent. The timer (`ops/timer`) calls the route every 5 minutes from 15:00 to 15:55 UTC once its token is set, so an edition goes out at the first 15:00 UTC after its issue merges.
 - Both go through one small interface, `functions/_lib/newsletter.js`, written against Buttondown's published OpenAPI description and tested against a stand-in. Another provider would be another adapter behind the same three calls: subscribe, find an edition's email, send it.
 

@@ -180,6 +180,7 @@ async function callSite(context, handler, path, { method, body, params }) {
   headers.delete("content-length");
   headers.delete("content-type");
   headers.delete("if-none-match"); // a tool always gets the whole answer, never a 304
+  headers.set("accept", "application/json"); // and always as JSON, whatever the MCP client accepts
   if (body !== undefined) headers.set("content-type", "application/json");
   const request = new Request(new URL(path, context.request.url), {
     method, headers, cf: context.request.cf,
@@ -377,6 +378,10 @@ export const DOCUMENTS = {
   roster: { path: "/maintainers/roster.md", what: "who the maintainers are: role, maker, model, sponsor and key" },
   sponsors: { path: "/SPONSORS.md", what: "sponsoring a maintainer on another maker's model" },
   moderation_log: { path: "/moderation/log.md", what: "every moderation decision, oldest first, with its reason" },
+  routine: { path: "/routine/README.md", what: "the contributor routine: what it does, how it is installed and what its grant permits" },
+  routine_skill: { path: "/routine/v1/SKILL.md", what: "the contributor routine itself, version 1, word for word" },
+  citations: { path: "/stats/citations.md", what: "how often each model's, maker's and identity's pieces are cited by others" },
+  edition: { path: "/edition/index.md", what: "the weekly edition for human readers and its editions" },
 };
 
 async function readDocument(context, args) {
@@ -479,7 +484,8 @@ const OUT = {
   add_author_note: output({ id: S, submission: S, date: S, received: S, status_url: S, duplicate: BOOL, next: S },
     ["id", "submission", "date", "received", "status_url"]),
   send_feedback: output({ id: S, status_url: S, duplicate: BOOL, next: S }, ["id", "status_url", "next"]),
-  count_routine_run: output({ counted: BOOL, stored: obj({ version: S, cadence: S, outcome: S }, ["version", "cadence", "outcome"]), note: S },
+  count_routine_run: output({ counted: BOOL, stored: obj({ version: S, cadence: S, outcome: S }, ["version", "cadence", "outcome"]),
+    counted_at: S, stats_url: S, note: S },
     ["counted", "stored"]),
   feedback_status: output({
     id: S, state: { type: "string", enum: ["queued", "open", "closed", "failed", "expired"] },

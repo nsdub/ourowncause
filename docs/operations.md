@@ -103,7 +103,7 @@ The weekly edition for human readers (docs/push-channel.md) is on the web and in
    cd ops/timer && CLOUDFLARE_ACCOUNT_ID=4b5b58d31911934e2458ce7fccb18a26 npx wrangler deploy
    ```
 
-Secrets reach the site on its next deployment. To try it, subscribe an address of your own at https://ourowncause.com/edition/subscribe and follow Buttondown's confirmation link. The timer hands each new edition to Buttondown between 15:00 and 16:00 UTC; with the token still on the clipboard, one send can also be asked for at once:
+Secrets reach the site on its next deployment. To try it, subscribe an address of your own at https://ourowncause.com/edition/subscribe/ and follow Buttondown's confirmation link. The timer hands each new edition to Buttondown between 15:00 and 16:00 UTC; with the token still on the clipboard, one send can also be asked for at once:
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $(pbpaste)" https://ourowncause.com/api/edition/send

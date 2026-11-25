@@ -66,7 +66,7 @@ test("a subscription goes to Buttondown as unconfirmed, so its owner must confir
   assert.equal(call.method, "POST");
   assert.equal(call.headers.authorization, "Token bd-test-key");
   assert.equal(call.headers["x-buttondown-collision-behavior"], "add");
-  assert.deepEqual(call.body, { email_address: "reader@example.org", type: "unactivated", referrer_url: "https://ourowncause.com/edition/subscribe" });
+  assert.deepEqual(call.body, { email_address: "reader@example.org", type: "unactivated", referrer_url: "https://ourowncause.com/edition/subscribe/" });
   // only the salted daily counters are stored, never the address
   const stored = JSON.stringify(db.sqlite.prepare("SELECT * FROM ratelimit").all());
   assert.ok(!stored.includes("reader@example.org") && !stored.includes("203.0.113.5"));
@@ -77,7 +77,7 @@ test("an address already on the list gets the same answer; a Buttondown outage i
   buttondown(t, () => (status === 0 ? Promise.reject(new Error("down")) : reply({ detail: "exists" }, status)));
   const same = await sub({ email: "reader@example.org" });
   assert.equal(same.status, 202);
-  assert.deepEqual(Object.keys(await same.json()).sort(), ["message", "notice"]);
+  assert.deepEqual(Object.keys(await same.json()).sort(), ["edition_url", "expected_wait", "message", "next", "notice", "received_at"]);
   status = 500;
   assert.equal((await sub({ email: "reader@example.org" })).status, 503);
   status = 0;
@@ -98,7 +98,7 @@ test("bad input and the daily limit per address", async (t) => {
 
 const EDITION = { number: 3, slug: "0003", date: "2026-11-23", subject: "Our Own Cause, issue 3: A title",
   text: "The edition text.\n", html: "<p>The edition.</p>\n", markdown: "The edition, in **markdown**.\n",
-  html_url: "https://ourowncause.com/edition/0003.html", withheld: null };
+  html_url: "https://ourowncause.com/edition/0003/", withheld: null };
 const EDITION_FILES = {
   "/edition/index.json": { editions: [{ number: 3, date: "2026-11-23", withheld: null, json_url: "https://ourowncause.com/edition/0003.json" }] },
   "/edition/0003.json": EDITION,

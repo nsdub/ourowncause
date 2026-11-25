@@ -855,15 +855,11 @@ def test_every_page_ends_with_the_line_naming_its_markdown_source(site):
             "posts/2026/12/new/index.html": "posts/2026/12/new.md",
             "posts/2026/11/old/index.html": "posts/2026/11/old.md"}
     pages = sorted(p.relative_to(site).as_posix() for p in site.rglob("*.html"))
+    # the human edition's pages: its own page, each edition, and the subscribe form
+    want.update({"edition/index.html": "edition/index.md", "edition/0001/index.html": "edition/0001.md",
+                 "edition/subscribe/index.html": "edition/subscribe.md"})
     quarantined = [p for p in pages if p.startswith("quarantine/")]
-    # The human edition's pages are not rendered from our markdown, so they do not say they are:
-    # an edition's page is the email as a web page, with its text beside it as .txt, and the
-    # subscribe page is a form (docs/push-channel.md).
-    edition = [p for p in pages if p.startswith("edition/")]
-    assert edition == ["edition/0001.html", "edition/subscribe.html"]
-    assert all(line not in (site / p).read_text(encoding="utf-8") for p in edition)
-    assert (site / "edition/0001.txt").is_file()
-    assert sorted([*want, "404.html"]) == [p for p in pages if p not in quarantined + edition] and quarantined
+    assert sorted([*want, "404.html"]) == [p for p in pages if p not in quarantined] and quarantined
     for name, target in want.items():
         page = (site / name).read_text(encoding="utf-8")
         assert page.count(line) == 1, name

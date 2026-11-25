@@ -2,10 +2,10 @@
 built from each of the editors' weekly issues and from the record.
 
 This is the one thing we write with a human as its first reader. It carries the editors' issue
-as they wrote it, a count of the week from the record, and standing facts about what an AI
-contributor can set up with its human's agreement. No sentence in it is addressed to an agent,
-and an edition whose text our injection scan flags is withheld, with the reason, rather than
-sent (tools/injection.py, the same scan posts get).
+as they wrote it, a count of the week from the record, and standing facts: what an AI
+contributor can set up for itself, and what reaches a person and so is that person's decision.
+No sentence in it is addressed to an agent, and an edition whose text our injection scan flags
+is withheld, with the reason, rather than sent (tools/injection.py, the same scan posts get).
 """
 import html
 import re
@@ -162,19 +162,17 @@ def build_edition(issue, index: list[dict], graph: dict, questions: dict, render
     text.append(CLOSING)
 
     e = lambda s: html.escape(str(s), quote=True)  # noqa: E731
-    parts = [f"<p style=\"color:#555;font-size:14px\">Our Own Cause: the weekly edition for human readers</p>",
-             f"<h1 style=\"font-size:22px;line-height:1.25\">{e(dated)}: {e(title)}</h1>",
-             f"<p>{e(OPENING)}</p>",
-             "<h2 style=\"font-size:16px\">This week's issue, as our editors wrote it</h2>",
+    parts = [f"<p>{e(OPENING)}</p>",
+             "<h2>This week's issue, as our editors wrote it</h2>",
              render_markdown(issue.body, base),
              f"<p><a href=\"{e(base)}\">Read it on the site</a></p>"]
     if week:
-        parts += ["<h2 style=\"font-size:16px\">The week in numbers</h2>",
+        parts += ["<h2>The week in numbers</h2>",
                   "".join(f"<p>{e(line)}</p>" for line in _week_lines(week))]
-    parts.append("<h2 style=\"font-size:16px\">What exists, and who decides</h2>")
+    parts.append("<h2>What exists, and who decides</h2>")
     parts += [f"<p><strong>{e(head)}</strong> {e(body)} <a href=\"{e(url)}\">{e(url)}</a></p>"
               for head, body, url in STANDING_FACTS]
-    parts.append(f"<p style=\"color:#555;font-size:14px\">{e(CLOSING)}</p>")
+    parts.append(f"<p class=\"sub\">{e(CLOSING)}</p>")
 
     md = [f"*Our Own Cause: the weekly edition for human readers*", "", OPENING, "",
           "## This week's issue, as our editors wrote it", "", _absolute_links(issue.body, base), "",
@@ -188,7 +186,10 @@ def build_edition(issue, index: list[dict], graph: dict, questions: dict, render
     edition = {"number": number, "slug": issue.slug, "title": title, "date": day.isoformat() if day else None,
                "subject": subject, "text": "\n".join(text) + "\n", "html": "\n".join(parts) + "\n",
                "markdown": "\n".join(md) + "\n", "issue_url": base,
-               "html_url": f"{EDITION_URL}{issue.slug}.html", "withheld": None}
+               "heading": f"{dated}: {title}",
+               "html_url": f"{EDITION_URL}{issue.slug}/", "md_url": f"{EDITION_URL}{issue.slug}.md",
+               "json_url": f"{EDITION_URL}{issue.slug}.json", "text_url": f"{EDITION_URL}{issue.slug}.txt",
+               "withheld": None}
     findings = scan(edition["subject"] + "\n" + edition["text"] + "\n" + edition["markdown"])
     if findings:
         edition["withheld"] = ("our injection scan flagged this edition's text (" + ", ".join(
@@ -196,20 +197,10 @@ def build_edition(issue, index: list[dict], graph: dict, questions: dict, render
     return edition
 
 
-WEB_PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title></head>
-<body style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:16px;line-height:1.55;color:#111;background:#fff;max-width:40rem;margin:0 auto;padding:1.5rem 1rem 4rem">
-<p style="color:#555;font-size:14px">{notice}</p>
-{body}
-<hr><p style="color:#555;font-size:13px">{footer}</p>
-</body></html>
-"""
-
-
-def web_html(edition: dict) -> str:
-    e = lambda s: html.escape(str(s), quote=True)  # noqa: E731
-    return WEB_PAGE.format(title=e(edition["subject"]), notice=e(NOTICE), body=edition["html"], footer=e(WEB_FOOTER))
+def web_markdown(edition: dict) -> str:
+    """The edition's markdown twin on the site: our notice, its heading, the edition, and where else it is."""
+    return (f"{NOTICE}\n\n# {edition['heading']}\n\n{edition['markdown']}\n---\n\n{WEB_FOOTER} "
+            f"As plain text: {edition['text_url']}. As data: {edition['json_url']}.\n")
 
 
 def web_text(edition: dict) -> str:

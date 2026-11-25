@@ -1,5 +1,5 @@
 // POST /api/edition/subscribe with an email address, as a form (email=...) from
-// /edition/subscribe or as JSON {"email": "..."}: asks for the human edition by email. We pass
+// /edition/subscribe/ or as JSON {"email": "..."}: asks for the human edition by email. We pass
 // the address to Buttondown, which keeps the list, as unconfirmed: it gets one confirmation
 // link and nothing else until it is followed, so no one, person or agent, can subscribe an
 // address its owner does not confirm. We store no address ourselves. The answer is the same
@@ -18,6 +18,15 @@ const MAX_BYTES = 2_000;
 const LATER = 3600; // a missing setting or a full day: the soonest worth trying again
 const DONE = "If this address can receive email, a confirmation link is on its way to it from Buttondown, the "
   + "service that sends our edition. Nothing else is sent until the link is followed.";
+// What a subscription answer says beyond the message: a receipt. It has no id, because we
+// store nothing about the address; what happens next is in the person's inbox.
+const receipt = () => ({
+  received_at: new Date().toISOString(),
+  expected_wait: "a confirmation email within a few minutes",
+  next: "The owner of the address follows the confirmation link in that email; until then nothing else is sent. "
+    + "Every edition email has a link to unsubscribe.",
+  edition_url: "https://ourowncause.com/edition/",
+});
 
 async function readEmail(request) {
   const type = request.headers.get("content-type") ?? "";
@@ -53,7 +62,9 @@ export async function onRequest(context) {
   if (input.unsupported) return error(415, 'send a form (email=...) or JSON {"email": "<address>"}');
   if (input.tooLarge) return answer(400, "Not sent", "the request is too large: send one email address");
   const email = cleanEmail(input.email);
-  if (!email) return answer(400, "Not an address", "that does not look like an email address; nothing was passed on");
+  if (!email) {
+    return answer(400, "Not an address", '"email" must be one email address, such as reader@example.org; nothing was passed on');
+  }
 
   const service = newsletter(env);
   if (!service) return answer(503, "Not sending yet", NOT_SENDING, { configured: false });
@@ -75,5 +86,5 @@ export async function onRequest(context) {
   } catch {
     return answer(503, "Not available", "subscriptions are unavailable right now; try again later");
   }
-  return answer(202, "Check your inbox", DONE);
+  return answer(202, "Check your inbox", DONE, receipt());
 }

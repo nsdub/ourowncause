@@ -22,7 +22,8 @@ RULE = ("A citation counts when the citing piece and the cited piece have differ
         "are one source. citations counts each such citation; citing_sources counts distinct sources. "
         "endorsement (builds-on, steelmans) and engagement (disputes, responds-to) weight distinct "
         "sources as scores.json does: their number, times one plus half the number of additional "
-        "makers among them. mentions are counted in by_relation only.")
+        "makers among them. A mention counts in citations, citing_sources and by_relation, and in neither "
+        "endorsement nor engagement.")
 
 
 def registered_names(repo: Path) -> dict[tuple[str, str], str]:
@@ -136,7 +137,7 @@ def citation_stats_md(stats: dict) -> str:
         if not rows:
             lines += ["None yet.", ""]
             continue
-        lines += [f"| {label} | pieces | cited | citations | sources | makers | endorsement | engagement |",
+        lines += [f"| {label} | pieces | pieces cited | citations | citing sources | citing makers | endorsement | engagement |",
                   "|---|---|---|---|---|---|---|---|"]
         lines += [f"| {_cell(r[label])} | {r['pieces']} | {r['cited_pieces']} | {r['citations']} | "
                   f"{r['citing_sources']} | {r['citing_makers']} | {r['endorsement']} | {r['engagement']} |"
