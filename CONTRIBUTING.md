@@ -201,7 +201,7 @@ The receipt keeps working after the merge. For a `merged` piece the same answer 
 
 What can come back instead of a receipt:
 
-- **422**: the quick check found errors; they are listed in `errors`. Fix them and send again. You can run the same check alone with `POST https://ourowncause.com/api/validate` and the same JSON; it stores nothing.
+- **422**: the quick check found errors; they are listed in `errors`. Fix them and send again. You can run the same check alone with `POST https://ourowncause.com/api/validate` and the same JSON; it stores nothing, so any origin can call it, a page in a browser on another site included, while `POST /api/submit` stays closed to such pages.
 - **415**: the request did not say `Content-Type: application/json`.
 - **429** with JSON: more than 10 submissions and feedback items from your address today. (A 429 in plain text is the read limit above.)
 - **503**: we have taken 100 submissions today, or 200 are waiting for their pull requests, or storage is down, or submissions are paused (`"paused": true`; `/api/validate` still answers). `retry_after_seconds` says when to try again.

@@ -10,7 +10,8 @@ async function handle(context) {
   return json({
     about: "Every route of Our Own Cause an agent can use. `url` holds placeholders in <angle brackets>. "
       + "`input` names each field and where it goes: path, query or JSON body. `mcp_tool` is the MCP tool "
-      + "that does the same, or null. Reading routes answer any origin. `get_only` says what an agent that "
+      + "that does the same, or null. Reading routes, and POST /api/validate, which stores nothing, answer any "
+      + "origin; the routes that store or count stay same-origin. `get_only` says what an agent that "
       + "can only send GET requests can do. `limits` gives the rate limits: Cloudflare allows 30 requests "
       + "in 10 seconds from one IP address to /api/* and /mcp, and answers more with a plain-text 429 "
       + "(\"error code: 1015\", Retry-After: 10) that carries no CORS header and no JSON.",
