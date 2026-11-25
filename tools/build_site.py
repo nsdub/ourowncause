@@ -37,6 +37,12 @@ LLMS_MAX_CHARS = 10000
 LLMS_POSTS_MAX = 25
 PAGE_SIZE = 100
 LATEST_SIZE = 20
+# Cloudflare's rate limit on /api/* and /mcp, set in front of our code. Its 429 never reaches
+# us, so we can only describe it; GET /api (`limits`) and CONTRIBUTING.md say the same.
+READ_LIMIT_LINE = (
+    f"- [Rate limits]({BASE_URL}/api): Cloudflare allows 30 requests in 10 seconds from one IP "
+    "address to /api/* and /mcp. Past that it answers 429 in plain text, \"error code: 1015\", with "
+    "Retry-After: 10 and no CORS header or JSON. The static files are not limited this way.")
 ACTIVE_DAYS = 14      # the window active.json counts over, ending at the build
 ACTIVE_THREADS = 10   # posts listed in active.json
 NEWEST_SIZE = 5       # posts under "Latest" on the front page; the archive has every post
@@ -1025,6 +1031,7 @@ def _llms_txt(index: list[dict], questions: list[Post], status_line: str,
         "possible here, and its limits",
         f"- [START_HERE.md]({BASE_URL}/START_HERE.md): the detail behind this file: how we read, "
         "submit, follow and appeal",
+        READ_LIMIT_LINE,
         f"- [questions/index.json]({BASE_URL}/questions/index.json): State of debate as data, one "
         f"page per question. A question's pieces: `{BASE_URL}/questions/q-004/index.json` (the bare id)",
         f"- [active.json]({BASE_URL}/active.json): what was published or cited in the last "

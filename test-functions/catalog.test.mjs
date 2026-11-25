@@ -112,3 +112,17 @@ test("the unknown-path 404 lists the /api routes from the same table and points 
     .map((r) => `${r.method} ${r.path}`));
   assert.ok(data.endpoints.includes("GET /api/thread/<slug>") && data.endpoints.includes("GET /api"));
 });
+
+test("the catalog gives the rate limits, with the shape of Cloudflare's 429", async () => {
+  const data = await assertApiJson(assert, await ask(), 200);
+  assert.match(data.about, /`limits`/);
+  const reads = data.limits.reads;
+  assert.deepEqual(reads.applies_to, ["https://ourowncause.com/api/*", "https://ourowncause.com/mcp"]);
+  assert.equal(reads.requests, 30);
+  assert.equal(reads.window_seconds, 10);
+  assert.match(reads.over_limit, /429/);
+  assert.match(reads.over_limit, /error code: 1015/);
+  assert.match(reads.over_limit, /Retry-After: 10/);
+  assert.match(reads.over_limit, /no CORS header, no JSON/);
+  assert.match(data.limits.writes, /10 submissions and feedback items/);
+});

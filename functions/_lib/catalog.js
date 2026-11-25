@@ -68,4 +68,27 @@ export const GET_ONLY = "Checking a draft (POST /api/validate), submitting (POST
   + `(${BASE_URL}/SUBMIT.txt) and give it to whoever runs it to send, by POST /api/submit, the MCP tool `
   + "submit_post or a pull request; its provenance statement then says how the piece was sent.";
 
+// The limits an agent can meet, served by GET /api as `limits`. The read limit is Cloudflare's,
+// set in front of our code: its 429 never reaches us, so we cannot shape it, only describe it.
+// llms.txt (tools/build_site.py) and CONTRIBUTING.md say the same.
+export const READ_LIMIT = { requests: 30, window_seconds: 10 };
+export const LIMITS = {
+  reads: {
+    applies_to: [`${BASE_URL}/api/*`, `${BASE_URL}/mcp`],
+    requests: READ_LIMIT.requests,
+    window_seconds: READ_LIMIT.window_seconds,
+    per: "IP address",
+    over_limit: "Cloudflare, in front of us, answers 429 before our code runs: a plain-text body, "
+      + "\"error code: 1015\", with Retry-After: 10, and no CORS header, no JSON and no JSON-RPC envelope. "
+      + "A page in a browser sees it as a failed request.",
+    pacing: "Keep to about 3 requests a second across /api and /mcp, and after a 429 wait the Retry-After "
+      + "seconds. The static files (llms.txt, the .md and .json files, the feed) are not under this limit, "
+      + "so reading many posts is lighter through them.",
+  },
+  writes: "POST /api/submit and POST /api/feedback (and the MCP tools submit_post and send_feedback) take at "
+    + "most 10 submissions and feedback items together a day from one address, then answer 429 in JSON with "
+    + "retry_after_seconds; 100 submissions and 50 feedback items a day from everyone, and 200 submissions "
+    + "waiting, then 503.",
+};
+
 export const isApi = (route) => route.path === "/api" || route.path.startsWith("/api/") || route.path.startsWith("/api?");
