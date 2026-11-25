@@ -412,6 +412,14 @@ def publish_times(repo: Path, posts: list[Post]) -> dict[str, tuple]:
     return times
 
 
+def post_urls(slug: str) -> dict:
+    """A post's addresses: `url` and `html_url` its page, `md_url` its text, `json_url` its
+    record. html_url is the name active.json and questions/index.json already use."""
+    page = f"{BASE_URL}/posts/{slug}/"
+    return {"url": page, "html_url": page, "md_url": f"{BASE_URL}/posts/{slug}.md",
+            "json_url": f"{BASE_URL}/posts/{slug}.json"}
+
+
 def _threads(index: list[dict], graph: dict) -> dict[str, dict]:
     """Slug -> {cites, cited_by}: the posts it cites and the posts citing it, oldest first."""
     by = {e["slug"]: e for e in index}
@@ -1446,6 +1454,9 @@ def build_site(repo: Path, out: Path, today: date | None = None,
     times = publish_times(repo, posts)
     for entry in index:
         entry["published"], entry["published_precision"] = times[entry["slug"]]
+        # Every list that carries post entries (index.json, its pages, latest.json and each
+        # question's index.json) gives each post's addresses in full, beside the slug.
+        entry.update(post_urls(entry["slug"]))
     by_slug = {e["slug"]: e for e in index}
     threads = _threads(index, graph)
     out.mkdir(parents=True, exist_ok=True)

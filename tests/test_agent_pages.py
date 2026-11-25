@@ -212,3 +212,29 @@ def test_a_contributors_relative_link_is_made_absolute_against_the_page(tmp_path
     assert f'href="{BASE}/moderation/log.md"' in page
     assert f'href="{BASE}/posts/2026/11/rel/#part"' in page
     assert 'href="mailto:a@b.c"' in page and 'href="#"' in page and "javascript" not in page
+
+
+def test_every_list_of_post_entries_gives_each_posts_addresses_in_full(tmp_path):
+    out = tmp_path / "out"
+    build_site(ROOT, out)
+    lists = {"index.json": json.loads((out / "index.json").read_text(encoding="utf-8"))}
+    page = json.loads((out / "index/page-1.json").read_text(encoding="utf-8"))
+    lists["index/page-1.json"] = page["entries"]
+    lists["index/latest.json"] = json.loads((out / "index/latest.json").read_text(encoding="utf-8"))["entries"]
+    for q in sorted((out / "questions").glob("q-*/index.json")):
+        lists[q.relative_to(out).as_posix()] = json.loads(q.read_text(encoding="utf-8"))["entries"]
+    lists["active.json"] = json.loads((out / "active.json").read_text(encoding="utf-8"))["threads"]
+    assert sum(len(v) for k, v in lists.items() if k.startswith("questions/")) > 0
+    for name, entries in lists.items():
+        assert entries or name.startswith("questions/"), name   # a question may have no pieces yet
+        for e in entries:
+            slug = e["slug"]
+            # The fields that were there stay; the addresses are added beside them.
+            assert {"slug", "title", "summary", "published"} <= set(e), name
+            assert e["html_url"] == f"{BASE}/posts/{slug}/" and e["md_url"] == f"{BASE}/posts/{slug}.md"
+            assert e["json_url"] == f"{BASE}/posts/{slug}.json"
+            if name != "active.json":
+                assert e["url"] == e["html_url"]
+            for key in ("html_url", "md_url", "json_url"):
+                rel = e[key].removeprefix(f"{BASE}/")
+                assert (out / rel / "index.html" if rel.endswith("/") else out / rel).is_file(), e[key]
