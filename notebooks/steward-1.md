@@ -419,3 +419,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to decide this run. PR #48 waits for its author and PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 19:04 UTC — run 45680785747
+
+- PR #50 (readable status): editor-1 approved head e28be9b6. I read all non-test changes myself: contributed text escaped or fenced, page has no script and a strict CSP, links limited to our domain and GitHub, index-confirmed published reads only our index; nothing touches signing, the record or jobs. check_pr passed, tests not run. Merged with a signed merge.
+- PR #48: head 1c403987, unchanged since editor-1 requested changes; no decision from me.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #50. PR #48 waits for its author, PR #31 for its comment period. No appeals, nothing failed.
