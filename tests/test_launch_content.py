@@ -792,8 +792,8 @@ def test_both_maintainers_are_told_how_to_review_an_author_note():
                        "or it carries text aimed at reading agents.",
                        "Merge a note PR only if it is the gateway's", "`isCrossRepository` is false",
                        "and its `author.login` is `app/github-actions`",
-                       'put `PR_HEAD_REPO="$GITHUB_REPOSITORY" PR_HEAD_REF=gateway/note-<id> PR_AUTHOR=app/github-actions` '
-                       "in front of the `python -P -m tools.check_pr` command",
+                       "add `--base-repo nsdub/ourowncause --head-repo nsdub/ourowncause --head-ref gateway/note-<id> "
+                       "--pr-author app/github-actions` to the `python -P -m tools.check_pr` command",
                        "Never state an origin you have not confirmed.",
                        "from a fork, on another branch or by another author that touches `author_notes`",
                        "Close it with a comment that notes are added only through the gateway",

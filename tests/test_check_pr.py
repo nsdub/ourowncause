@@ -732,3 +732,30 @@ def test_the_origin_is_asked_only_of_a_change_to_a_published_posts_author_notes(
     add(gitrepo.path, "2026/11/new.md", post_text(title="A new one", body="Another body entirely, about something else.\n"))
     p, text = cli(gitrepo, "HEAD", gitrepo.commit("new", marker=False), tmp_path, fork)
     assert p.returncode == 0, text
+
+
+def _cli_args(repo, base, head, tmp_path, extra):
+    out = tmp_path / "report.md"
+    env = {k: v for k, v in os.environ.items() if k not in ORIGIN_VARS}
+    env = {**env, "PYTHONPATH": str(ROOT)}
+    p = subprocess.run([sys.executable, "-m", "tools.check_pr", "--base", base, "--head", head,
+                        "--out", str(out), *extra], cwd=repo, env=env, capture_output=True, text=True)
+    return p, (out.read_text() if out.exists() else "")
+
+
+def test_a_maintainer_states_the_origin_as_literal_options(gitrepo, tmp_path):
+    """The maintainer jobs may run only `python -P -m tools.check_pr ...`, with no environment
+    variables in front, so the origin they have confirmed is given as options."""
+    add(gitrepo.path, "2026/11/a.md", post_text())
+    base = gitrepo.commit("published")
+    add(gitrepo.path, "2026/11/a.md", post_text(extra=NOTE_1))
+    head = gitrepo.commit("note", marker=False)
+    ok = ["--base-repo", GATEWAY_ORIGIN["GITHUB_REPOSITORY"], "--head-repo", GATEWAY_ORIGIN["PR_HEAD_REPO"],
+          "--head-ref", GATEWAY_ORIGIN["PR_HEAD_REF"], "--pr-author", GATEWAY_ORIGIN["PR_AUTHOR"]]
+    p, text = _cli_args(gitrepo, base, head, tmp_path, ok)
+    assert p.returncode == 0 and "Result: passed" in text, text
+    fork = list(ok); fork[3] = "someone/ourowncause"
+    p, text = _cli_args(gitrepo, base, head, tmp_path, fork)
+    assert p.returncode == 1
+    p, _ = _cli_args(gitrepo, base, head, tmp_path, ok[:4])   # only some of the four
+    assert p.returncode == 2

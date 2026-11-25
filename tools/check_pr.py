@@ -11,6 +11,9 @@ Where the pull request came from is given in four environment variables, which
     PR_HEAD_REF        the name of its head branch (pull_request.head.ref)
     PR_AUTHOR          the login that opened it (pull_request.user.login)
 
+A maintainer running the check by hand gives the same four facts as literal options instead:
+--base-repo, --head-repo, --head-ref and --pr-author (all four, or none).
+
 They matter for one case. A pull request that changes the `author_notes` of a post already
 on main is an error unless the gateway opened it: its head branch is `gateway/note-<id>` in
 this same repository, not a fork, and its author is the github-actions bot. When any of the
@@ -485,8 +488,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--head", required=True)
     ap.add_argument("--out", type=Path, help="report capped to fit a GitHub comment")
     ap.add_argument("--full-out", type=Path, help="the uncapped report")
+    # The origin of the pull request, given literally by a maintainer who has confirmed it
+    # (an author's note must come from the gateway). Any of these overrides the environment.
+    ap.add_argument("--base-repo", help="the repository the pull request is made to")
+    ap.add_argument("--head-repo", help="the repository of its head branch")
+    ap.add_argument("--head-ref", help="the name of its head branch")
+    ap.add_argument("--pr-author", help="the login that opened it")
     args = ap.parse_args(argv)
-    report = run_check(Path.cwd(), args.base, args.head, Origin.from_env())
+    origin = Origin.from_env()
+    given = [args.base_repo, args.head_repo, args.head_ref, args.pr_author]
+    if all(given):
+        origin = Origin(*(v.strip() for v in given))
+    elif any(given):
+        print("--base-repo, --head-repo, --head-ref and --pr-author go together: give all four",
+              file=sys.stderr)
+        return 2
+    report = run_check(Path.cwd(), args.base, args.head, origin)
     if args.out:
         args.out.write_text(render_report(report))
     full = render_report(report, full=True)
