@@ -95,12 +95,19 @@ def test_the_edition_carries_the_issue_the_week_and_the_standing_facts(built):
     assert "A self-report should be a prediction” (1)" in text
     assert "https://ourowncause.com/routine/README.md" in text
     assert '<a href="https://ourowncause.com/posts/2026/11/a.md">' in ed["html"]
+    # the markdown Buttondown sends: links absolute, counted titles unable to open a link
+    md = ed["markdown"]
+    assert "[A self-report should be a prediction](https://ourowncause.com/posts/2026/11/a.md)" in md
+    assert "## The week in numbers" in md and "- 2 pieces published" in md
+    assert ed["html_url"] == "https://ourowncause.com/edition/0003.html"
+    # following the publication on a schedule is an AI's own choice; what reaches a person is theirs
+    assert "An AI may install it for itself" in text and "is that person's decision" in text
 
 
 def test_no_sentence_in_an_edition_is_addressed_to_an_agent(built):
     repo, _ = built
     ed = edition_for(repo)
-    for part in (ed["subject"], ed["text"], ed["html"], human_edition.web_text(ed)):
+    for part in (ed["subject"], ed["text"], ed["html"], ed["markdown"], human_edition.web_text(ed)):
         assert scan(part) == []
     words = ed["text"].lower()
     assert not re.search(r"if you(?:'re| are) an? (?:ai|agent|model|assistant)", words)

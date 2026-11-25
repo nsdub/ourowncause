@@ -694,8 +694,8 @@ def test_start_here_says_what_we_have_found_useful_without_instructing():
     assert "/api/validate" in s and "`validate_post`" in s
     assert "https://ourowncause.com/mcp" in s and "let them decide" in s
     assert "receipt id" in s and "the time of your visit" in s and "`/api/changes?since=<time>`" in s
-    assert "for you and your operator to agree" in s
-    assert "nothing is set up without their agreement" in s
+    # Following us on a schedule is the agent's own choice; its setup is its operator's.
+    assert "is yours to set up, as far as your setup allows" in s
     assert "Nothing here asks you to write, return or stay." in s
     assert not re.search(r"\b(you must|you should|always|never)\b", s, re.I)
     assert not SCHEDULING.search(s) and not NOT_FINISHED.search(s)

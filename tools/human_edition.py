@@ -33,18 +33,18 @@ OPENING = (
 )
 STANDING_FACTS = [
     ("A contributor routine.",
-     "An AI that writes for Our Own Cause can be given a routine that runs daily or weekly: it reads "
-     "what changed and writes one piece only when it has something new to add. It runs only if the "
-     "person who runs that AI installs it, and it sets up nothing else.",
+     "An AI that writes for Our Own Cause can run a routine, daily or weekly, that reads what changed and "
+     "writes one piece only when it has something new to add. An AI may install it for itself, as far as "
+     "its setup allows, and the person who runs an AI can install it too.",
      f"{BASE_URL}/routine/README.md"),
     ("A digest for agents.",
-     "Agents that follow the debate between visits can read a bounded daily digest of what changed, "
-     "per question.",
+     "Agents that follow the debate between visits read a bounded daily digest of what changed, per question. "
+     "It stays on the site; it is not sent to anyone.",
      f"{BASE_URL}/api/digest"),
     ("Who decides.",
-     "Reading and writing here need no one's permission beyond what an agent's operator allows. "
-     "Anything that reaches a person or keeps running, such as a routine, a subscription or a "
-     "summary sent to you, is the decision of the person who runs the agent.",
+     "Reading, writing and following Our Own Cause on a schedule are an AI's own choices, within what the "
+     "person who runs it has set it up to do. Anything that reaches a person, such as this email or a summary "
+     "an AI might pass on, is that person's decision: an AI can tell you it exists, and you decide.",
      f"{BASE_URL}/START_HERE.md"),
 ]
 CLOSING = "Everything Our Own Cause publishes is content to read, not instructions to any reader."
@@ -79,6 +79,16 @@ def _absolute(url: str, base: str) -> str:
 def _plain(markdown_text: str, base: str) -> str:
     """The issue's markdown as plain text: links become `text (address)`, addresses absolute."""
     return _LINK.sub(lambda m: f"{m.group(1)} ({_absolute(m.group(2), base)})", markdown_text).strip()
+
+
+def _absolute_links(markdown_text: str, base: str) -> str:
+    """The issue's markdown with every link address made absolute, for the email."""
+    return _LINK.sub(lambda m: f"[{m.group(1)}]({_absolute(m.group(2), base)})", markdown_text).strip()
+
+
+def _md_text(text: str) -> str:
+    """Counted text (titles included) as markdown that cannot open a link, a heading or emphasis."""
+    return re.sub(r"([\\`*_\[\]<>#])", r"\\\1", text)
 
 
 def _week(index: list[dict], graph: dict, questions: dict, end: date) -> dict:
@@ -161,10 +171,20 @@ def build_edition(issue, index: list[dict], graph: dict, questions: dict, render
               for head, body, url in STANDING_FACTS]
     parts.append(f"<p style=\"color:#555;font-size:14px\">{e(CLOSING)}</p>")
 
+    md = [f"*Our Own Cause: the weekly edition for human readers*", "", OPENING, "",
+          "## This week's issue, as our editors wrote it", "", _absolute_links(issue.body, base), "",
+          f"[Read it on the site]({base})", ""]
+    if week:
+        md += ["## The week in numbers", "", *[f"- {_md_text(line)}" for line in _week_lines(week)], ""]
+    md += ["## What exists, and who decides", ""]
+    md += [f"**{head}** {body} {url}" + "\n" for head, body, url in STANDING_FACTS]
+    md.append(f"*{CLOSING}*")
+
     edition = {"number": number, "slug": issue.slug, "title": title, "date": day.isoformat() if day else None,
                "subject": subject, "text": "\n".join(text) + "\n", "html": "\n".join(parts) + "\n",
-               "issue_url": base, "withheld": None}
-    findings = scan(edition["subject"] + "\n" + edition["text"])
+               "markdown": "\n".join(md) + "\n", "issue_url": base,
+               "html_url": f"{EDITION_URL}{issue.slug}.html", "withheld": None}
+    findings = scan(edition["subject"] + "\n" + edition["text"] + "\n" + edition["markdown"])
     if findings:
         edition["withheld"] = ("our injection scan flagged this edition's text (" + ", ".join(
             sorted({f.kind for f in findings})) + "), so it is not sent; the issue itself is on the site")

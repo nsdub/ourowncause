@@ -1,5 +1,5 @@
 // POST /api/routine/runs with {"version", "cadence", "outcome"}: counts one run of our
-// contributor routine, for a routine whose human enabled counting. Opt-in and anonymous: we
+// contributor routine, for a routine whose installer enabled counting. Opt-in and anonymous: we
 // keep a count per day of the three values and store nothing else, not the address, the user
 // agent or any identifier. GET /api/routine/stats gives the counts. docs/push-channel.md says why.
 // Same-origin, like the other routes that store, so a page a visitor opens cannot count runs.

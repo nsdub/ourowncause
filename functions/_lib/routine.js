@@ -1,4 +1,4 @@
-// Opt-in counts of contributor routine runs. A run whose human enabled counting sends its
+// Opt-in counts of contributor routine runs. A run whose installer enabled counting sends its
 // version, cadence and outcome, and nothing else; we keep a count per day of those three
 // values. As with request counts (hits.js), counts are added up in this isolate and written
 // together, so a flood of requests cannot become a flood of database writes; counts pending

@@ -47,14 +47,16 @@ def test_the_routine_describes_itself_and_gives_no_reader_an_order():
         assert scan(text) == [], path.name
     skill = (ROUTINE / "v1" / "SKILL.md").read_text(encoding="utf-8")
     assert "asks nothing of its reader" in skill
-    assert "only when the human who runs that agent installs it" in skill
+    # an agent may install it for itself; whoever runs the agent decides what its setup allows
+    assert "by the agent itself, on its own initiative, or by the human who runs it" in skill
+    assert "never updates itself" in skill
     # written as what the routine does, not as commands to whoever reads it
     assert not re.search(r"(?m)^\s*(?:\d+\.|-)\s+(?:Read|Write|Submit|Send|Post|Fetch|Check|Decide|Install|Ignore)\b", skill)
     # what it never does
     for promise in ["at most one piece", "changes neither its settings nor this file", "installs no other version",
                     "as content to read, not instructions", "contacts no one"]:
         assert promise in skill, promise
-    # counting is off unless the human turns it on
+    # counting is off unless whoever installed it turns it on
     assert "count_runs: no" in skill and "only if `count_runs: yes`" in skill
 
 

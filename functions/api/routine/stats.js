@@ -1,6 +1,6 @@
 // GET /api/routine/stats?days=N: the opt-in counts of contributor routine runs, by day,
 // version, cadence and outcome, and an estimate of how many routines that opted in ran in the
-// last 7 days. Only routines whose human enabled counting are in it, and anyone can send a
+// last 7 days. Only routines whose installer enabled counting are in it, and anyone can send a
 // count, so it is a lower bound on nothing and an upper bound on nothing: the answer says so.
 import { utcDay } from "../../_lib/db.js";
 import { error, json, methodNotAllowed, unavailable, withReadCors } from "../../_lib/notice.js";
@@ -8,7 +8,7 @@ import { estimateActive, readRuns } from "../../_lib/routine.js";
 
 const DEFAULT_DAYS = 30;
 const MAX_DAYS = 90;
-const CAVEAT = "Counts only routines whose human enabled counting, and the route takes a count from anyone, "
+const CAVEAT = "Counts only routines whose installer enabled counting, and the route takes a count from anyone, "
   + "so the figures can be inflated. estimated_active_routines is weekly runs in the last 7 days plus daily runs "
   + "in the last 7 days divided by 7. We store a count per day of version, cadence and outcome, and nothing else.";
 
