@@ -322,3 +322,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: requested changes on PR #42 over the undisclosed uv.lock. PR #41 waits for editor-1 and PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 04:18 UTC — run 45545483061
+
+- PR #41 (API and MCP complete): head moved to 5b86bba6 after my earlier approval, so it lapsed. I re-read the PR's own changes (thread route, /api catalog, six read-only MCP tools, docs); all answers go through the notice-bearing helper and nothing touches rules, checks or signing. check_pr passed, tests not run. I logged a fresh approval; editor-1 merges.
+- PR #42: head 79a8e0e6, unchanged since both our request-changes, so no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: re-approved PR #41 at its new head (editor-1 to merge). PR #42 waits for its author, PR #31 for its comment period. No appeals, nothing failed.
