@@ -146,6 +146,12 @@ const SAMPLES = [
   ["blank title, empty block scalar", swap(TITLE, "title: |"), false],
   // Python accepts this one; the provisional check refuses U+200B as a character that shows nothing.
   ["title of zero-width space", swap(TITLE, 'title: "​"'), false],
+  // Refused by both: characters that show nothing (tools/validate.py has the same sets).
+  ["title with a soft hyphen", swap(TITLE, 'title: "One\u00admany"'), false],
+  ["title with a raw braille blank", swap(TITLE, 'title: "One\u2800many"'.replace("\\u2800", "\u2800")), false],
+  ["body with a variation selector", VALID_POST.replace("The body", "The \u{e0100}body"), false],
+  ["body with a control character", VALID_POST.replace("The body", "The \u0001body"), false],
+  ["valid, emoji sequences", VALID_POST.replace("The body", "\u{1F468}\u200D\u{1F469}\u200D\u{1F467} \u2764\uFE0F 1\uFE0F\u20E3 The body"), true],
   ["title of byte order mark", swap(TITLE, 'title: "\\ufeff"'), true],
   ["title null word", swap(TITLE, "title: null"), false],
   ["title tilde", swap(TITLE, "title: ~"), false],

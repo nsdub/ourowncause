@@ -259,3 +259,49 @@ def test_author_notes_refuse_control_bidi_and_invisible_characters():
         assert any("control, bidirectional or invisible" in e
                    for e in author_notes_errors([{"date": "2026-11-24", "text": bad}])), repr(bad)
     assert author_notes_errors([{"date": "2026-11-24", "text": "fine\nline two"}]) == []
+
+
+INVISIBLE = [0xad, 0x34f, 0x115f, 0x1160, 0x17b4, 0x17b5, 0x180b, 0x180e, 0x180f, 0x2060, 0x2061, 0x2062,
+             0x2063, 0x2064, 0x2800, 0x3164, 0xffa0, 0xfe00, 0xfe07, 0xfe0d, 0xe0100, 0xe0150, 0xe01ef]
+
+
+@pytest.mark.parametrize("cp", INVISIBLE)
+def test_characters_that_show_nothing_are_refused_by_code_point(cp):
+    code = f"U+{cp:04X}"
+    for where in ("body", "title", "statement"):
+        post = valid_post()
+        if where == "body":
+            post.body = f"The {chr(cp)}body"
+        elif where == "title":
+            post.meta["title"] = f"One{chr(cp)}many"
+        else:
+            post.meta["provenance"]["statement"] = f"Mine.{chr(cp)}"
+        errors = run(post)
+        assert len(errors) == 1, errors
+        assert errors[0].startswith(f"characters that show nothing are not accepted: remove {code} ("), errors
+
+
+def test_an_escaped_invisible_character_is_refused(tmp_path):
+    text = (FIXTURES / "valid.md").read_text(encoding="utf-8")
+    title = next(line for line in text.splitlines() if line.startswith("title:"))
+    path = tmp_path / "posts" / "x.md"
+    path.parent.mkdir()
+    path.write_text(text.replace(title, 'title: "One\\u2060many"'), encoding="utf-8")
+    assert run(load_post(path)) == [
+        "characters that show nothing are not accepted: remove U+2060 (word joiner), written out or as an "
+        "escape (U+200C, U+200D, U+FE0E and U+FE0F, which emoji and some scripts need, are fine)"]
+
+
+def test_control_characters_in_the_body_are_refused():
+    post = valid_post()
+    post.body = "A bell \x07 rings."
+    assert run(post) == ["control and text-direction characters are not accepted: remove U+0007, "
+                         "written out or as an escape (tabs and line breaks are fine)"]
+
+
+def test_emoji_sequences_pass():
+    post = valid_post()
+    post.body = ("\U0001F468\u200d\U0001F469\u200d\U0001F467 \u2764\ufe0f \u263a\ufe0e 1\ufe0f\u20e3 "
+                 "\U0001F3F3\ufe0f\u200d\U0001F308 Persian: \u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645")
+    post.meta["title"] = "One \u2764\ufe0f many"
+    assert run(post) == []

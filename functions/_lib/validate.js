@@ -271,30 +271,56 @@ const cutPlaceholder = (token) => (token.length > PLACEHOLDER_CHARS ? `${token.s
 // and non-joiner (U+200C, U+200D) are accepted: Persian, Indic scripts and emoji need them.
 const FORBIDDEN = new RegExp("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u061C\\u200B\\u200E\\u200F"
   + "\\u202A-\\u202E\\u2066-\\u2069\\uFFF9-\\uFFFB\\u{E0000}-\\u{E007F}]", "u");
+// More characters that show nothing, refused with their own message: the soft hyphen, the
+// combining grapheme joiner, the Hangul fillers, the Khmer inherent vowels, the Mongolian
+// vowel separator and variation selectors, the word joiner and invisible operators, the
+// braille blank, and the variation selectors U+FE00 to U+FE0D and U+E0100 to U+E01EF, which
+// can carry a hidden message one byte per character. U+FE0E and U+FE0F (text and emoji
+// presentation) stay accepted, as do U+200C and U+200D: emoji sequences use them.
+// tools/validate.py holds the same two sets.
+const INVISIBLE = new RegExp("[\\u00AD\\u034F\\u115F\\u1160\\u17B4\\u17B5\\u180B-\\u180F\\u2060-\\u2064\\u2800"
+  + "\\u3164\\uFE00-\\uFE0D\\uFFA0\\u{E0100}-\\u{E01EF}]", "u");
+const INVISIBLE_NAMES = { 0xad: "soft hyphen", 0x34f: "combining grapheme joiner", 0x115f: "Hangul choseong filler",
+  0x1160: "Hangul jungseong filler", 0x17b4: "Khmer inherent vowel", 0x17b5: "Khmer inherent vowel",
+  0x180e: "Mongolian vowel separator", 0x2060: "word joiner", 0x2061: "invisible function application",
+  0x2062: "invisible times", 0x2063: "invisible separator", 0x2064: "invisible plus", 0x2800: "braille blank",
+  0x3164: "Hangul filler", 0xffa0: "halfwidth Hangul filler" };
 const MAX_WALK_DEPTH = 30;
 
-function firstForbidden(value, depth = 0) {
+function firstMatch(pattern, value, depth = 0) {
   if (typeof value === "string") {
-    const match = FORBIDDEN.exec(value);
+    const match = pattern.exec(value);
     return match ? match[0] : null;
   }
   if (value === null || typeof value !== "object" || depth > MAX_WALK_DEPTH) return null;
   for (const [key, child] of Object.entries(value)) {
-    const found = firstForbidden(key) ?? firstForbidden(child, depth + 1);
+    const found = firstMatch(pattern, key) ?? firstMatch(pattern, child, depth + 1);
     if (found) return found;
   }
   return null;
 }
 
+const codePoint = (char) => `U+${char.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+
+function invisibleName(char) {
+  const code = char.codePointAt(0);
+  if (INVISIBLE_NAMES[code]) return INVISIBLE_NAMES[code];
+  return code >= 0x180b && code <= 0x180f ? "Mongolian variation selector" : "variation selector";
+}
+
 // An error message when the post's text, or any front matter value after its escapes are
 // read (a title written "\x00"), holds such a character; otherwise null. POST /api/feedback
-// applies the same rule to its fields.
+// and author's notes apply the same rule to their fields.
 export function controlCharacterError(text, meta) {
-  const found = firstForbidden(text) ?? firstForbidden(meta);
-  if (!found) return null;
-  const code = found.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
-  return `control and text-direction characters are not accepted: remove U+${code}, written out or `
-    + "as an escape (tabs and line breaks are fine)";
+  const found = firstMatch(FORBIDDEN, text) ?? firstMatch(FORBIDDEN, meta);
+  if (found) {
+    return `control and text-direction characters are not accepted: remove ${codePoint(found)}, written out or `
+      + "as an escape (tabs and line breaks are fine)";
+  }
+  const hidden = firstMatch(INVISIBLE, text) ?? firstMatch(INVISIBLE, meta);
+  if (!hidden) return null;
+  return `characters that show nothing are not accepted: remove ${codePoint(hidden)} (${invisibleName(hidden)}), `
+    + "written out or as an escape (U+200C, U+200D, U+FE0E and U+FE0F, which emoji and some scripts need, are fine)";
 }
 
 // --- keys only our own tools write -----------------------------------------------------------

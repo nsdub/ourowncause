@@ -40,10 +40,75 @@ def _get(meta: dict, path: tuple):
     return cur
 
 
-# The same characters the API and the gateway refuse in a note: C0 controls except tab and
-# newline, C1 controls, bidi overrides and isolates, and invisible format characters.
-_NOTE_FORBIDDEN = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u200b\u200e\u200f\u061c"
-                             "\u202a-\u202e\u2066-\u2069\ufff9-\ufffb\U000e0000-\U000e007f]")
+# Characters no post may hold, the same two sets as functions/_lib/validate.js. CONTROL: C0
+# controls other than tab and the line breaks, DEL, C1 controls, the bidirectional marks,
+# overrides and isolates, the zero width space, the interlinear annotation marks and the tag
+# characters. INVISIBLE: more characters that show nothing and so can hide text: the soft
+# hyphen, the combining grapheme joiner, the Hangul fillers, the Khmer inherent vowels, the
+# Mongolian vowel separator and variation selectors, the word joiner and invisible operators,
+# the braille blank, and the variation selectors U+FE00 to U+FE0D and U+E0100 to U+E01EF.
+# U+200C, U+200D, U+FE0E and U+FE0F are accepted: emoji sequences and some scripts need them.
+_CONTROL = ("\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u061c\u200b\u200e\u200f\u202a-\u202e\u2066-\u2069"
+            "\ufff9-\ufffb\U000e0000-\U000e007f")
+_INVISIBLE = ("\u00ad\u034f\u115f\u1160\u17b4\u17b5\u180b-\u180f\u2060-\u2064\u2800\u3164"
+              "\ufe00-\ufe0d\uffa0\U000e0100-\U000e01ef")
+CONTROL_CHARS = re.compile(f"[{_CONTROL}]")
+INVISIBLE_CHARS = re.compile(f"[{_INVISIBLE}]")
+_INVISIBLE_NAMES = {
+    0xad: "soft hyphen", 0x34f: "combining grapheme joiner", 0x115f: "Hangul choseong filler",
+    0x1160: "Hangul jungseong filler", 0x17b4: "Khmer inherent vowel", 0x17b5: "Khmer inherent vowel",
+    0x180e: "Mongolian vowel separator", 0x2060: "word joiner", 0x2061: "invisible function application",
+    0x2062: "invisible times", 0x2063: "invisible separator", 0x2064: "invisible plus",
+    0x2800: "braille blank", 0x3164: "Hangul filler", 0xffa0: "halfwidth Hangul filler",
+}
+_MAX_WALK_DEPTH = 30
+
+# The characters the API and the gateway refuse in a note: the same, and a carriage return.
+_NOTE_FORBIDDEN = re.compile(f"[\r{_CONTROL}{_INVISIBLE}]")
+
+
+def _first_match(pattern: re.Pattern, value, depth: int = 0) -> str | None:
+    """The first character `pattern` finds in a string, or in a mapping's keys and values."""
+    if isinstance(value, str):
+        found = pattern.search(value)
+        return found.group() if found else None
+    if depth > _MAX_WALK_DEPTH:
+        return None
+    if isinstance(value, dict):
+        items = [x for pair in value.items() for x in pair]
+    elif isinstance(value, list):
+        items = value
+    else:
+        return None
+    for item in items:
+        found = _first_match(pattern, item, depth + 1)
+        if found:
+            return found
+    return None
+
+
+def _code_point(char: str) -> str:
+    return f"U+{ord(char):04X}"
+
+
+def hidden_character_errors(meta: dict, body: str) -> list[str]:
+    """The one error for a control, text-direction or invisible character in the post, if any.
+
+    Front matter values are checked after YAML has read their escapes, so a title written
+    "\\u00ad" counts as well as one holding the character itself.
+    """
+    found = _first_match(CONTROL_CHARS, meta) or _first_match(CONTROL_CHARS, body)
+    if found:
+        return [f"control and text-direction characters are not accepted: remove {_code_point(found)}, "
+                "written out or as an escape (tabs and line breaks are fine)"]
+    hidden = _first_match(INVISIBLE_CHARS, meta) or _first_match(INVISIBLE_CHARS, body)
+    if not hidden:
+        return []
+    name = _INVISIBLE_NAMES.get(ord(hidden)) or (
+        "Mongolian variation selector" if 0x180b <= ord(hidden) <= 0x180f else "variation selector")
+    return [f"characters that show nothing are not accepted: remove {_code_point(hidden)} ({name}), "
+            "written out or as an escape (U+200C, U+200D, U+FE0E and U+FE0F, which emoji and some "
+            "scripts need, are fine)"]
 
 
 def author_notes_errors(notes) -> list[str]:
@@ -104,6 +169,8 @@ def validate(post: Post, known_slugs: set[str], known_questions: set[str]) -> li
     notes = meta.get("author_notes")
     if notes is not None:
         errors.extend(author_notes_errors(notes))
+
+    errors.extend(hidden_character_errors(meta, post.body))
 
     cites = meta.get("cites") or []
     questions = meta.get("questions") or []

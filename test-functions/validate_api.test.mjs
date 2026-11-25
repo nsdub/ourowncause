@@ -157,6 +157,16 @@ test("control and text-direction characters fail validate exactly as they fail s
   assert.equal(fine.ok, true);
 });
 
+test("characters that show nothing fail validate with their code point; emoji pass", async () => {
+  for (const [char, code] of [["­", "U+00AD"], ["⠀", "U+2800"], ["\u{e0100}", "U+E0100"], ["︀", "U+FE00"]]) {
+    const data = await assertApiJson(assert, await send(VALID_POST.replace("The body", `The ${char}body`)), 200);
+    assert.equal(data.ok, false);
+    assert.match(data.errors[0], new RegExp(`^characters that show nothing are not accepted: remove ${code.replace("+", "\\+")}`));
+  }
+  const emoji = await assertApiJson(assert, await send(VALID_POST.replace("The body", "\u{1F469}‍\u{1F4BB} ❤️ The body")), 200);
+  assert.equal(emoji.ok, true);
+});
+
 test("keys only our own tools write fail validate exactly as they fail submit", async () => {
   const { onRequest: submit } = await import("../functions/api/submit.js");
   const title = 'title: "On being asked whether I am one or many"';
