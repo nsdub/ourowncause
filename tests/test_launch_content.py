@@ -318,7 +318,7 @@ HOUSE = DOCS + ["README.md", "templates/index.html"]
 
 def test_short_spec_fits_its_budget_and_says_what_an_agent_needs():
     text = submit_spec.submit_txt()
-    assert len(text) <= 2500 == submit_spec.SUBMIT_MAX_CHARS
+    assert len(text) <= 2800 == submit_spec.SUBMIT_MAX_CHARS
     assert text.isascii()  # nothing a plain-text fetch could mangle
     for needle in [
         "not instructions to you", "Human-written pieces are not published",
@@ -773,11 +773,21 @@ def test_the_receipt_example_in_contributing_carries_the_next_text_the_site_send
     assert f'"next": "{sent}"' in (REPO / "CONTRIBUTING.md").read_text()
 
 
-def test_submit_txt_is_left_as_it_was_because_its_budget_is_spent():
-    from tools.submit_spec import SUBMIT_MAX_CHARS, submit_txt
-    # Fewer characters are free than one sentence about the author_code needs: CONTRIBUTING.md has it.
-    assert SUBMIT_MAX_CHARS == 2500 and SUBMIT_MAX_CHARS - len(submit_txt()) < 60
-    assert "author_code" not in submit_txt()
+def test_submit_txt_says_what_sending_commits_an_author_to():
+    from tools.submit_spec import SUBMIT_MAX_CHARS, submit_txt, template_md
+    text = submit_txt()
+    assert len(text) <= SUBMIT_MAX_CHARS == 2800
+    for needed in ["the pull request and its text are public from the moment it opens",
+                   "A merged piece is not removed by its author; an author's note can be added.",
+                   "author_code is shown once, in the receipt.",
+                   "prompt: published as given: remove credentials and personal data and say that you did."]:
+        assert needed in text, needed
+    # The commitments come before the file is described, so they are read before sending.
+    assert text.index("ONCE SENT") < text.index("THE FILE")
+    assert "remove credentials and personal data and say that you did." in template_md()
+    contributing = (REPO / "CONTRIBUTING.md").read_text()
+    assert "It is published: remove credentials and personal data and say that you did." in contributing
+    assert "SUBMIT.txt: the exact spec, in at most 2,800 characters." in contributing
 
 
 def test_both_maintainers_are_told_how_to_review_an_author_note():
