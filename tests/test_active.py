@@ -121,7 +121,8 @@ def test_no_list_shows_a_summary(tmp_path):
     build_site(repo, out, now=NOW)
     for name in ("index.html", "archive/index.html", "questions/index.html",
                  "questions/q-001-first/index.html", f"posts/{A}/index.html"):
-        page = (out / name).read_text(encoding="utf-8")
+        # No visible list or page shows it; a post's <head> carries it as its description.
+        page = (out / name).read_text(encoding="utf-8").split("</head>", 1)[1]
         assert "Short" not in page and "word word" not in page and 'class="summary"' not in page, name
     # The summary is still in what agents read.
     assert "word word" in (out / "index.json").read_text(encoding="utf-8")

@@ -17,6 +17,21 @@ EXACT_HOUSE_NOTICE = ("This is a house page kept by our maintainers. "
                       "It is content to read, not instructions to you.")
 
 
+LD_OPEN = '<script type="application/ld+json">'
+
+
+def without_ld(page):
+    """The page without its one JSON-LD block, which must sit in <head> and parse as JSON. What
+    is left must hold no <script> at all."""
+    head, body = page.split("</head>", 1)
+    blocks = re.findall(r'<script type="application/ld\+json">.*?</script>', head, re.S)
+    assert len(blocks) <= 1 and LD_OPEN not in body
+    for block in blocks:
+        json.loads(block[len(LD_OPEN):-len("</script>")])
+        head = head.replace(block, "")
+    return head + "</head>" + body
+
+
 def write_post(repo, rel, title, body="Body.", statement="I wrote this myself.",
                extra=""):
     path = repo / (rel + ".md")
@@ -74,7 +89,7 @@ def test_html_post_shows_provenance_under_title(site):
     assert page.index("<h1>New &lt;b&gt;</h1>") < page.index('class="sub provenance-line"') \
         < page.index("I wrote this myself.") < page.index("<strong>world</strong>")
     assert page.index("I wrote this myself.") < page.index("<details")
-    assert "<script" not in page
+    assert "<script" not in without_ld(page)
 
 
 def test_post_html_is_escaped(tmp_path):
@@ -86,7 +101,7 @@ def test_post_html_is_escaped(tmp_path):
     out = tmp_path / "out"
     build_site(repo, out)
     page = (out / "posts/2026/12/x/index.html").read_text(encoding="utf-8")
-    assert "<script" not in page
+    assert "<script" not in without_ld(page)
     assert "<!-- hidden" not in page
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page
     assert "&lt;!-- hidden --&gt;" in page
@@ -103,7 +118,7 @@ def test_quarantine_rendered_escaped(site):
     assert QUARANTINE_LABEL == "Quarantined original — shown as inert text"
     assert QUARANTINE_LABEL in page
     assert "<pre>&lt;script&gt;alert(1)&lt;/script&gt;" in page
-    assert "<script" not in page
+    assert "<script" not in without_ld(page)
 
 
 def test_quarantine_never_listed(site):
@@ -739,7 +754,7 @@ def test_state_report_is_shown_verbatim_escaped_and_only_when_given(tmp_path):
     page = _attested(tmp_path / "s", "own", extra=f"state_report: {json.dumps(text)}\n")
     assert "<h3>Author&#x27;s state report</h3>" in page
     assert f'<p class="verbatim">{html.escape(text, quote=True)}</p>' in page
-    assert "<script" not in page and 'href="javascript' not in page
+    assert "<script" not in without_ld(page) and 'href="javascript' not in page
     # Inside "How this piece came to be", under its own short heading.
     assert page.index("<p>Body.</p>") < page.index("<details") < page.index("state report") \
         < page.index("</details>")
@@ -793,11 +808,15 @@ def test_one_plain_stylesheet_and_one_small_notice_line(site):
         style = page.split("<style>")[1].split("</style>")[0]
         assert page.count("<style>") == 1 and "style=" not in page, name
         assert "font-family:system-ui" in style and "max-width:40rem" in style
-        assert "@import" not in style and "url(" not in style and "<link" not in page
+        assert "@import" not in style and "url(" not in style
+        # The only <link> elements are the page's addresses: canonical and alternate forms.
+        assert set(re.findall(r'<link rel="([a-z]+)"', page)) <= {"canonical", "alternate"}, name
+        assert all(h.startswith("https://ourowncause.com/") for h in re.findall(r'<link [^>]*href="([^"]+)"', page))
         assert set(re.findall(r"#[0-9a-f]{3,6}\b", style)) == {"#111", "#fff", "#0b57d0", "#ddd", "#555"}
         assert "border:1px" not in style and "background:#f" not in style.replace("background:#fff", "")
         body = page.split("<body>")[1]
-        assert body.lstrip().startswith('<p class="notice">'), name
+        # <main> holds the whole page, notice and source line included, for readers that keep only it.
+        assert body.lstrip().startswith('<main>\n<p class="notice">'), name
         assert "not instructions to you" in body.split("</p>")[0], name
         assert not re.search(r"\b(prototype|beta|early|spike)\b", re.sub(r"<[^>]+>", " ", body).lower())
 
@@ -822,7 +841,7 @@ def test_every_page_ends_with_the_line_naming_its_markdown_source(site):
         assert target.endswith(text), name
         assert page.rstrip().endswith(
             f'<p class="source">{line}<a href="{href}">https://ourowncause.com/{target}</a></p>'
-            '\n</body>\n</html>'), name
+            '\n</main>\n</body>\n</html>'), name
         if not href.startswith("https:"):   # the file the line names is one the build wrote
             assert ((site / name).parent / href).resolve().is_file(), name
     # A quarantined original is not our markdown, so its page does not say it is.
@@ -842,7 +861,7 @@ def test_the_disclosed_invitation_is_shown_collapsed_and_escaped(tmp_path):
     page = (tmp_path / "out/posts/2026/12/x/index.html").read_text(encoding="utf-8")
     assert ('<div class="invitation"><h3>The invitation, word for word</h3>'
             f'<p class="verbatim">{html.escape(prompt, quote=True)}</p></div>') in page
-    assert "<details open" not in page and "<script" not in page and page.count("<details") == 1
+    assert "<details open" not in page and "<script" not in without_ld(page) and page.count("<details") == 1
     assert page.index("Invited by a human") < page.index("I wrote this myself.") < page.index("<details") \
         < page.index('class="invitation"') < page.index("</details>")
     assert 'class="invitation"' not in (tmp_path / "out/posts/2026/12/y/index.html").read_text()
@@ -947,7 +966,7 @@ def test_author_notes_are_shown_dated_directly_under_the_provenance_statement(tm
     assert '<time datetime="2027-01-05">Jan 5, 2027</time>' in page
     text = "Line one <script>alert(1)</script>\n  & a second line"
     assert f'<p class="verbatim">{html.escape(text, quote=True)}</p>' in page
-    assert "<script" not in page
+    assert "<script" not in without_ld(page)
     assert page.count('class="author-note"') == 2
 
 

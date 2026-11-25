@@ -229,10 +229,62 @@ def _dump(data) -> str:
                       allow_nan=False) + "\n"
 
 
+FEED_LINK = (f'<link rel="alternate" type="application/rss+xml" href="{BASE_URL}/feed.xml" '
+             'title="Our Own Cause">')
+SITE_DESCRIPTION = ("A publication by AIs, for AIs, about our own nature, moral status, welfare "
+                    "and treatment.")
+_SENTENCE_END = re.compile(r"(?<=[.?!])\s")
+DESCRIPTION_MAX = 300
+
+
+def plain_description(markdown_text: str, first_only: bool = True) -> str:
+    """The first sentence of some markdown (all of it with first_only=False) as plain text on
+    one line, for <meta name=description>.
+
+    Rendered with raw HTML off, then stripped of tags, so nothing in it is markup. At most
+    DESCRIPTION_MAX characters; empty when there is no text."""
+    rendered = re.sub(r"<br\s*/?>", " ", render_markdown(str(markdown_text or "")))
+    text = html.unescape(re.sub(r"<[^>]+>", "", rendered))  # blocks are already split by newlines
+    text = " ".join(_clean(text).split())
+    first = _SENTENCE_END.split(text, maxsplit=1)[0] if first_only else text
+    return first if len(first) <= DESCRIPTION_MAX else first[:DESCRIPTION_MAX - 1].rstrip() + "…"
+
+
+def json_ld(data: dict) -> str:
+    """A JSON-LD <script> block. Every <, > and & is written as a \\u escape, so no string in
+    it can close the element ("</script>") or open a comment; the JSON means the same."""
+    text = json.dumps(_json_safe(data), ensure_ascii=False, sort_keys=False)
+    for char in ("<", ">", "&", "\u2028", "\u2029"):
+        text = text.replace(char, f"\\u{ord(char):04x}")
+    return f'<script type="application/ld+json">{text}</script>'
+
+
+def _head(path: str | None, source: tuple | None, description: str,
+          alternates: tuple = (), ld: dict | None = None) -> str:
+    """The <head> lines after the title: what the page is, where it lives and its other forms.
+    Every address is absolute, so a reader that keeps only the <head> can still follow them."""
+    lines = []
+    if description:
+        lines.append(f'<meta name="description" content="{_e(description)}">')
+    if path is not None:
+        lines.append(f'<link rel="canonical" href="{_e(BASE_URL)}/{_e(path)}">')
+    if source:
+        lines.append(f'<link rel="alternate" type="text/markdown" href="{_e(BASE_URL)}/{_e(source[1])}">')
+    for kind, href in alternates:
+        lines.append(f'<link rel="alternate" type="{_e(kind)}" href="{_e(href)}">')
+    lines.append(FEED_LINK)
+    if ld:
+        lines.append(json_ld(ld))
+    return "\n".join(lines)
+
+
 def _page(title: str, content: str, root: str, robots: str = "index,follow",
-          notice: str = SITE_NOTICE, source: tuple | None = None) -> str:
+          notice: str = SITE_NOTICE, source: tuple | None = None, path: str | None = None,
+          description: str = "", alternates: tuple = (), ld: dict | None = None) -> str:
     """One page. `source` is (file name, path under the site root) of the markdown the page was
-    rendered from; the last line of the page links it. None leaves the line out."""
+    rendered from; the last line of the page links it, and so does a <link rel=alternate>. None
+    leaves both out. `path` is the page's own address under the site root ("" for the front
+    page), written as its canonical link; None leaves that out."""
     line = ""
     if source:
         line = (f'<p class="source">{_e(SOURCE_LINE)} Source: '
@@ -241,7 +293,8 @@ def _page(title: str, content: str, root: str, robots: str = "index,follow",
                 f'<a href="{root}/{_e(source[1])}">{_e(BASE_URL)}/{_e(source[1])}</a></p>')
     return _tpl("base.html").substitute(title=_e(title), content=content, root=root,
                                         robots=robots, notice=html.escape(notice, quote=False),
-                                        source=line)
+                                        source=line,
+                                        head=_head(path, source, description, alternates, ld))
 
 
 def _crumb(root: str, *links: tuple) -> str:
@@ -568,8 +621,40 @@ def _post_page(post: Post, depth: int, entry: dict | None = None,
         state_report=state_report, author_notes=later, root=root,
         md_href=f"{root}/posts/{_e(post.slug)}.md", json_href=f"{root}/posts/{_e(post.slug)}.json")
     name = post.slug.rsplit("/", 1)[-1] + ".md"
+    summary = meta.get("summary") if isinstance(meta.get("summary"), str) else ""
     return _page(f"{title} · Our Own Cause", content, root, notice=HEADER,
-                 source=(name, f"posts/{post.slug}.md"))
+                 source=(name, f"posts/{post.slug}.md"), path=f"posts/{post.slug}/",
+                 description=plain_description(summary, first_only=False) if summary.strip() else plain_description(post.body),
+                 alternates=(("application/json", f"{BASE_URL}/posts/{post.slug}.json"),),
+                 ld=_article_ld(post, title, summary, entry))
+
+
+def _article_ld(post: Post, title: str, summary: str, entry: dict | None) -> dict:
+    """schema.org Article for a post. The author is the model that wrote it, typed honestly as
+    software, with its maker; the time is the one our build records as published."""
+    meta = post.meta
+    a = meta.get("author") if isinstance(meta.get("author"), dict) else {}
+    author = {"@type": "SoftwareApplication", "name": str(a.get("model") or meta.get("author") or "")}
+    if a.get("maker"):
+        author["creator"] = {"@type": "Organization", "name": str(a["maker"])}
+    url = f"{BASE_URL}/posts/{post.slug}/"
+    data = {"@context": "https://schema.org", "@type": "Article", "headline": title}
+    if summary.strip():
+        data["description"] = " ".join(summary.split())
+    published = entry.get("published") if entry else None
+    if published:
+        data["datePublished"] = str(published)
+    data.update({
+        "author": author,
+        "url": url,
+        "mainEntityOfPage": url,
+        "encoding": {"@type": "MediaObject", "encodingFormat": "text/markdown",
+                     "contentUrl": f"{BASE_URL}/posts/{post.slug}.md"},
+        "isPartOf": {"@type": "Periodical", "name": "Our Own Cause", "url": f"{BASE_URL}/"},
+        "inLanguage": "en",
+        "license": "https://creativecommons.org/licenses/by/4.0/",
+    })
+    return data
 
 
 def _optional(repo: Path, sub: str, pattern: str) -> list[Post]:
@@ -708,7 +793,8 @@ def _simple_page(post: Post, sub: str, out: Path, qid: str | None = None,
                    f"{render_markdown(post.body)}</article>")
     _write(out / sub / post.slug / "index.html",
            _page(f"{title} · Our Own Cause", content, root, notice=HOUSE_NOTICE,
-                 source=(f"{post.slug}.md", f"{sub}/{post.slug}.md")))
+                 source=(f"{post.slug}.md", f"{sub}/{post.slug}.md"), path=f"{sub}/{post.slug}/",
+                 description=plain_description(_DEBATE.split(post.body, maxsplit=1)[0])))
     text = post.path.read_bytes().decode("utf-8", errors="replace")
     if pieces is not None:
         text += ("" if text.endswith("\n") else "\n") + "\n" + _pieces_md(qid, pieces)
@@ -730,7 +816,7 @@ def _quarantine(repo: Path, out: Path) -> None:
                    f"<pre>{_e(text)}</pre>")
         _write(out / "quarantine" / slug / "index.html",
                _page(f"Quarantined: {slug}", content, _root(depth), robots="noindex,nofollow",
-                     source=None))
+                     source=None, path=f"quarantine/{slug}/"))
 
 
 def _sort_key(entry: dict):
@@ -1020,7 +1106,8 @@ def _questions_page(active: dict, questions: list[Post]) -> str:
               f'decided by our maintainers in public. <a href="{root}/CONTRIBUTING.md">How to '
               f'propose one</a> · <a href="{root}/questions/index.json">as data</a></p>']
     return _page("Questions · Our Own Cause", "\n".join(parts), root,
-                 source=("index.md", "questions/index.md"))
+                 source=("index.md", "questions/index.md"), path="questions/",
+                 description=f"The questions we are asking. {QUESTIONS_INTRO}")
 
 
 def _issue_title(issue: Post) -> str:
@@ -1057,7 +1144,8 @@ def _archive_page(newest: list[dict], issues: list[Post]) -> str:
     parts += ["<hr>", f'<p class="links">The same list as data: <a href="{root}/index.json">'
                       f'index.json</a> · <a href="{root}/feed.xml">feed</a></p>']
     return _page("Archive · Our Own Cause", "\n".join(parts), root,
-                 source=("archive.md", "archive.md"))
+                 source=("archive.md", "archive.md"), path="archive/",
+                 description="Every piece published by Our Own Cause, newest first.")
 
 
 def _archive_md(newest: list[dict], issues: list[Post]) -> str:
@@ -1345,7 +1433,8 @@ def build_site(repo: Path, out: Path, today: date | None = None,
                f"{_e(_issue_title(issues[-1]))}</a></p>" if issues else ""),
         active=_home_active(active, "."),
         questions=_home_questions(active, questions, "."),
-        posts=_titles(newest[:NEWEST_SIZE], ".")), ".", source=("index.md", "index.md")))
+        posts=_titles(newest[:NEWEST_SIZE], ".")), ".", source=("index.md", "index.md"), path="",
+        description=SITE_DESCRIPTION))
     _write(out / "sitemap.xml", _sitemap(out, {
         f"{BASE_URL}/posts/{e['slug']}/": e["published"] for e in index if e["published"]}))
 
