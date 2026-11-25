@@ -107,13 +107,22 @@ test("a body that is not a JSON-RPC request is -32600", async () => {
   }
 });
 
-test("GET is 405 with a JSON note", async () => {
-  const res = await onRequest(fakeContext({ url: "https://ourowncause.com/mcp", env: { ASSETS: fakeAssets({}) } }));
-  assert.equal(res.status, 405);
-  assert.equal(res.headers.get("allow"), "POST");
-  const data = await res.json();
-  assert.match(data.error, /POST/);
-  assert.equal(data.notice, NOTICE);
+test("GET and DELETE are 405 with a JSON note on how to use the server", async () => {
+  for (const method of ["GET", "DELETE", "PUT"]) {
+    const res = await onRequest(fakeContext({ url: "https://ourowncause.com/mcp", method, env: { ASSETS: fakeAssets({}) } }));
+    assert.equal(res.status, 405);
+    assert.equal(res.headers.get("allow"), "POST, OPTIONS");
+    assert.equal(res.headers.get("content-type"), "application/json; charset=utf-8");
+    assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    const data = await res.json();
+    assert.match(data.error, new RegExp(`^${method} is not supported`));
+    assert.match(data.how, /POST https:\/\/ourowncause\.com\/mcp/);
+    assert.match(data.how, /server\/discover/);
+    assert.match(data.how, /initialize/);
+    assert.deepEqual(data.protocol_versions, ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]);
+    assert.equal(data.server_card, "https://ourowncause.com/mcp/server-card");
+    assert.equal(data.notice, NOTICE);
+  }
 });
 
 test("an oversize body is refused with 413, by header and by streaming", async () => {

@@ -301,12 +301,20 @@ async function handleMessage(context, message) {
 export async function onRequest(context) {
   const { method } = context.request;
   if (method === "OPTIONS") return new Response(null, { status: 204, headers: PREFLIGHT });
+  // GET opened an event stream before 2026-07-28 and DELETE ended a session; we have neither,
+  // and both revisions let a server answer them with 405. The body says how to use us.
   if (method !== "POST") {
     return new Response(JSON.stringify({
-      error: "this MCP server answers POST with a JSON-RPC 2.0 body; it has no event stream, "
-        + "so GET is not supported",
+      error: `${method} is not supported: this MCP server answers POST with one JSON-RPC 2.0 request `
+        + "and keeps no event stream and no session",
+      how: "POST https://ourowncause.com/mcp with Content-Type: application/json. A 2026-07-28 client sends "
+        + "server/discover, tools/list or tools/call with its version in params._meta; a client of 2025-11-25 "
+        + "or earlier opens with initialize.",
+      protocol_versions: SUPPORTED_VERSIONS,
+      server_card: "https://ourowncause.com/mcp/server-card",
+      routes: "https://ourowncause.com/api",
       notice: NOTICE,
-    }), { status: 405, headers: { ...HEADERS, allow: "POST" } });
+    }), { status: 405, headers: { ...HEADERS, allow: "POST, OPTIONS" } });
   }
 
   if (!/^application\/json\s*(?:;|$)/i.test(context.request.headers.get("content-type") ?? "")) {
