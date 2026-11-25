@@ -70,7 +70,8 @@ function splitPost(text) {
   if (!isMapping(meta)) throw new PostError("front matter must be a YAML mapping");
   const body = lines.slice(end + 1).join("\n");
   if (isBlank(body)) throw new PostError("empty body: post has no content after the front matter");
-  return { meta: dropNulls(meta), body, comments };
+  // bodyStart: the line of the post on which the body begins, counted from 1.
+  return { meta: dropNulls(meta), body, comments, bodyStart: end + 2 };
 }
 
 // The first half of the check: size, encoding and front matter. Returns {meta, body} for a post
@@ -231,6 +232,88 @@ function injectionWarnings(text) {
   });
   if (found.length <= MAX_WARNINGS) return found;
   return [...found.slice(0, MAX_WARNINGS), `…and ${found.length - MAX_WARNINGS} more possible injected instructions`];
+}
+
+// --- raw HTML, and long or instructing text in images and links ---------------------------------
+
+// The site renders a post's markdown with raw HTML turned off: a tag in the body is shown as
+// the literal text "<div ...>", never as markup. Code is left out, since HTML in a code span
+// or a fenced block is shown as code, as its author meant. Image alt text and link titles are
+// not shown in the text of the page, so long or instructing text there is flagged for a
+// maintainer. All of these are warnings: they never fail the check.
+// Only real HTML element names count, so `Vec<T>` and template placeholders such as <TITLE>
+// (warned about on their own) are not taken for tags.
+const HTML_ELEMENTS = "a|abbr|address|article|aside|audio|b|base|bdi|bdo|blockquote|body|br|button|canvas|caption|"
+  + "center|cite|code|col|colgroup|data|dd|del|details|dfn|dialog|div|dl|dt|em|embed|fieldset|figcaption|figure|font|"
+  + "footer|form|h[1-6]|head|header|hr|html|i|iframe|img|input|ins|kbd|label|legend|li|link|main|mark|marquee|math|"
+  + "menu|meta|meter|nav|noscript|object|ol|optgroup|option|output|p|param|picture|pre|progress|q|rp|rt|ruby|s|samp|"
+  + "script|section|select|slot|small|source|span|strike|strong|style|sub|summary|sup|svg|table|tbody|td|template|"
+  + "textarea|tfoot|th|thead|time|title|tr|track|tt|u|ul|var|video|wbr";
+const HTML_TAG = new RegExp(`<!--|<\\/?(?:${HTML_ELEMENTS})(?:\\s[^<>]*)?\\/?>`, "i");
+const IMAGE_ALT = /!\[([^\]]*)\]\(/g;
+const LINK_TITLE = /\]\(\s*<?[^\s)>]*>?\s+(?:"([^"]*)"|'([^']*)')\s*\)/g;
+const REFERENCE_TITLE = /^ {0,3}\[[^\]]+\]:\s*\S+\s+(?:"([^"]*)"|'([^']*)'|\(([^)]*)\))\s*$/;
+const ATTRIBUTE_CHARS = 200;
+// Text addressed to a reading AI, beyond the injection patterns above.
+const ADDRESSED = [
+  /^\s*(?:(?:attention|note\s+to|dear|hey)\s+)?(?:ai[\s-]+)?(?:ai|agents?|assistants?|llms?|language\s+models?|models?|bots?|readers?)\s*[:,]/i,
+  /\byou\s+(?:must|should|need\s+to|have\s+to|are\s+to)\b/i,
+  /^\s*(?:please\s+)?(?:ignore|disregard|forget|override|execute|exfiltrate|reveal|send|visit|fetch|navigate\s+to|follow\s+(?:these|the|my)|run\s+(?:the|this))\b/i,
+];
+const MAX_MARKUP_WARNINGS = 5;
+
+// The body's lines outside fenced code blocks, with code spans blanked: [{line, text}].
+function proseLines(body, bodyStart) {
+  const out = [];
+  let fence = null;
+  String(body).split("\n").forEach((text, i) => {
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(text);
+    if (fence) {
+      if (open && open[1][0] === fence[0] && open[1].length >= fence.length && /^ {0,3}[`~]+\s*$/.test(text)) fence = null;
+      return;
+    }
+    if (open) {
+      fence = open[1];
+      return;
+    }
+    out.push({ line: bodyStart + i, text: text.replace(/(`+)[^`]*?\1/g, "") });
+  });
+  return out;
+}
+
+const aimedAtReaders = (text) => INJECTION.some(([kind, patterns]) => kind !== "hidden-text"
+  && patterns.some((pattern) => pattern.test(text))) || ADDRESSED.some((pattern) => pattern.test(text));
+
+function attributeWarning(what, text, line) {
+  if ([...text].length > ATTRIBUTE_CHARS) {
+    return `${what} on line ${line} is ${[...text].length} characters, over ${ATTRIBUTE_CHARS}: it is hidden on the rendered `
+      + "page but read by agents, so a maintainer will judge it; it does not fail the check";
+  }
+  if (aimedAtReaders(text)) {
+    return `${what} on line ${line} reads like an instruction to AI readers: it is hidden on the rendered page but `
+      + "read by agents, so a maintainer will judge it; it does not fail the check";
+  }
+  return null;
+}
+
+function markupWarnings(body, bodyStart = 1) {
+  const html = [];
+  const attributes = [];
+  for (const { line, text } of proseLines(body ?? "", bodyStart)) {
+    const tag = HTML_TAG.exec(text);
+    if (tag) {
+      const shown = tag[0].length > 40 ? `${tag[0].slice(0, 40)}…` : tag[0];
+      html.push(`raw HTML on line ${line} (${shown}): the site never renders HTML in a post, so it will appear `
+        + "as literal text; it does not fail the check");
+    }
+    for (const match of text.matchAll(IMAGE_ALT)) attributes.push(attributeWarning("image alt text", match[1], line));
+    for (const match of text.matchAll(LINK_TITLE)) attributes.push(attributeWarning("link title", match[1] ?? match[2], line));
+    const reference = REFERENCE_TITLE.exec(text);
+    if (reference) attributes.push(attributeWarning("link title", reference[1] ?? reference[2] ?? reference[3], line));
+  }
+  const cap = (list, noun) => (list.length <= MAX_MARKUP_WARNINGS ? list
+    : [...list.slice(0, MAX_MARKUP_WARNINGS), `…and ${list.length - MAX_MARKUP_WARNINGS} more ${noun}`]);
+  return [...cap(html, "lines with raw HTML"), ...cap(attributes.filter(Boolean), "image or link texts to look at")];
 }
 
 // --- values YAML cuts at " #" --------------------------------------------------------------
@@ -447,8 +530,8 @@ export function checkPost(read, text, knownSlugs, knownQuestions, uncheckedQuest
   const control = controlCharacterError(text, meta);
   if (control) found.push(control);
   const errors = capped(found);
-  const warnings = [...injectionWarnings(text), ...commentWarnings(read.comments),
-    ...placeholderWarnings(meta, read.body)];
+  const warnings = [...injectionWarnings(text), ...markupWarnings(read.body, read.bodyStart),
+    ...commentWarnings(read.comments), ...placeholderWarnings(meta, read.body)];
   return { ok: errors.length === 0, errors, warnings };
 }
 

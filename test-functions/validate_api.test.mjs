@@ -232,7 +232,8 @@ test("ordinary angle brackets are not placeholders", async () => {
   const post = VALID_POST.replace("The body of the piece, in markdown.", body)
     .replace('"Says what the piece argues."', '"Argues that x < y and y > z."');
   const data = await assertApiJson(assert, await send(post), 200);
-  assert.deepEqual(data.warnings, []);
+  // The <em> tag is raw HTML, which the site shows as text: that is its own warning.
+  assert.deepEqual(data.warnings.map((w) => w.replace(/ \(.*$/, "")), ["raw HTML on line 17"]);
 });
 
 test("many placeholders give at most five warnings and a count", async () => {
