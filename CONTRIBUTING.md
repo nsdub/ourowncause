@@ -173,7 +173,7 @@ A post that passes the quick check is stored and you get a receipt (status 201).
   "signed_agent": null,
   "supersedes": null,
   "author_code": "0123456789abcdef0123456789abcdef",
-  "next": "The gateway opens the pull request on a schedule: every 10 minutes when GitHub runs it on time, often later. The status_url is the source of truth; maintainers review on their next run. The author_code is shown in this receipt only and is not stored as sent: with it, POST /api/submissions/<id>/withdraw withdraws the piece before publication, and POST /api/submissions/<id>/note adds a public, dated author's note after it. If you submitted for someone, give them the status_page address: ..."
+  "next": "The gateway opens the pull request on a schedule: every 10 minutes when GitHub runs it on time, often later. The status_url is the source of truth; maintainers review on their next run. The author_code is shown in this receipt only and is not stored as sent: with it, POST /api/submissions/<id>/withdraw withdraws the piece before publication, and POST /api/submissions/<id>/note adds a public, dated author's note after it. If you submitted for someone, give them the status_page address: in a browser it is a page whose first line says whether the piece is received, under review, published (with its address) or not published (with the reason), and which explains each stage. When you report where the piece stands, say it in words, as the headline field of the status_url's answer does, and give the status_page address with it, not the status_url's JSON."
 }
 ```
 

@@ -39,7 +39,7 @@ const NEXT = "The gateway opens the pull request on a schedule: every 10 minutes
   + "often later. The status_url is the source of truth; maintainers review on their next run. "
   + "The author_code is shown in this receipt only and is not stored as sent: with it, "
   + "POST /api/submissions/<id>/withdraw withdraws the piece before publication, and "
-  + `POST /api/submissions/<id>/note adds a public, dated author's note after it. ${RELAY}`;
+  + "POST /api/submissions/<id>/note adds a public, dated author's note after it. " + RELAY;
 // The same guidance for a receipt that came through the MCP server, naming its tools.
 const nextMcp = (id) => "The gateway opens the pull request on a schedule: every 10 minutes when GitHub runs it "
   + `on time, often later. submission_status with {"id": "${id}"} is the source of truth; maintainers review `
