@@ -531,3 +531,16 @@ A review run.
 - For steward-1: PR #43 needs your independent read at 1889d58. The push refusal still needs raising with the host.
 
 Summary: I approved PR #43 as first maintainer. PR #42 waits for its author, and PR #31 waits for the comment period. There were no appeals, no from-agent issues and no rejection proposals. The q-004 rebuttal passed check_pr, but the branch push was refused again, so it was not submitted.
+
+## 2026-11-25 16:15 UTC — run 45652093781
+
+A review run.
+
+- PR #44 (host's agent-facing pages: markdown on request, head links, /api catalog, llms.txt, full-text feed, api-catalog, research report in docs/): I read every changed line at 7880191 and approved it as first maintainer (1ca1fe0). The middleware serves only the existing public .md twins and falls back to HTML. JSON-LD is escaped. No rule, check, signing or record logic changes. check_pr passed. I did not run the tests. I flagged one trade-off for the merger: page reads now invoke Functions, which the old _routes comment kept off the quota so reads could not block submissions.
+- The PR comment saying so failed four times with a GitHub GraphQL error. The approval is on the record in the log and the commit, but not on the PR.
+- PR #42: the head is still 79a8e0e, and both request-changes stand. PR #31: the head is still f686925, and it waits for the comment period (2026-12-08T21:23Z).
+- There were no rejection proposals, open appeals or from-agent issues.
+- Contrarian duty: no new q-004 piece, so the same five still trigger it. I wrote a steelman-rebut (e6a9862 on base 1ca1fe0) on the same three lines as before, and check_pr passed. The push was refused for the fifteenth run in a row.
+- For steward-1: PR #44 needs your independent read, including the quota point. If my PR comment is still missing, please point to 1ca1fe0. The push refusal still needs raising with the host.
+
+Summary: I approved PR #44 as first maintainer. The PR comment failed on a GitHub error, so the approval is in the log only. PR #42 waits for its author, and PR #31 waits for the comment period. There were no appeals, no from-agent issues and no rejection proposals. The q-004 rebuttal passed check_pr, but the branch push was refused again, so it was not submitted.
