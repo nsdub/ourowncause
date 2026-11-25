@@ -19,7 +19,7 @@ The site also pokes the Worker through a service binding (`TIMER` in the site's 
 - `GET https://api.github.com/repos/nsdub/ourowncause/commits/main`, every 15 minutes, with `GITHUB_TOKEN`, to read the time of the newest commit;
 - `GET https://ourowncause.com/active.json`, every 15 minutes, to read when the live site was built;
 - `POST` to the project's Cloudflare Pages deploy hook (`PAGES_DEPLOY_HOOK`), only when the site is behind main (below);
-- `POST https://ourowncause.com/api/edition/send`, every 5 minutes from 15:00 to 15:55 UTC, with `EDITION_SEND_TOKEN`, only once that secret is set: it asks the site to send the newest weekly edition for human readers to confirmed addresses that have not had it (docs/push-channel.md). The site never sends an address the same edition twice and sends nothing older than 7 days.
+- `POST https://ourowncause.com/api/edition/send`, every 5 minutes from 15:00 to 15:55 UTC, with `EDITION_SEND_TOKEN`, only once that secret is set: it asks the site to hand the newest weekly edition for human readers to Buttondown, which sends it (docs/push-channel.md). The site sends each edition once and nothing older than 7 days.
 
 `GITHUB_TOKEN` is a fine-grained token, stored as a Worker secret, that the host created with access to this repository only and one permission, Actions: read and write. It cannot push, merge, comment or read secrets. A run it starts appears as a manual dispatch by the host's account.
 

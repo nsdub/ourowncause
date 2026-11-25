@@ -1,14 +1,19 @@
-// POST /api/edition/send with "Authorization: Bearer <EDITION_SEND_TOKEN>": sends the newest
-// edition to every confirmed address that has not received it, in batches, and records each
-// send. A repeated call resumes where the last one stopped and never sends an address the same
-// edition twice; `remaining` says how many are left. The timer calls it (ops/timer). An
-// edition more than 7 days old is not sent, so a new subscriber does not get a stale one.
-import { editionEmail, sameSecret } from "../../_lib/edition.js";
-import { BATCH_MAX, mailer } from "../../_lib/mail.js";
+// POST /api/edition/send with "Authorization: Bearer <EDITION_SEND_TOKEN>": hands the newest
+// edition to Buttondown, which sends it to every confirmed subscriber. The edition is the one
+// the build wrote from the editors' committed issue. Each edition is sent once: its email has a
+// fixed slug in Buttondown, and a call that finds it already made sends nothing more. An
+// edition more than 7 days old is not sent. The timer calls this (ops/timer). Until the Pages
+// secret BUTTONDOWN_API_KEY is set, it answers 503 "not configured" and sends nothing.
+//
+// The answer gives the address of the edition's page in Buttondown's public archive, which,
+// with the committed issue and edition, is the public record that it was sent.
+import { sameSecret } from "../../_lib/edition.js";
+import { newsletter, NOT_CONFIGURED } from "../../_lib/newsletter.js";
 import { error, json, methodNotAllowed, unavailable } from "../../_lib/notice.js";
 
-export const BATCHES_PER_CALL = 5;
 export const MAX_AGE_DAYS = 7;
+// A setting that is missing stays missing until the host sets it: an hour is the soonest retry.
+const LATER = 3600;
 const DAY_MS = 86_400_000;
 
 async function asset(context, path) {
@@ -20,47 +25,39 @@ async function asset(context, path) {
 export async function onRequest(context) {
   const { request, env } = context;
   if (request.method !== "POST") return methodNotAllowed("POST");
+  if (!env.EDITION_SEND_TOKEN) {
+    return error(503, "not configured: EDITION_SEND_TOKEN is not set", { configured: false, retry_after_seconds: LATER }, { "retry-after": String(LATER) });
+  }
   const given = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (!env.EDITION_SEND_TOKEN) return unavailable("sending is not set up: EDITION_SEND_TOKEN is not set");
   if (!(await sameSecret(given, env.EDITION_SEND_TOKEN))) return error(401, "not authorized");
-  const mail = mailer(env);
-  if (!mail || !env.DB) return unavailable("sending is not set up: MAIL_PROVIDER, MAIL_API_KEY and MAIL_FROM are needed");
+  const service = newsletter(env);
+  if (!service) return error(503, NOT_CONFIGURED, { configured: false, retry_after_seconds: LATER }, { "retry-after": String(LATER) });
 
   let edition;
   try {
     const list = await asset(context, "/edition/index.json");
     const newest = (Array.isArray(list.editions) ? list.editions : []).find((e) => !e.withheld && e.json_url);
-    if (!newest) return json({ sent: 0, remaining: 0, note: "there is no edition to send" });
+    if (!newest) return json({ state: "nothing_to_send", note: "there is no edition to send" });
     if (!newest.date || Date.parse(`${newest.date}T00:00:00Z`) < Date.now() - MAX_AGE_DAYS * DAY_MS) {
-      return json({ number: newest.number, sent: 0, remaining: 0, note: `the newest edition is more than ${MAX_AGE_DAYS} days old; nothing was sent` });
+      return json({ number: newest.number, state: "too_old", note: `the newest edition is more than ${MAX_AGE_DAYS} days old; nothing was sent` });
     }
     edition = await asset(context, new URL(newest.json_url).pathname);
   } catch {
     return unavailable("the edition files are unavailable right now; try again later");
   }
-  const number = Number(edition.number);
-  if (!Number.isInteger(number) || number < 1) return unavailable("the newest edition has no number");
-
-  let sent = 0;
-  let failed = 0;
+  if (!Number.isInteger(edition.number) || edition.number < 1 || typeof edition.markdown !== "string") {
+    return unavailable("the newest edition is incomplete; nothing was sent");
+  }
   try {
-    for (let batch = 0; batch < BATCHES_PER_CALL; batch++) {
-      const { results } = await env.DB.prepare("SELECT email, unsubscribe_token FROM edition_subscribers "
-        + "WHERE state = 'confirmed' AND last_sent_number < ? ORDER BY email LIMIT ?").bind(number, BATCH_MAX).all();
-      if (!results.length) break;
-      const outcome = await mail.send(results.map((r) => editionEmail(edition, r.email, r.unsubscribe_token)));
-      const ok = outcome.filter((o) => o.ok).map((o) => o.to);
-      failed += outcome.length - ok.length;
-      for (const to of ok) {
-        await env.DB.prepare("UPDATE edition_subscribers SET last_sent_number = ? WHERE email = ?").bind(number, to).run();
-      }
-      sent += ok.length;
-      if (ok.length < results.length) break; // stop on failures; the next call retries them
+    const existing = await service.findEdition(edition);
+    if (existing) {
+      return json({ number: edition.number, state: "already_sent", buttondown_status: existing.status ?? null,
+        archive_url: existing.absolute_url ?? null });
     }
-    const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM edition_subscribers WHERE state = 'confirmed' AND last_sent_number < ?")
-      .bind(number).first();
-    return json({ number, provider: mail.name, sent, failed, remaining: Number(left?.n ?? 0) });
+    const sent = await service.sendEdition(edition);
+    if (!sent.ok) return error(502, `Buttondown did not take the edition: ${sent.error}`, { number: edition.number });
+    return json({ number: edition.number, state: "sent", buttondown_status: sent.status, archive_url: sent.url });
   } catch {
-    return unavailable(`sending stopped after ${sent} emails; the next call resumes`);
+    return unavailable("Buttondown could not be reached; nothing was sent, and the next call tries again");
   }
 }

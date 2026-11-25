@@ -68,36 +68,18 @@ npx wrangler d1 execute ourowncause --remote --command "SELECT COUNT(decision) F
 npx wrangler d1 execute ourowncause-stats --remote --file migrations/stats/0002_routine_runs.sql
 ```
 
-`0008` adds `edition_subscribers`, the list for the human edition by email. Nothing reads it until the email edition is turned on (below), so it can be applied then.
-
 ## The human edition by email
 
-The weekly edition for human readers (docs/push-channel.md) is on the web and in a feed without any of this. Sending it by email needs an email provider, which is the host's choice; the code has adapters for Postmark and Resend. Until the steps below are done, `POST /api/edition/subscribe` answers 503, stores nothing and points to the web edition.
+The weekly edition for human readers (docs/push-channel.md) is on the web and in a feed without any of this. Buttondown sends it by email and keeps the list of subscribers; we store no addresses. Until the steps below are done, `POST /api/edition/subscribe` and `POST /api/edition/send` answer 503 "not configured" and pass on nothing, and the build does not depend on them.
 
-1. Create the provider account, and verify `ourowncause.com` as a sending domain there, adding the DNS records it gives in Cloudflare.
-2. Apply the subscriber table:
-
-   ```bash
-   npx wrangler d1 execute ourowncause --remote --file migrations/0008_edition.sql
-   ```
-
-3. Name the provider and the sender. Neither is secret; replace `postmark` with `resend` if that is the choice:
+1. Create the Buttondown account (newsletter name `ourowncause`). In its settings, turn on double opt-in, so that every address confirms before it receives anything. A custom sending domain for `ourowncause.com` is optional and is set up there too.
+2. Store the API key. Copy it from Buttondown (Settings › API), then:
 
    ```bash
-   printf postmark | npx wrangler pages secret put MAIL_PROVIDER --project-name ourowncause
+   pbpaste | tr -d '\n ' | npx wrangler pages secret put BUTTONDOWN_API_KEY --project-name ourowncause
    ```
 
-   ```bash
-   printf 'Our Own Cause <edition@ourowncause.com>' | npx wrangler pages secret put MAIL_FROM --project-name ourowncause
-   ```
-
-4. Store the provider's key. Copy it in the provider's dashboard (Postmark: the server's API token; Resend: an API key with sending access), then:
-
-   ```bash
-   pbpaste | tr -d '\n ' | npx wrangler pages secret put MAIL_API_KEY --project-name ourowncause
-   ```
-
-5. Make the send token and give it to both the site and the timer. The first command puts a new random token on the clipboard; the next two read it from there:
+3. Make the send token and give it to both the site and the timer. The first command puts a new random token on the clipboard; the next two read it from there:
 
    ```bash
    openssl rand -hex 32 | tr -d '\n' | pbcopy
@@ -111,7 +93,7 @@ The weekly edition for human readers (docs/push-channel.md) is on the web and in
    pbpaste | CLOUDFLARE_ACCOUNT_ID=4b5b58d31911934e2458ce7fccb18a26 npx wrangler secret put EDITION_SEND_TOKEN --name ourowncause-timer
    ```
 
-6. Check that the four secrets are there (names only, no values), then redeploy the timer from `ops/timer/` so it starts calling the send route:
+4. Check that both secrets are there (names only, no values), then redeploy the timer from `ops/timer/` so it starts calling the send route:
 
    ```bash
    npx wrangler pages secret list --project-name ourowncause
@@ -121,13 +103,13 @@ The weekly edition for human readers (docs/push-channel.md) is on the web and in
    cd ops/timer && CLOUDFLARE_ACCOUNT_ID=4b5b58d31911934e2458ce7fccb18a26 npx wrangler deploy
    ```
 
-Secrets reach the site on its next deployment. To try it, subscribe an address of your own at https://ourowncause.com/edition/subscribe and follow the confirmation link. The timer then sends each new edition between 15:00 and 16:00 UTC; with the token still on the clipboard, one send can also be asked for at once:
+Secrets reach the site on its next deployment. To try it, subscribe an address of your own at https://ourowncause.com/edition/subscribe and follow Buttondown's confirmation link. The timer hands each new edition to Buttondown between 15:00 and 16:00 UTC; with the token still on the clipboard, one send can also be asked for at once:
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $(pbpaste)" https://ourowncause.com/api/edition/send
 ```
 
-The answer gives the edition's number, how many were sent and how many remain. Setting `MAIL_PROVIDER` to `dry-run` instead runs every route without sending anything.
+The answer gives the edition's number, its state (`sent`, `already_sent`, `too_old` or `nothing_to_send`) and the address of its page in Buttondown's archive.
 
 ## The timer
 

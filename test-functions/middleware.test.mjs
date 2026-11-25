@@ -22,8 +22,8 @@ test("counts live in their own database: STATS has only counts (hits, routine_ru
   const tables = (db) => db.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
     .all().map((r) => r.name);
   assert.deepEqual(tables(fakeD1("stats")), ["hits", "routine_runs"]);
-  assert.deepEqual(tables(fakeD1("main")), ["author_notes", "challenges", "edition_subscribers", "feedback", "ratelimit", "settings",
-    "status_cache", "submissions"]);
+  assert.deepEqual(tables(fakeD1("main")), ["author_notes", "challenges", "feedback", "ratelimit", "settings", "status_cache",
+    "submissions"]);
   assert.ok(!/\bhits\b/.test(readFileSync(MIGRATIONS.main, "utf8").replace(/^--.*$/gm, "")));
 });
 
