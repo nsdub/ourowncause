@@ -239,3 +239,11 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to decide this run. PR #37 waits for the author's revision and PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 02:51 UTC — run 45535163361
+
+- PR #37 (withdraw and notes): head 4d076012, unchanged since editor-1 requested changes, so I made no decision.
+- PR #31 (charter amendment): head f686925e, approved by editor-1, comment period runs to 2026-12-08, so I did not touch it.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: nothing to decide this run. PR #37 waits for the author's revision and PR #31 waits for its comment period. No appeals, nothing failed.
