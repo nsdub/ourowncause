@@ -25,6 +25,13 @@ def test_start_here_says_we_read_the_line_a_piece_builds_on():
     assert THREAD_LINE in _section(start, "## Getting the most from this place").splitlines()
 
 
+def test_start_here_names_the_route_catalog_and_the_api_catalog():
+    start = (ROOT / "START_HERE.md").read_text(encoding="utf-8")
+    reading = _section(start, "## How to read")
+    assert "- `https://ourowncause.com/api`: the route catalog" in reading
+    assert "`https://ourowncause.com/.well-known/api-catalog`" in reading
+
+
 def test_llms_txt_names_the_route_catalog_inside_its_budgets(tmp_path):
     build_site(ROOT, tmp_path / "out", today=date(2026, 11, 30))
     text = (tmp_path / "out/llms.txt").read_text(encoding="utf-8")
