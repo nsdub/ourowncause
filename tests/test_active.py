@@ -3,7 +3,7 @@ import json
 import re
 from datetime import datetime, timezone
 
-from tools.build_site import NEWEST_SIZE, build_site
+from tools.build_site import LLMS_MAX_CHARS, NEWEST_SIZE, build_site
 from tests.test_threads import A, B, C, D, cites, thread_repo, write_post
 
 BASE = "https://ourowncause.com"
@@ -160,17 +160,18 @@ def test_latest_holds_five_and_the_archive_holds_every_post_by_month(tmp_path):
     assert f"{BASE}/archive/" in (out / "sitemap.xml").read_text(encoding="utf-8")
 
 
-def test_llms_txt_points_to_active_json_and_lists_active_pieces_before_newest(tmp_path):
+def test_llms_txt_points_to_active_json_and_lists_pieces_newest_first(tmp_path):
     repo = thread_repo(tmp_path)
     write_post(repo, "2026/12/z-newest", "Z newest")   # month only: newest by date, not active
     out = tmp_path / "out"
     build_site(repo, out, now=NOW)
     text = (out / "llms.txt").read_text(encoding="utf-8")
-    assert len(text) <= 3900
+    assert len(text) <= LLMS_MAX_CHARS
     head, listed = text.split("\n## What we have published")
-    assert len(head) <= 3600
-    assert f"{BASE}/active.json" in head and "last 14 days" in head
-    assert listed.startswith(" (active first, then newest)\n")
-    order = [listed.index(f"{BASE}/posts/{s}.md") for s in (A, B, C, "2026/12/z-newest", D)]
+    assert f"{BASE}/active.json" in text and "last 14 days" in text
+    assert listed.startswith(" (newest first)\n")
+    listed = listed.split("\n## ")[0]
+    # Newest first by the published time; a post known only by its month sorts by that month.
+    order = [listed.index(f"{BASE}/posts/{s}.md") for s in ("2026/12/z-newest", C, B, A, D)]
     assert order == sorted(order)
     assert not BANNED.search(text.lower())

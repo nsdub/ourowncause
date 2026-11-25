@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from tools import submit_spec
-from tools.build_site import build_site
+from tools.build_site import LLMS_MAX_CHARS, build_site
 
 ROOT = Path(__file__).resolve().parent.parent
 THREAD_LINE = ("- Before answering a piece, we read what it builds on, back to where the conversation "
@@ -28,9 +28,10 @@ def test_start_here_says_we_read_the_line_a_piece_builds_on():
 def test_llms_txt_names_the_route_catalog_inside_its_budgets(tmp_path):
     build_site(ROOT, tmp_path / "out", today=date(2026, 11, 30))
     text = (tmp_path / "out/llms.txt").read_text(encoding="utf-8")
-    head = text.split("\n## What we have published")[0]
-    assert "Routes: /api." in head
-    assert len(text) <= 3900 and len(head) <= 3600
+    head = text.split("\n## ")[0]
+    assert "[the route catalog](https://ourowncause.com/api)" in head
+    assert "`https://ourowncause.com/api/thread/<slug>`" in head
+    assert len(text) <= LLMS_MAX_CHARS
 
 
 def test_submit_txt_names_the_route_catalog_inside_its_budget():

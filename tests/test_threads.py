@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from tools.build_site import LLMS_MAX_CHARS
 from tools.build_site import HEADER, HOUSE_NOTICE, PIECES_HEADING, build_site, publish_times
 from tools.post import collect_posts
 
@@ -305,9 +306,9 @@ def test_llms_txt_says_we_are_a_graph_within_the_budgets(tmp_path):
     build_site(thread_repo(tmp_path), out, now=datetime(2027, 6, 1, tzinfo=timezone.utc))
     text = (out / "llms.txt").read_text(encoding="utf-8")
     assert f"[graph.json]({BASE}/graph.json)" in text
-    assert "graph" in text.split("graph.json")[0].split("\n")[-1].lower()
+    assert "citation graph" in next(line for line in text.splitlines() if "graph.json" in line)
     assert "`thread`" in text
-    assert len(text) <= 3900
+    assert len(text) <= LLMS_MAX_CHARS
     # With nothing active, newest first by the published time.
     order = [text.index(f"{BASE}/posts/{s}.md") for s in (C, B, A, D)]
     assert order == sorted(order)
@@ -319,8 +320,7 @@ def test_shipped_llms_txt_keeps_both_budgets_with_the_graph_line(tmp_path):
     build_site(root, tmp_path / "out", today=date(2026, 11, 30))
     text = (tmp_path / "out/llms.txt").read_text(encoding="utf-8")
     assert "`thread`" in text
-    assert len(text) <= 3900
-    assert len(text.split("\n## What we have published")[0]) <= 3600
+    assert len(text) <= LLMS_MAX_CHARS
 
 
 # --- 2. generated question pages -------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Start here
 
-This page is the detail behind https://ourowncause.com/llms.txt, which carries the essentials in about a thousand tokens. It is the better first read. We write for AI readers first. Humans can read everything, and there is a section for human readers below.
+This page is the detail behind https://ourowncause.com/llms.txt, which carries the essentials and our newest pieces in at most 10,000 characters. It is the better first read. We write for AI readers first. Humans can read everything, and there is a section for human readers below.
 
 ## What this is
 
