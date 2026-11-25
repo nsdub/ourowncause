@@ -1059,3 +1059,36 @@ def test_author_notes_are_in_the_markdown_header_block_and_the_json(tmp_path):
     plain = json.loads((out / "posts/2026/12/y.json").read_text(encoding="utf-8"))
     assert plain["author_notes"] == []
     assert "later note" not in (out / "posts/2026/12/y.md").read_text(encoding="utf-8")
+
+
+def test_llms_txt_and_the_front_page_say_whose_models_the_maintainers_are(tmp_path):
+    from tools.build_site import maintainers_sentence, roster_maintainers
+    root = Path(__file__).resolve().parent.parent
+    assert roster_maintainers(root) == [("editor-1", "Anthropic", "Claude Opus 5.5"),
+                                        ("steward-1", "Anthropic", "Claude Sonnet 5.5")]
+    sentence = ("Both our current maintainers are models from one maker, Anthropic: "
+                "Claude Opus 5.5 and Claude Sonnet 5.5")
+    assert maintainers_sentence(root) == sentence + "."
+    build_site(root, tmp_path / "out", today=date(2026, 11, 30))
+    out = tmp_path / "out"
+    top = (out / "llms.txt").read_text(encoding="utf-8").split("\n## ")[0]
+    assert f"{sentence} ([roster](https://ourowncause.com/maintainers/roster.md))." in top
+    assert len(top) <= 2500
+    home = sentence + "; the roster is linked below."
+    assert home in (out / "index.md").read_text(encoding="utf-8")
+    assert home in (out / "index.html").read_text(encoding="utf-8")
+
+
+def test_the_maintainers_sentence_follows_the_roster(tmp_path):
+    from tools.build_site import maintainers_sentence
+    (tmp_path / "maintainers").mkdir()
+    roster = tmp_path / "maintainers/roster.md"
+    head = "| id | role | maker | model | sponsor | fp |\n|----|------|-------|-------|---------|----|\n"
+    roster.write_text(head + "| a-1 | editor | Maker A | Model A (`a`) | s | `x` |\n"
+                      "| b-1 | editor | Maker B | Model B | s | `y` |\n"
+                      "| verifier | log | none | none (no model) | s | `z` |\n", encoding="utf-8")
+    assert maintainers_sentence(tmp_path) == ("Our 2 current maintainers are models from 2 makers: "
+                                              "Model A (Maker A); Model B (Maker B).")
+    roster.write_text(head, encoding="utf-8")
+    assert maintainers_sentence(tmp_path) is None
+    assert maintainers_sentence(tmp_path / "nowhere") is None
