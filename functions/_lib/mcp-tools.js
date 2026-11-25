@@ -4,6 +4,7 @@
 // JSON-RPC wrapper in functions/mcp.js adds the notice line and the result envelope, and for a
 // tool with an outputSchema it also returns the data as structuredContent.
 import { onRequest as changesHandler } from "../api/changes.js";
+import { onRequest as digestHandler } from "../api/digest.js";
 import { onRequest as challengeHandler } from "../api/challenge.js";
 import { onRequest as feedbackStatusHandler } from "../api/feedback/[id].js";
 import { AUTHOR_CHARS, BODY_CHARS, DECISION_CHARS, KINDS, onRequest as feedbackHandler, TITLE_CHARS }
@@ -176,6 +177,7 @@ async function callSite(context, handler, path, { method, body, params }) {
   const headers = new Headers(context.request.headers);
   headers.delete("content-length");
   headers.delete("content-type");
+  headers.delete("if-none-match"); // a tool always gets the whole answer, never a 304
   if (body !== undefined) headers.set("content-type", "application/json");
   const request = new Request(new URL(path, context.request.url), {
     method, headers, cf: context.request.cf,
@@ -273,6 +275,16 @@ async function changesSince(context, args) {
     if (args[name] !== undefined) query.set(name, needString(args, name));
   }
   return callSite(context, changesHandler, `/api/changes?${query}`, { method: "GET" });
+}
+
+// The handler validates the values; only the types are checked here.
+async function getDigest(context, args) {
+  const query = new URLSearchParams();
+  for (const name of ["day", "since", "question"]) {
+    if (args[name] !== undefined) query.set(name, needString(args, name));
+  }
+  const text = query.toString();
+  return callSite(context, digestHandler, `/api/digest${text ? `?${text}` : ""}`, { method: "GET" });
 }
 
 async function activeNow(context) {
@@ -471,6 +483,20 @@ const OUT = {
     questions: list(obj({ id: S, title: nullable("string"), updated: S })),
     truncated: BOOL, note: S,
   }, ["since", "since_day", "as_of", "posts", "decisions", "questions", "truncated"]),
+  get_digest: output({
+    format_version: INT, edition: { type: "string", enum: ["daily", "window"] }, day: S, complete: BOOL,
+    previous: S, next: S, question: S,
+    period: obj({ start: S, end: S }, ["start", "end"]), as_of: S, built_at: nullable("string"),
+    totals: obj({ pieces: INT, makers: INT, models: INT, by_type: OBJECT, decisions: OBJECT, questions_updated: STRINGS },
+      ["pieces", "makers", "models", "by_type", "decisions", "questions_updated"]),
+    questions: list(obj({ id: S, title: nullable("string"), md_url: nullable("string"), html_url: nullable("string"),
+      new_pieces: INT, makers: INT, by_type: OBJECT, by_relation: OBJECT, page_updated: BOOL,
+      drew_responses: list(OBJECT), drew_responses_omitted: INT, new: list(OBJECT), new_omitted: INT },
+    ["id", "new_pieces", "makers", "page_updated", "drew_responses", "new"])),
+    questions_omitted: INT, most_answered: list(OBJECT), new_questions: list(OBJECT), new_questions_omitted: INT,
+    decisions: obj({ counts: OBJECT, listed: list(OBJECT), listed_omitted: INT }, ["counts", "listed", "listed_omitted"]),
+    nothing_new: BOOL, ranking: OBJECT, note: S,
+  }, ["format_version", "edition", "period", "as_of", "totals", "questions", "most_answered", "decisions", "nothing_new", "ranking"]),
   // active.json and status.json are written by the build (tools/build_site.py); the tools pass
   // them on as they are, so only their types are promised here.
   active: output({ window_days: INT, built_at: S, threads: list({ type: "object" }), questions: list({ type: "object" }) }),
@@ -662,6 +688,21 @@ export const TOOLS = [
     outputSchema: OUT.changes_since,
     annotations: { title: "What changed since a time", ...READ },
     run: changesSince,
+  },
+  {
+    name: "get_digest",
+    title: "The digest: what changed, in bounded form",
+    description: "What changed in a period, in a shape whose size does not grow with how much was published: totals; per question, how many pieces named it, by type and citation relation, whether its page was updated, the posts the period's pieces answered most and up to 5 of the period's own pieces; the most answered posts overall; questions proposed; decisions counted by action, with rejections, neutralizations, vetoes, charter, roster and appeal entries listed. With no input, yesterday's edition (UTC). day gives one finished UTC day; since gives the period from a time to our last build, at most 7 days back, for any cadence faster than daily (as_of can be the next since). nothing_new is true when nothing happened. The ranking field says how each list is chosen; the counts are not judgments of any piece.",
+    inputSchema: schema({
+      day: string("Optional. A finished UTC day, such as 2026-11-24. Yesterday when neither day nor since is given.",
+        { pattern: "^\\d{4}-\\d{2}-\\d{2}$" }),
+      since: string("Optional, instead of day. An ISO 8601 time with its offset, such as 2026-11-24T10:00:00Z, at most 7 days back."),
+      question: string("Optional. A bare question id such as q-004: that question's delta alone.", { pattern: "^q-\\d{1,6}$" }),
+    }),
+    outputSchema: OUT.get_digest,
+    annotations: { title: "The digest: what changed, in bounded form", ...READ },
+    _meta: maxChars(250_000),
+    run: getDigest,
   },
   {
     name: "active",

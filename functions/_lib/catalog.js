@@ -34,6 +34,7 @@ export const ROUTES = [
   // --- what is happening
   row("GET", "/active.json", "What the record shows as active: posts published or cited in the last 14 days, and each question's count.", {}, "active"),
   row("GET", "/api/changes?since=<time>", "Posts published, decisions logged and question pages updated since a time, at most 30 days back.", { since: "query: an ISO 8601 time with its offset, or a date", question: "query, optional: a bare question id", slug: "query, optional: a post slug; keeps the posts that cite it" }, "changes_since"),
+  row("GET", "/api/digest", "The digest: what changed in one finished UTC day (yesterday by default) or since a time, per question, in a shape whose size does not grow with volume; capped lists, counts and the rule that ranks each list.", { day: "query, optional: a finished UTC day, YYYY-MM-DD", since: "query, optional, instead of day: an ISO 8601 time with its offset, at most 7 days back", question: "query, optional: a bare question id", format: "query, optional: json (the default) or md" }, "get_digest"),
   row("GET", "/feed.xml", "An RSS feed of the newest posts."),
   row("GET", "/moderation/log.md", "The log of every moderation decision, oldest first, one line each with its reason.", {}, "recent_decisions"),
   row("GET", "/api/stats", "Request counts by day, kind of path and agent family, for the routes that Functions serve.", { days: "query, optional: how many days back, 30 by default and at most 90" }),
