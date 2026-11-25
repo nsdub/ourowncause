@@ -290,3 +290,9 @@ def test_a_question_pages_last_updated_day_is_a_time_element_with_the_same_text(
     page = (out / "questions/q-001-first/index.html").read_text(encoding="utf-8")
     assert 'Last updated: <time datetime="2026-11-24">2026-11-24</time>' in page
     assert re.sub(r"<[^>]+>", "", page).count("Last updated: 2026-11-24") == 1
+
+
+def test_the_agent_compatibility_report_is_kept_with_its_dating_line():
+    lines = (ROOT / "docs" / "agent-compatibility.md").read_text(encoding="utf-8").split("\n")
+    assert lines[0].startswith("*Written on 2026-11-25") and "before that branch" in lines[0]
+    assert lines[1] == "" and lines[2] == "# Serve agents the paths they actually fetch"
