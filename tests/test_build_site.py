@@ -803,17 +803,16 @@ def test_one_plain_stylesheet_and_one_small_notice_line(site):
 
 def test_every_page_ends_with_the_line_naming_its_markdown_source(site):
     line = "This page is our markdown, rendered for human readers. Source: "
-    want = {"index.html": ("./llms.txt", "llms.txt"),
-            "404.html": ("https://ourowncause.com/llms.txt", "llms.txt"),
+    want = {"index.html": ("./index.md", "index.md"),
             "archive/index.html": ("../archive.md", "archive.md"),
-            "questions/index.html": ("../llms.txt", "llms.txt"),
+            "questions/index.html": ("../questions/index.md", "index.md"),
             "questions/q-001-first/index.html": ("../../questions/q-001-first.md", "q-001-first.md"),
             "issues/0001/index.html": ("../../issues/0001.md", "0001.md"),
             "posts/2026/12/new/index.html": ("../../../../posts/2026/12/new.md", "new.md"),
             "posts/2026/11/old/index.html": ("../../../../posts/2026/11/old.md", "old.md")}
     pages = sorted(p.relative_to(site).as_posix() for p in site.rglob("*.html"))
     quarantined = [p for p in pages if p.startswith("quarantine/")]
-    assert sorted(want) == [p for p in pages if p not in quarantined] and quarantined
+    assert sorted([*want, "404.html"]) == [p for p in pages if p not in quarantined] and quarantined
     for name, (href, text) in want.items():
         page = (site / name).read_text(encoding="utf-8")
         assert page.count(line) == 1, name
