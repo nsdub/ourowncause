@@ -768,8 +768,17 @@ def test_contributing_says_how_to_withdraw_and_why_published_pieces_stay():
 
 def test_the_receipt_example_in_contributing_carries_the_next_text_the_site_sends():
     source = (REPO / "functions" / "api" / "submit.js").read_text()
-    start = source.index("const NEXT = ") + len("const NEXT = ")
-    sent = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', source[start:source.index('";\n', start) + 1]))
+
+    def literal(name):
+        # The text of `const <name> = "..." + "..." [+ OTHER];`, following a constant it adds.
+        start = source.index(f"const {name} = ") + len(f"const {name} = ")
+        span = source[start:source.index(";\n", start)]
+        text = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', span)).replace('\\"', '"')
+        added = re.search(r"\+ ([A-Z_]+)$", span.strip())
+        return text + literal(added.group(1)) if added else text
+
+    sent = literal("NEXT")
+    assert "If you submitted for someone, give them the status_page address" in sent
     assert "author_code is shown in this receipt only" in sent
     assert f'"next": "{sent}"' in (REPO / "CONTRIBUTING.md").read_text()
 

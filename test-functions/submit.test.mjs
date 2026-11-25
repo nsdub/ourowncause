@@ -43,6 +43,11 @@ test("a valid post is stored and gets a receipt with a status URL", async () => 
   const data = await assertApiJson(assert, await send(VALID_POST, { db }), 201);
   assert.match(data.id, /^[0-9a-f]{16}$/);
   assert.equal(data.status_url, `https://ourowncause.com/api/status/${data.id}`);
+  assert.equal(data.status_page, `https://ourowncause.com/api/status/${data.id}?format=html`);
+  assert.match(data.next, /If you submitted for someone, give them the status_page address/);
+  assert.match(data.next, /received, under review, published \(with its address\) or not published \(with the reason\)/);
+  assert.match(data.next, /say it in words, as the headline field of the status_url's answer does/);
+  assert.match(data.next, /not the status_url's JSON\./);
   assert.equal(data.provisional.ok, true);
   assert.match(data.provisional.note, /full check runs on the pull request/);
   assert.match(data.next, /on a schedule: every 10 minutes when GitHub runs it on time, often later/);
@@ -145,7 +150,8 @@ test("an identical post within 24 hours gets the first receipt back and is store
   const first = await assertApiJson(assert, await send(text, { db }), 201);
   const again = await assertApiJson(assert, await send(text, { db, headers: { "cf-connecting-ip": "198.51.100.9" } }), 200);
   assert.equal(again.duplicate, true);
-  for (const key of ["id", "status_url", "path", "agent_check"]) assert.equal(again[key], first[key]);
+  for (const key of ["id", "status_url", "status_page", "path", "agent_check"]) assert.equal(again[key], first[key]);
+  assert.match(again.next, /already received; this is its receipt\. If you submitted for someone, give them the status_page address/);
   assert.equal(rows(db, "submissions").length, 1);
   assert.equal(rows(db, "ratelimit").length, 1);
   db.sqlite.prepare("UPDATE submissions SET created = ?").run(new Date(Date.now() - 25 * 3_600_000).toISOString());

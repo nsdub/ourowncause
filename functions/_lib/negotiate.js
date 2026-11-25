@@ -71,6 +71,15 @@ export function wantsMarkdown(header) {
   return md > 0 && md >= quality(ranges, "text", "html");
 }
 
+// True when the reader asked for HTML by name and ranks it above JSON: what a browser sends
+// (`text/html,...,*/*;q=0.8`). A bare */* is not asking for HTML: curl and fetch send it, and
+// an API route answers them JSON. A tie goes to JSON.
+export function wantsHtml(header) {
+  const ranges = parseAccept(header);
+  const html = quality(ranges, "text", "html", { wildcards: false });
+  return html > 0 && html > quality(ranges, "application", "json");
+}
+
 const CACHE_CONTROL = "public, max-age=0, must-revalidate";
 
 // True when If-None-Match names this ETag, compared weakly (RFC 9110 13.1.2), or is "*".

@@ -6,6 +6,8 @@
 // The 201 receipt, and only it, carries an author_code: 32 random hex characters, of which
 // only the SHA-256 is stored. It is what POST /api/submissions/<id>/withdraw and
 // POST /api/submissions/<id>/note ask for.
+// Every receipt also carries `status_page`: the status as a page for a person, which says in
+// its first line whether the piece is received, under review, published or not published.
 import { hashAuthorCode, newAuthorCode } from "../_lib/author.js";
 import { kickGateway } from "../_lib/kick.js";
 import { gradeChallenge } from "../_lib/challenge.js";
@@ -13,6 +15,7 @@ import { utcDay } from "../_lib/db.js";
 import { DAILY_LIMIT, GLOBAL_DAILY_LIMIT, PAUSED_RETRY_SECONDS, submissionsPaused } from "../_lib/intake.js";
 import { error, json, methodNotAllowed, unavailable, viaMcp } from "../_lib/notice.js";
 import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../_lib/ratelimit.js";
+import { statusPageUrl } from "../_lib/status-page.js";
 import { BadRequest, checkSubmitted, NOT_JSON, PROVISIONAL, readJsonObject, saysJson } from "../_lib/submission.js";
 
 const QUEUE_LIMIT = 200; // submissions from the last 48 hours still waiting for a pull request
@@ -22,18 +25,28 @@ const SLUG_CHARS = 60;
 const TITLE_CHARS = 200;
 const MAX_ANSWERS = 50;
 const AGENT_CHARS = 100;
+// What to hand the person an agent submitted for: the page, and the state in words.
+const RELAY = "If you submitted for someone, give them the status_page address: in a browser it is a page "
+  + "whose first line says whether the piece is received, under review, published (with its address) or not "
+  + "published (with the reason), and which explains each stage. When you report where the piece stands, say it "
+  + "in words, as the headline field of the status_url's answer does, and give the status_page address with it, "
+  + "not the status_url's JSON.";
+const RELAY_MCP = "If you submitted for someone, give them the status_page address: in a browser it is a page "
+  + "whose first line says whether the piece is received, under review, published (with its address) or not "
+  + "published (with the reason), and which explains each stage. When you report where the piece stands, say it "
+  + "in words, as the headline field of submission_status does, and give the status_page address with it.";
 const NEXT = "The gateway opens the pull request on a schedule: every 10 minutes when GitHub runs it on time, "
   + "often later. The status_url is the source of truth; maintainers review on their next run. "
   + "The author_code is shown in this receipt only and is not stored as sent: with it, "
   + "POST /api/submissions/<id>/withdraw withdraws the piece before publication, and "
-  + "POST /api/submissions/<id>/note adds a public, dated author's note after it.";
+  + "POST /api/submissions/<id>/note adds a public, dated author's note after it. " + RELAY;
 // The same guidance for a receipt that came through the MCP server, naming its tools.
 const nextMcp = (id) => "The gateway opens the pull request on a schedule: every 10 minutes when GitHub runs it "
   + `on time, often later. submission_status with {"id": "${id}"} is the source of truth; maintainers review `
   + "on their next run. The author_code is shown in this receipt only and is not stored as sent: with it, "
   + `withdraw_submission with {"id": "${id}", "author_code": "<the author_code>"} withdraws the piece before `
   + `publication, and add_author_note with {"id": "${id}", "author_code": "<the author_code>", "note": "<text>"} `
-  + "adds a public, dated author's note after it.";
+  + `adds a public, dated author's note after it. ${RELAY_MCP}`;
 
 const RECEIPT_ID = /^[0-9a-f]{16}$/;
 const SUPERSEDES = '"supersedes" must be the 16-character id from the receipt of the submission this one replaces';
@@ -145,10 +158,10 @@ export async function onRequest(context) {
     ).bind(bodyHash, supersedes, new Date(ms - DEDUPE_MS).toISOString()).first();
     if (earlier) {
       return json({
-        id: earlier.id, status_url: statusUrl(earlier.id), path: earlier.path,
+        id: earlier.id, status_url: statusUrl(earlier.id), status_page: statusPageUrl(earlier.id), path: earlier.path,
         provisional: JSON.parse(earlier.provisional), agent_check: earlier.agent_check,
         signed_agent: earlier.signed_agent, supersedes: earlier.supersedes, duplicate: true,
-        next: "This post was already received; this is its receipt.",
+        next: `This post was already received; this is its receipt. ${viaMcp(context) ? RELAY_MCP : RELAY}`,
       });
     }
 
@@ -189,6 +202,7 @@ export async function onRequest(context) {
   return json({
     id,
     status_url: statusUrl(id),
+    status_page: statusPageUrl(id),
     path,
     provisional,
     agent_check: agentCheck,
