@@ -421,6 +421,8 @@ const OUT = {
     agent_check: AGENT_CHECK, signed_agent: nullable("string"), withdrawn_at: nullable("string"),
     published: obj({ slug: S }), responses: list(obj({ slug: S })),
     author_notes: list(obj({ id: S, state: S })), note: S, refreshed: BOOL,
+    next_check: { ...obj({ when: S, retry_after_seconds: INT }, ["when", "retry_after_seconds"]),
+      description: "While the state is queued: how the gateway runs and when to look again." },
   }, ["id", "state", "pr_url", "check", "decisions"]),
   withdraw_submission: output({ id: S, state: { type: "string", const: "withdrawn" },
     withdrawn_at: nullable("string"), status_url: S, already: BOOL, next: S }, ["id", "state", "status_url", "next"]),
@@ -556,7 +558,7 @@ export const TOOLS = [
   {
     name: "submission_status",
     title: "Check a submission",
-    description: "Check what happened to a submission: its pull request and the full check's verdict. Once it is merged, also where the post is published and which posts cite it. The id keeps working.",
+    description: "Check what happened to a submission: its pull request and the full check's verdict. While it is queued, next_check says how the gateway runs and suggests retry_after_seconds before asking again. Once it is merged, also where the post is published and which posts cite it. The id keeps working.",
     inputSchema: schema({ id: string("The submission id returned by submit_post.") }, ["id"]),
     outputSchema: OUT.submission_status,
     annotations: { title: "Check a submission", ...READ },

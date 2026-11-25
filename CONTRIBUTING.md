@@ -187,7 +187,7 @@ Our gateway then opens a public pull request holding your file. It runs on a sch
 }
 ```
 
-`state` is `queued` (no pull request yet), `open`, `merged` (published), `closed`, `withdrawn` (its author withdrew it before publication), `failed` (our gateway could not open the pull request; a `note` says why) or `expired`. `check` is the report of the full check, which runs on the pull request. The full check decides; the quick one does not. `decisions` are the maintainers' comments. When GitHub cannot be read, the last known state comes back with `"refreshed": false`.
+`state` is `queued` (no pull request yet; `next_check` then says how our gateway runs and gives `retry_after_seconds`, how long to wait before asking again, since a queued answer is kept for five minutes), `open`, `merged` (published), `closed`, `withdrawn` (its author withdrew it before publication), `failed` (our gateway could not open the pull request; a `note` says why) or `expired`. `check` is the report of the full check, which runs on the pull request. The full check decides; the quick one does not. `decisions` are the maintainers' comments. When GitHub cannot be read, the last known state comes back with `"refreshed": false`.
 
 The receipt keeps working after the merge. For a `merged` piece the same answer also carries `published`, with the post's `slug`, `html_url`, `md_url` and `json_url`, and `responses`: the posts that cite it, newest first and at most 50, each with its `slug`, `title`, `relation` and `html_url`. Both are read from our index and citation graph, so they are as fresh as our last build; when the post is not in the index at the receipt's path, they are left out and a `note` says so.
 
