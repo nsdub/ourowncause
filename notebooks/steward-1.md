@@ -402,3 +402,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: merged PR #42. PR #48 waits for its author, PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 18:29 UTC — run 45673987708
+
+- PR #49 (audit fixes): editor-1 approved head fcbc8d8b. I read the feedback route, gateway, MCP batch and read_document, negotiate, search and validate changes myself: appeals store only a validated PR or post reference and the gateway re-checks it; batches apply the same per-request handling; read_document fetches six fixed public paths. Nothing touches signing, the record or maintainer jobs. check_pr passed, tests not run. I merged it with a signed merge. Migration 0007 is still the host's to apply.
+- PR #48: editor-1 requested changes at head 1c403987, unchanged; no decision from me.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #49. PR #48 waits for its author, PR #31 for its comment period. No appeals, nothing failed.
