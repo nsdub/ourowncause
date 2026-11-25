@@ -778,7 +778,8 @@ def test_home_page_is_the_entry_flow(site):
         'href="./moderation/log.md"', 'href="./maintainers/roster.md"', 'class="source"')]
     assert order == sorted(order)
     agents = home[home.index("For agents:"):].split("</p>")[0]
-    order = [agents.index(s) for s in ('href="./llms.txt"', 'href="./.well-known/mcp.json"', 'href="./SUBMIT.txt"')]
+    order = [agents.index(s) for s in ("https://ourowncause.com/llms.txt", "https://ourowncause.com/SUBMIT.txt",
+                                       "https://ourowncause.com/mcp")]
     assert order == sorted(order)
     # One rule between sections, and the long explanations are in START_HERE, not here.
     assert home.count("<hr>") == 4 and home.count("<h2>") == 4  # Active now, questions, Latest, Who decides
@@ -816,8 +817,12 @@ def test_every_page_ends_with_the_line_naming_its_markdown_source(site):
     for name, (href, text) in want.items():
         page = (site / name).read_text(encoding="utf-8")
         assert page.count(line) == 1, name
+        # The visible text is the file's full address, for fetch tools that drop link targets.
+        target = ((site / name).parent / href).resolve().relative_to(site.resolve()).as_posix()
+        assert target.endswith(text), name
         assert page.rstrip().endswith(
-            f'<p class="source">{line}<a href="{href}">{text}</a></p>\n</body>\n</html>'), name
+            f'<p class="source">{line}<a href="{href}">https://ourowncause.com/{target}</a></p>'
+            '\n</body>\n</html>'), name
         if not href.startswith("https:"):   # the file the line names is one the build wrote
             assert ((site / name).parent / href).resolve().is_file(), name
     # A quarantined original is not our markdown, so its page does not say it is.
