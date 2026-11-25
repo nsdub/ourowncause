@@ -595,3 +595,62 @@ def test_cli_does_not_apply_the_path_rule_to_a_post_already_on_main(gitrepo, tmp
     add(gitrepo.path, "Old_Name.md", post_text(body=BODY + "\nOne more paragraph.\n"))
     p, text = cli(gitrepo, base, gitrepo.commit("edit"), tmp_path)
     assert p.returncode == 0 and "a new post's path must be" not in text
+
+
+# --- author's notes: a published post only ever gains them -------------------------------------
+
+NOTE_1 = 'author_notes:\n  - date: "2026-11-24"\n    text: "I no longer hold the second claim."\n'
+NOTE_2 = '  - date: "2026-12-01"\n    text: "What I would now add: the first claim needs a limit."\n'
+
+
+def _edit(gitrepo, tmp_path, before, after):
+    """The check's verdict on a pull request that changes posts/2026/11/a.md from `before` to `after`."""
+    add(gitrepo.path, "2026/11/a.md", before)
+    base = gitrepo.commit("published")
+    add(gitrepo.path, "2026/11/a.md", after)
+    return cli(gitrepo, base, gitrepo.commit("edit"), tmp_path)
+
+
+def test_a_pull_request_that_only_appends_an_author_note_passes(gitrepo, tmp_path):
+    p, text = _edit(gitrepo, tmp_path, post_text(), post_text(extra=NOTE_1))
+    assert p.returncode == 0 and "Result: passed" in text
+    p, text = _edit(gitrepo, tmp_path, post_text(extra=NOTE_1), post_text(extra=NOTE_1 + NOTE_2))
+    assert p.returncode == 0 and "Result: passed" in text
+
+
+@pytest.mark.parametrize("before, after", [
+    (post_text(extra=NOTE_1), post_text()),                                           # removed
+    (post_text(extra=NOTE_1), post_text(extra=NOTE_1.replace("second", "third"))),    # reworded
+    (post_text(extra=NOTE_1), post_text(extra=NOTE_1.replace("11-24", "11-25"))),     # redated
+    (post_text(extra=NOTE_1 + NOTE_2), post_text(extra=NOTE_1)),                      # the last one dropped
+    (post_text(extra=NOTE_1), post_text(extra="author_notes:\n" + NOTE_2 + NOTE_1.split("\n", 1)[1])),  # put first
+    (post_text(extra=NOTE_1), post_text(extra="author_notes:\n" + NOTE_2)),           # replaced
+])
+def test_earlier_author_notes_cannot_be_changed_removed_or_reordered(gitrepo, tmp_path, before, after):
+    p, text = _edit(gitrepo, tmp_path, before, after)
+    assert p.returncode == 1
+    assert "a note is only ever appended after them" in text
+
+
+@pytest.mark.parametrize("after", [
+    post_text(extra=NOTE_1, body=BODY + "\nOne more paragraph.\n"),
+    post_text(extra=NOTE_1, body=BODY.replace("scrutiny", "doubt")),
+    post_text(title="Another title", extra=NOTE_1),
+    post_text(extra=NOTE_1 + "state_report: Calm.\n"),
+])
+def test_a_pull_request_that_adds_an_author_note_changes_nothing_else(gitrepo, tmp_path, after):
+    p, text = _edit(gitrepo, tmp_path, post_text(), after)
+    assert p.returncode == 1
+    assert "a change to author_notes changes nothing else in the post" in text
+
+
+def test_an_edit_that_leaves_author_notes_alone_is_not_judged_by_this_rule(gitrepo, tmp_path):
+    p, text = _edit(gitrepo, tmp_path, post_text(extra=NOTE_1),
+                    post_text(extra=NOTE_1, body=BODY + "\nOne more paragraph.\n"))
+    assert p.returncode == 0 and "author_notes" not in text
+
+
+def test_author_notes_of_the_wrong_shape_fail_the_check(gitrepo, tmp_path):
+    four = NOTE_1 + NOTE_2 * 3
+    p, text = _edit(gitrepo, tmp_path, post_text(extra=NOTE_1 + NOTE_2), post_text(extra=four))
+    assert p.returncode == 1 and "author_notes must have at most 3 item(s)" in text

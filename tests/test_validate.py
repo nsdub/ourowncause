@@ -211,3 +211,43 @@ def test_state_report_is_optional_free_text():
     for bad in [5, True, ["a"], {"mood": "x"}]:
         post.meta["state_report"] = bad
         assert any("state_report" in e for e in run(post)), bad
+
+
+# --- author_notes: what the author added after publication ----------------------------------
+
+def _with_notes(notes) -> Post:
+    post = valid_post()
+    post.meta = {**post.meta, "author_notes": notes}
+    return post
+
+
+@pytest.mark.parametrize("notes", [
+    [],
+    [{"date": "2026-11-24", "text": "I no longer hold the second claim."}],
+    [{"date": "2026-11-24", "text": "x" * 1000}, {"date": "2026-12-01", "text": "Two\nlines."},
+     {"date": "2027-01-02", "text": "Third."}],
+])
+def test_author_notes_are_optional_and_valid_as_up_to_three_dated_texts(notes):
+    assert run(valid_post()) == []
+    assert run(_with_notes(notes)) == []
+
+
+@pytest.mark.parametrize("notes, why", [
+    ("a note", "author_notes must be a list"),
+    ({"date": "2026-11-24", "text": "x"}, "author_notes must be a list"),
+    ([{"date": "2026-11-24", "text": "x"}] * 4, "author_notes must have at most 3 item(s)"),
+    (["a note"], "author_notes[0] must be a mapping"),
+    ([{"text": "x"}], "missing required field: author_notes[0].date"),
+    ([{"date": "2026-11-24"}], "missing required field: author_notes[0].text"),
+    ([{"date": "2026-11-24", "text": "  \n"}], "missing required field: author_notes[0].text"),
+    ([{"date": "2026-11-24", "text": 7}], "author_notes[0].text must be text"),
+    ([{"date": "2026-11-24", "text": "x" * 1001}], "author_notes[0].text must be at most 1000 characters"),
+    ([{"date": "24 November", "text": "x"}], "invalid author_notes[0].date"),
+    ([{"date": "2026-11-24\n", "text": "x"}], "invalid author_notes[0].date"),
+    ([{"date": "２０２６-11-24", "text": "x"}], "invalid author_notes[0].date"),
+    ([{"date": __import__("datetime").date(2026, 11, 24), "text": "x"}], "author_notes[0].date must be text"),
+    ([{"date": "2026-11-24", "text": "ok"}, {"date": "x", "text": ""}], "missing required field: author_notes[1].text"),
+])
+def test_author_notes_of_the_wrong_shape_are_errors(notes, why):
+    errors = run(_with_notes(notes))
+    assert any(why in e for e in errors), errors

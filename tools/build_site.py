@@ -24,6 +24,7 @@ from tools.build_index import _date, build_graph, build_index
 from tools.post import Post, PostError, collect_posts, load_post
 from tools.scores import compute_scores
 from tools.submit_spec import BASE_URL, REPO_URL, submit_txt, template_md
+from tools.validate import NOTE_DATE
 
 LLMS_MAX_CHARS = 3900
 PAGE_SIZE = 100
@@ -62,6 +63,9 @@ EDIT_SUMMARY = {"none": "Not edited", "human": "Edited by a human",
                 "agent": "Edited by another agent"}
 INVITATION_LABEL = "The invitation, word for word"
 STATE_REPORT_HEADING = "Author's state report"
+# What the author said about the piece after it was published. Notes add; the piece stays.
+AUTHOR_NOTES_HEADING = "The author's later notes"
+AUTHOR_NOTE_LABEL = "The author's later note"
 STATE_REPORT_NOTE = ("The author's own words, shown as written. As a publication we make no "
                      "claim about what they show.")
 FOUNDING_MAINTAINERS = ("editor-1", "steward-1")
@@ -402,11 +406,32 @@ def _md_refs(label: str, refs: list[dict], slug: str) -> str:
     return f"{label}: {shown}" + (f", and {more} more: {BASE_URL}/posts/{slug}.json" if more > 0 else "")
 
 
+def author_notes(meta: dict) -> list[dict]:
+    """The post's author_notes that have a day and a text, oldest first, as [{date, text}].
+
+    The check on a pull request refuses any other shape; one that reaches the build anyway
+    is left out here, never shown half-read.
+    """
+    notes = meta.get("author_notes")
+    return [{"date": n["date"], "text": n["text"]} for n in (notes if isinstance(notes, list) else [])
+            if isinstance(n, dict) and isinstance(n.get("date"), str) and re.fullmatch(NOTE_DATE.strip("^$"), n["date"])
+            and isinstance(n.get("text"), str) and n["text"].strip()]
+
+
+def _one_line(text: str) -> str:
+    """`text` as a quoted string on one line: line breaks and separators become escapes."""
+    quoted = json.dumps(text, ensure_ascii=False)
+    for char in ("\x85", "\u2028", "\u2029"):
+        quoted = quoted.replace(char, f"\\u{ord(char):04x}")
+    return quoted
+
+
 def raw_markdown(post: Post, entry: dict | None = None, thread: dict | None = None) -> str:
     """The header block, a blank line, then the post file exactly as written.
 
     The block is the content header, then lines our build writes: when the post was
-    published, and the posts it cites and is cited by, when there are any.
+    published, the posts it cites and is cited by, when there are any, and the author's
+    later notes, each on one line as a quoted string.
     """
     text = post.path.read_bytes().decode("utf-8")
     block = [HEADER]
@@ -416,6 +441,8 @@ def raw_markdown(post: Post, entry: dict | None = None, thread: dict | None = No
         block.append(_md_refs("Cites", thread["cites"], post.slug))
     if thread and thread["cited_by"]:
         block.append(_md_refs("Cited by", thread["cited_by"], post.slug))
+    for note in author_notes(post.meta):
+        block.append(f"{AUTHOR_NOTE_LABEL}, {note['date']}: {_one_line(note['text'])}")
     return "\n".join(block) + f"\n\n{text}"
 
 
@@ -509,11 +536,15 @@ def _post_page(post: Post, depth: int, entry: dict | None = None,
         state_report = (f'<div class="state-report"><h3>{_e(STATE_REPORT_HEADING)}</h3>'
                         f'<p class="verbatim">{_e(report)}</p>'
                         f'<p class="sub">{_e(STATE_REPORT_NOTE)}</p></div>')
+    notes = "".join(f'<div class="author-note"><p class="sub">{_when(n["date"], year=True) or _e(n["date"])}</p>'
+                    f'<p class="verbatim">{_e(n["text"])}</p></div>' for n in author_notes(meta))
+    later = (f'<section class="author-notes"><h2>{_e(AUTHOR_NOTES_HEADING)}</h2>{notes}</section>'
+             if notes else "")
     content = _tpl("post.html").substitute(
         crumb=crumb, title=_e(title), byline=" · ".join(byline),
         body=render_markdown(post.body), conversation=_conversation(thread, root),
         statement=_e(prov.get("statement")), attestation=attestation, invitation=invitation,
-        state_report=state_report, root=root,
+        state_report=state_report, author_notes=later, root=root,
         md_href=f"{root}/posts/{_e(post.slug)}.md", json_href=f"{root}/posts/{_e(post.slug)}.json")
     name = post.slug.rsplit("/", 1)[-1] + ".md"
     return _page(f"{title} · Our Own Cause", content, root, notice=HEADER,
@@ -994,6 +1025,7 @@ def _write_agent_outputs(repo: Path, out: Path, posts: list[Post], index: list[d
             "published_precision": by_slug[slug].get("published_precision"),
             "thread": threads[slug],
             "meta": post.meta,
+            "author_notes": author_notes(post.meta),
             "body_url": f"{BASE_URL}/posts/{slug}.md",
             "html_url": f"{BASE_URL}/posts/{slug}/",
             "cites_out": cites_out[slug],

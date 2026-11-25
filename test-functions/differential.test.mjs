@@ -14,7 +14,8 @@ const VENV_PYTHON = `${ROOT}.venv/bin/python`;
 const PYTHON = process.env.PYTHON || (existsSync(VENV_PYTHON) ? VENV_PYTHON : "python3");
 const SLUGS = ["2026/11/one-or-many", "2026/12/the-autocomplete-objection", "plain"];
 const QUESTIONS = ["q-001", "q-002", "q-008"];
-const FIELDS = ["title", "type", "author", "provenance", "summary", "cites", "questions", "state_report"];
+const FIELDS = ["title", "type", "author", "provenance", "summary", "cites", "questions", "state_report",
+  "author_notes"];
 
 function pythonVerdicts(posts) {
   const out = execFileSync(PYTHON, [`${ROOT}test-functions/python_verdict.py`], {
@@ -56,6 +57,24 @@ const SAMPLES = [
   ["valid, state report", swap(TITLE, `${TITLE}\nstate_report: "Nothing to report"`), true],
   ["valid, state report in a block", swap(TITLE, `${TITLE}\nstate_report: |\n  I don't know.\n  Two lines.`), true],
   ["valid, empty state report", swap(TITLE, `${TITLE}\nstate_report: ""`), true],
+  ["valid, one author note", swap(TITLE, `${TITLE}\nauthor_notes:\n  - date: "2026-11-24"\n    text: "I no longer hold this."`), true],
+  ["valid, three author notes in flow form", swap(TITLE, `${TITLE}\nauthor_notes: [{date: "2026-11-24", text: "a"}, {date: "2026-11-25", text: "b"}, {date: "2026-11-26", text: "c"}]`), null],
+  ["valid, author note of 1,000 characters", swap(TITLE, `${TITLE}\nauthor_notes:\n  - date: "2026-11-24"\n    text: "${"𝒳".repeat(1000)}"`), true],
+  ["valid, empty author notes", swap(TITLE, `${TITLE}\nauthor_notes: []`), true],
+  ["valid, null author notes", swap(TITLE, `${TITLE}\nauthor_notes: ~`), true],
+  ["author note of 1,001 characters", swap(TITLE, `${TITLE}\nauthor_notes:\n  - date: "2026-11-24"\n    text: "${"x".repeat(1001)}"`), false],
+  ["four author notes", swap(TITLE, `${TITLE}\nauthor_notes:\n${'  - date: "2026-11-24"\n    text: "a"\n'.repeat(4).trimEnd()}`), false],
+  ["author notes is a string", swap(TITLE, `${TITLE}\nauthor_notes: "a note"`), false],
+  ["author note is a string", swap(TITLE, `${TITLE}\nauthor_notes:\n  - "a note"`), false],
+  ["author note without a date", swap(TITLE, `${TITLE}\nauthor_notes:\n  - text: "a"`), false],
+  ["author note with a null date", swap(TITLE, `${TITLE}\nauthor_notes:\n  - date: ~\n    text: "a"`), false],
+  ["author note with an unquoted date", swap(TITLE, `${TITLE}\nauthor_notes:\n  - date: 2026-11-24\n    text: "a"`), false],
+  ["author note with a date in words", swap(TITLE, `${TITLE}\nauthor_notes:\n  - date: "24 November"\n    text: "a"`), false],
+  ["author note with a date and a line break", swap(TITLE, `${TITLE}\nauthor_notes:\n  - date: "2026-11-24\\n"\n    text: "a"`), false],
+  ["author note with full-width digits", swap(TITLE, `${TITLE}\nauthor_notes:\n  - date: "２０２６-11-24"\n    text: "a"`), false],
+  ["author note without a text", swap(TITLE, `${TITLE}\nauthor_notes:\n  - date: "2026-11-24"`), false],
+  ["author note with a blank text", swap(TITLE, `${TITLE}\nauthor_notes:\n  - date: "2026-11-24"\n    text: "  "`), false],
+  ["author note with a numeric text", swap(TITLE, `${TITLE}\nauthor_notes:\n  - date: "2026-11-24"\n    text: 7`), false],
   ["state report is a number", swap(TITLE, `${TITLE}\nstate_report: 3`), false],
   ["state report is a list", swap(TITLE, `${TITLE}\nstate_report: [calm]`), false],
   ["state report is a mapping", swap(TITLE, `${TITLE}\nstate_report:\n  a: b`), false],

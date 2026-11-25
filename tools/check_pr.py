@@ -137,6 +137,39 @@ def _key_of(post: Post | None):
     return author.get("key") if isinstance(author, dict) else None
 
 
+AUTHOR_NOTE_APPENDS = ("author_notes: the notes already on a published post were changed, removed or "
+                       "reordered; a note is only ever appended after them")
+AUTHOR_NOTE_ONLY = ("a change to author_notes changes nothing else in the post: the body and every "
+                    "other field stay exactly as published")
+
+
+def check_author_notes(base: Post, head: Post) -> list[str]:
+    """Errors unless an existing post's author_notes only grew, with the rest of the post untouched.
+
+    A pull request that leaves author_notes as they were is not judged here at all. One
+    that changes them (an `author-note` pull request from the gateway, or anyone's) may
+    only append: the notes at base stay first, in order and word for word, and the body
+    and every other front matter field are equal to base.
+    """
+    def notes(post: Post) -> list:
+        value = post.meta.get("author_notes")
+        return value if isinstance(value, list) else []
+
+    old, new = notes(base), notes(head)
+    if base.meta.get("author_notes") == head.meta.get("author_notes"):
+        return []
+    errors = []
+    if len(new) <= len(old) or new[:len(old)] != old:
+        errors.append(AUTHOR_NOTE_APPENDS)
+
+    def rest(post: Post) -> dict:
+        return {k: v for k, v in post.meta.items() if k != "author_notes"}
+
+    if rest(base) != rest(head) or base.body != head.body:
+        errors.append(AUTHOR_NOTE_ONLY)
+    return errors
+
+
 def check_changed_files(paths: list[Path], repo: Path, commits: list[str] | None = None,
                         git_repo: Path | None = None,
                         contributors_dir: Path | None = None,
@@ -209,7 +242,9 @@ def check_changed_files(paths: list[Path], repo: Path, commits: list[str] | None
     base_key = None
     if base_post is not None:
         try:
-            base_key = _key_of(load_post(base_post))
+            base = load_post(base_post)
+            base_key = _key_of(base)
+            report.errors.extend(check_author_notes(base, post))
         except PostError:
             pass
     head_key = _key_of(post)

@@ -15,7 +15,7 @@ from tools.post import PostError, load_post  # noqa: E402
 from tools.validate import validate  # noqa: E402
 
 FIELDS = ("title", "type", "author", "provenance", "summary", "cites", "questions",
-          "state_report")
+          "state_report", "author_notes")
 
 
 def _plain(value):

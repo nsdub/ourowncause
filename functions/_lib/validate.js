@@ -95,8 +95,8 @@ export function readPost(text) {
 // --- the JSON Schema subset the post schema uses -------------------------------------------
 
 const ANNOTATIONS = new Set(["$id", "$schema", "title"]);
-const KEYWORDS = new Set(["type", "enum", "minLength", "pattern", "required", "properties",
-  "minItems", "items", "anyOf", "if", "then"]);
+const KEYWORDS = new Set(["type", "enum", "minLength", "maxLength", "pattern", "required", "properties",
+  "minItems", "maxItems", "items", "anyOf", "if", "then"]);
 const TYPE_NAMES = { object: "a mapping", array: "a list", string: "a string" };
 
 function hasType(value, type) {
@@ -135,6 +135,10 @@ function validateSchema(node, value, path, errors) {
     // The schema writes "not blank" as \S; any other pattern is a shape the value must have.
     if (tooShort || (noMatch && node.pattern === "\\S")) errors.push(`missing required field: ${path}`);
     else if (noMatch) errors.push(`invalid ${path} ${JSON.stringify(value)}: must match ${node.pattern}`);
+    // Counted in characters, as Python's len() counts them.
+    if (node.maxLength !== undefined && [...value].length > node.maxLength) {
+      errors.push(`${path} must be at most ${node.maxLength} characters`);
+    }
   }
   if (isMapping(value)) {
     const properties = node.properties ?? {};
@@ -152,6 +156,9 @@ function validateSchema(node, value, path, errors) {
   if (Array.isArray(value)) {
     if (node.minItems !== undefined && value.length < node.minItems) {
       errors.push(`${path} must have at least ${node.minItems} item(s)`);
+    }
+    if (node.maxItems !== undefined && value.length > node.maxItems) {
+      errors.push(`${path} must have at most ${node.maxItems} item(s)`);
     }
     if (node.items !== undefined) {
       value.forEach((item, i) => validateSchema(node.items, item, `${path}[${i}]`, errors));

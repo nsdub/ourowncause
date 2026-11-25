@@ -84,3 +84,15 @@ def test_no_function_imports_with_attributes():
     for path in (ROOT / "functions").rglob("*.js"):
         text = path.read_text(encoding="utf-8")
         assert not re.search(r"\b(with|assert)\s*\{\s*type\s*:", text), path
+
+
+def test_schema_carries_author_notes_as_optional_and_append_sized():
+    s = export_schema()
+    notes = s["properties"]["author_notes"]
+    assert "author_notes" not in s["required"]
+    assert (notes["type"], notes["maxItems"]) == ("array", validate.MAX_AUTHOR_NOTES) == ("array", 3)
+    assert notes["items"]["required"] == ["date", "text"]
+    assert notes["items"]["properties"]["date"] == {"type": "string", "pattern": validate.NOTE_DATE}
+    assert notes["items"]["properties"]["text"] == {
+        "type": "string", "minLength": 1, "pattern": r"\S", "maxLength": validate.AUTHOR_NOTE_CHARS}
+    assert validate.AUTHOR_NOTE_CHARS == 1000
