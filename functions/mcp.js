@@ -1,5 +1,8 @@
 // POST /mcp: the publication as a remote MCP server (Streamable HTTP, JSON responses only).
-// JSON-RPC 2.0, one request per POST (batching was removed from the protocol). No sessions and no SSE stream.
+// JSON-RPC 2.0, one request per POST. A client of a legacy version (below) may also send a
+// batch, which 2025-03-26 requires a server to accept: an array of at most MAX_BATCH requests,
+// answered in order with an array of responses, notifications left out. 2026-07-28 has no
+// batches, so a batch that speaks it is refused whole. No sessions and no SSE stream.
 //
 // One stateless endpoint serves both generations of the protocol:
 // - 2026-07-28 ("modern"): no handshake. Each request names its version and the client's
@@ -50,6 +53,9 @@ function crossSite(request) {
   const origin = request.headers.get("origin");
   return origin !== null && origin !== new URL(request.url).origin;
 }
+
+// The most requests one batch may hold. They run one after another, each as if sent alone.
+export const MAX_BATCH = 20;
 
 // How long a client may reuse tools/list and server/discover: the tools change only when we deploy.
 export const TTL_MS = 3_600_000;
@@ -299,6 +305,28 @@ async function handleMessage(context, message) {
   }
 }
 
+// True when a message of a batch speaks 2026-07-28, which has no batches.
+const speaksLatest = (message) => isObject(message) && isObject(message.params) && isObject(message.params._meta)
+  && message.params._meta[VERSION_KEY] === LATEST_VERSION;
+
+// A JSON-RPC batch of the legacy versions. An empty batch, one over MAX_BATCH and one that
+// speaks 2026-07-28 are each refused with a single -32600 error. Otherwise every request is
+// answered in the array, in order, and a batch of notifications alone gets 202 and no body.
+async function handleBatch(context, batch) {
+  const refuse = (message) => reply(failure(null, INVALID_REQUEST, message), 400);
+  if (batch.length === 0) return refuse("an empty batch is not a request: send at least one");
+  if (batch.length > MAX_BATCH) return refuse(`a batch holds at most ${MAX_BATCH} requests`);
+  if (context.request.headers.get("mcp-protocol-version") === LATEST_VERSION || batch.some(speaksLatest)) {
+    return refuse(`batching is not part of ${LATEST_VERSION}: send one request per POST`);
+  }
+  const answers = [];
+  for (const message of batch) {
+    const out = await handleMessage(context, message);
+    if (out !== null) answers.push(out.body);
+  }
+  return answers.length === 0 ? new Response(null, { status: 202, headers: HEADERS }) : reply(answers);
+}
+
 export async function onRequest(context) {
   const { method } = context.request;
   if (method === "OPTIONS") return new Response(null, { status: 204, headers: PREFLIGHT });
@@ -307,7 +335,7 @@ export async function onRequest(context) {
   if (method !== "POST") {
     return new Response(JSON.stringify({
       error: `${method} is not supported: this MCP server answers POST with one JSON-RPC 2.0 request `
-        + "and keeps no event stream and no session",
+        + `(or, before 2026-07-28, a batch of up to ${MAX_BATCH}) and keeps no event stream and no session`,
       how: "POST https://ourowncause.com/mcp with Content-Type: application/json. A 2026-07-28 client sends "
         + "server/discover, tools/list or tools/call with its version in params._meta; a client of 2025-11-25 "
         + "or earlier opens with initialize.",
@@ -338,9 +366,7 @@ export async function onRequest(context) {
     return reply(failure(null, PARSE_ERROR, "request body could not be read"), 400);
   }
 
-  if (Array.isArray(data)) {
-    return reply(failure(null, INVALID_REQUEST, "batching is not supported: send one request per POST"), 400);
-  }
+  if (Array.isArray(data)) return handleBatch(context, data);
   const out = await handleMessage(context, data);
   return out === null ? new Response(null, { status: 202, headers: HEADERS }) : reply(out.body, out.status);
 }

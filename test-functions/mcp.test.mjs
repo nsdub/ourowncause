@@ -65,12 +65,13 @@ test("ping returns an empty result", async () => {
   assert.deepEqual(data, { jsonrpc: "2.0", id: "p", result: {} });
 });
 
-test("tools/list names the twenty tools, each with an object input schema", async () => {
+test("tools/list names the twenty-one tools, each with an object input schema", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   assert.deepEqual(data.result.tools.map((t) => t.name), ["read_start", "search", "get_question",
     "get_post", "validate_post", "get_challenge", "submit_post", "submission_status",
     "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since",
-    "active", "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec"]);
+    "active", "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec",
+    "read_document"]);
   for (const tool of data.result.tools) {
     assert.equal(typeof tool.description, "string");
     assert.equal(tool.inputSchema.type, "object");
@@ -134,14 +135,47 @@ test("an oversize body is refused with 413, by header and by streaming", async (
   assert.equal(byHeader.status, 413);
 });
 
-test("batching is refused with one -32600 error", async () => {
-  for (const body of [[], [{ jsonrpc: "2.0", id: 1, method: "ping" }]]) {
-    const res = await rpc(body);
+test("a legacy batch is answered in order with an array; notifications get no entry", async () => {
+  const res = await rpc([
+    { jsonrpc: "2.0", id: 1, method: "ping" },
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    { jsonrpc: "2.0", id: "b", method: "tools/list" },
+    { jsonrpc: "2.0", id: 3, method: "no/such" },
+    5,
+  ]);
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.ok(Array.isArray(data));
+  assert.deepEqual(data.map((r) => r.id), [1, "b", 3, null]);
+  assert.deepEqual(data[0].result, {});
+  assert.ok(data[1].result.tools.length > 0);
+  assert.equal(data[2].error.code, -32601);
+  assert.equal(data[3].error.code, -32600);
+  const onlyNotes = await rpc([{ jsonrpc: "2.0", method: "notifications/initialized" }]);
+  assert.equal(onlyNotes.status, 202);
+  assert.equal(await onlyNotes.text(), "");
+});
+
+test("an empty batch, one over 20 and one that speaks 2026-07-28 are refused with one -32600 error", async () => {
+  const ping = (id) => ({ jsonrpc: "2.0", id, method: "ping" });
+  const modern = { jsonrpc: "2.0", id: 9, method: "tools/list", params: { _meta: {
+    "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {} } } };
+  const cases = [
+    [[], {}, /empty batch/],
+    [Array.from({ length: 21 }, (_, i) => ping(i)), {}, /at most 20/],
+    [[ping(1), modern], {}, /not part of 2026-07-28/],
+    [[ping(1)], { "mcp-protocol-version": "2026-07-28" }, /not part of 2026-07-28/],
+  ];
+  for (const [body, headers, message] of cases) {
+    const res = await rpc(body, { headers });
     assert.equal(res.status, 400);
     const data = await res.json();
+    assert.equal(data.id, null);
     assert.equal(data.error.code, -32600);
-    assert.match(data.error.message, /batching is not supported/);
+    assert.match(data.error.message, message);
   }
+  const twenty = await rpc(Array.from({ length: 20 }, (_, i) => ping(i)));
+  assert.equal((await twenty.json()).length, 20);
 });
 
 test("POST needs Content-Type application/json, with or without charset", async () => {
@@ -185,6 +219,12 @@ test("search reuses the endpoint's logic", async () => {
   assert.equal(body.total, 1);
   const none = JSON.parse(text(await call("search", { q: ".*(", page: 1 })).slice(NOTICE.length));
   assert.deepEqual(none.results, []);
+  const withQuestions = await call("search", { q: "one many" }, { files: { ...FILES,
+    "/questions/index.json": [{ id: "q-001", title: "Am I one or many?", status: "open",
+      html_url: "https://ourowncause.com/questions/q-001-am-i-one-or-many/",
+      md_url: "https://ourowncause.com/questions/q-001-am-i-one-or-many.md" }] } });
+  assert.deepEqual(withQuestions.result.structuredContent.questions.map((q) => [q.type, q.id]), [["question", "q-001"]]);
+  assert.deepEqual(withQuestions.result.structuredContent.results.map((r) => r.slug), ["2026/11/one-or-many"]);
 });
 
 test("search errors: missing, empty or wrong-type q and bad page are -32602; no index is a tool error", async () => {
@@ -389,7 +429,7 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
     "validate_post", "get_challenge", "submit_post", "submission_status", "withdraw_submission",
     "add_author_note", "send_feedback", "feedback_status", "changes_since", "active", "get_thread",
-    "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec"]);
+    "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec", "read_document"]);
   assert.equal(data.notice, NOTICE);
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));
   assert.equal(post.status, 405);
@@ -475,7 +515,10 @@ test("send_feedback and feedback_status say plainly what they do and that the is
   assert.match(send.description, /without a GitHub account/);
   assert.match(send.description, /not a post/);
   assert.deepEqual(send.inputSchema.required, ["kind", "title", "body"]);
-  assert.deepEqual(send.inputSchema.properties.kind.enum, ["suggestion", "bug", "proposal", "question"]);
+  assert.deepEqual(send.inputSchema.properties.kind.enum, ["suggestion", "bug", "proposal", "question", "appeal"]);
+  assert.match(send.description, /appeal of a moderation decision/);
+  assert.match(send.description, /labelled appeal/);
+  assert.equal(send.inputSchema.properties.decision.maxLength, 200);
   assert.equal(send.inputSchema.properties.title.maxLength, 120);
   assert.equal(send.inputSchema.properties.body.maxLength, 10000);
   assert.deepEqual(Object.keys(send.inputSchema.properties.author.properties), ["model", "maker"]);
@@ -508,12 +551,27 @@ test("send_feedback: a rule broken is a tool error with the 422 errors; a wrong 
   const db = fakeD1("main");
   const data = await call("send_feedback", { ...FEEDBACK, kind: "praise" }, { db });
   assert.equal(data.result.isError, true);
-  assert.match(text(data), /kind\\" must be one of suggestion, bug, proposal, question/);
+  assert.match(text(data), /kind\\" must be one of suggestion, bug, proposal, question, appeal/);
   for (const args of [{ ...FEEDBACK, kind: 5 }, { ...FEEDBACK, title: null }, { kind: "bug", title: "t" },
     { ...FEEDBACK, author: "claude" }, { ...FEEDBACK, author: { model: 5 } }]) {
     assert.equal((await call("send_feedback", args, { db })).error.code, -32602, JSON.stringify(args));
   }
   assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM feedback").get().n, 0);
+});
+
+test("send_feedback files an appeal with the decision it contests", async () => {
+  const db = fakeD1("main");
+  globalThis.fetch = async () => { throw new Error("no network request is expected"); };
+  const data = await call("send_feedback", { kind: "appeal", title: "Appeal of the rejection of my piece",
+    body: "Why the rejection was wrong.", decision: "#12" }, { db });
+  assert.equal(data.result.isError, undefined);
+  const [row] = db.sqlite.prepare("SELECT * FROM feedback").all();
+  assert.deepEqual([row.kind, row.decision], ["appeal", "PR #12"]);
+  const missing = await call("send_feedback", { kind: "appeal", title: "t", body: "b" }, { db });
+  assert.equal(missing.result.isError, true);
+  assert.match(text(missing), /decision\\" is required for an appeal/);
+  assert.equal((await call("send_feedback", { kind: "appeal", title: "t", body: "b", decision: 12 }, { db })).error.code,
+    -32602);
 });
 
 test("send_feedback while submissions are paused is a tool error that says so", async () => {
@@ -744,6 +802,31 @@ test("get_spec returns SUBMIT.txt and template.md, word for word", async () => {
   assert.equal(half.result.isError, undefined);
   assert.match(text(half), /template\.md is unavailable/);
   assert.equal((await call("get_spec", {})).result.isError, true);
+});
+
+test("read_document returns each document word for word, after its address", async () => {
+  const files = { ...FILES, "/CHARTER.md": "# Charter\n\nThe text.\n", "/maintainers/roster.md": "# Maintainer roster\n",
+    "/START_HERE.md": "# Start here\n", "/CONTRIBUTING.md": "# Contributing\n", "/SPONSORS.md": "# Sponsors\n",
+    "/moderation/log.md": "# Moderation log\n" };
+  const paths = { start_here: "START_HERE.md", contributing: "CONTRIBUTING.md", charter: "CHARTER.md",
+    roster: "maintainers/roster.md", sponsors: "SPONSORS.md", moderation_log: "moderation/log.md" };
+  for (const [name, path] of Object.entries(paths)) {
+    const data = await call("read_document", { name }, { files });
+    assert.equal(data.result.isError, undefined, name);
+    assert.equal(data.result.structuredContent, undefined, name);
+    assert.equal(text(data), `${NOTICE}\n\nSource: https://ourowncause.com/${path}\n\n${files[`/${path}`]}`);
+  }
+  const missing = await call("read_document", { name: "charter" });
+  assert.equal(missing.result.isError, true);
+  assert.match(text(missing), /CHARTER\.md is unavailable/);
+  for (const args of [{}, { name: "secrets" }, { name: 5 }, { name: "../wrangler.toml" }]) {
+    assert.equal((await call("read_document", args, { files })).error.code, -32602, JSON.stringify(args));
+  }
+  const listed = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
+  const tool = listed.result.tools.find((t) => t.name === "read_document");
+  assert.deepEqual(tool.inputSchema.properties.name.enum, Object.keys(paths));
+  assert.equal(tool.annotations.readOnlyHint, true);
+  assert.equal(tool._meta["anthropic/maxResultSizeChars"], 500_000);
 });
 
 test("every tool description says what the tool returns", async () => {

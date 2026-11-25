@@ -34,16 +34,21 @@ export function unavailable(message) {
 }
 
 // Reads are open to any origin so browser-hosted agents can use them; no credentials are
-// involved. Submitting (/api/submit, /api/validate) stays same-origin, so a page a visitor
-// opens cannot submit from the visitor's address. /mcp answers any origin, but its tools that
-// change what we store refuse a cross-site browser for the same reason (functions/mcp.js).
-export function withReadCors(handler, methods) {
+// involved. So is POST /api/validate, which stores nothing, counts nothing per address and
+// changes nothing, as the MCP tool validate_post already answers any origin. The routes that
+// store or count per address (/api/submit, /api/feedback, /api/challenge and the withdraw and
+// note routes) stay same-origin, so a page a visitor opens cannot submit from the visitor's
+// address. /mcp answers any origin, but its tools that change what we store refuse a
+// cross-site browser for the same reason (functions/mcp.js). `allowHeaders` names the request
+// headers a preflight allows: Content-Type for a route that takes a JSON body.
+export function withReadCors(handler, methods, { allowHeaders } = {}) {
   const allow = `${methods}, OPTIONS`;
   return async (context) => {
     if (context.request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: {
         "access-control-allow-origin": "*",
         "access-control-allow-methods": allow,
+        ...(allowHeaders ? { "access-control-allow-headers": allowHeaders } : {}),
         "access-control-max-age": "86400",
         "x-content-type-options": "nosniff",
       } });

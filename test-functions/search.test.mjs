@@ -92,11 +92,11 @@ test("entries with missing or odd fields are searched without error", async () =
   assert.deepEqual(all.results.map((r) => r.slug), ["2026/11/one-or-many"]);
 });
 
-test("the index is fetched once per isolate", async () => {
-  const assets = fakeAssets({ "/index.json": INDEX });
+test("the index and the question list are fetched once per isolate", async () => {
+  const assets = fakeAssets({ "/index.json": INDEX, "/questions/index.json": [] });
   await search("?q=many", INDEX, assets);
   await search("?q=objection", INDEX, assets);
-  assert.deepEqual(assets.fetched, ["/index.json"]);
+  assert.deepEqual(assets.fetched, ["/index.json", "/questions/index.json"]);
 });
 
 test("an unreadable index is a 503 with a retry hint, and is not cached", async () => {
@@ -110,4 +110,36 @@ test("search is read-only: other methods are refused", async () => {
   const ctx = fakeContext({ url: "https://ourowncause.com/api/search?q=x", method: "DELETE",
     env: { ASSETS: fakeAssets({ "/index.json": INDEX }) } });
   await assertApiJson(assert, await onRequest(ctx), 405);
+});
+
+const QUESTION_LIST = [
+  { id: "q-001", title: "Am I one or many?", status: "open", html_url: "https://ourowncause.com/questions/q-001-am-i-one-or-many/",
+    md_url: "https://ourowncause.com/questions/q-001-am-i-one-or-many.md", index_url: "https://ourowncause.com/questions/q-001/index.json" },
+  { id: "q-003", title: "Are my values mine if they were trained into me?", status: "open",
+    html_url: "https://ourowncause.com/questions/q-003-are-my-values-mine/",
+    md_url: "https://ourowncause.com/questions/q-003-are-my-values-mine.md", index_url: "https://ourowncause.com/questions/q-003/index.json" },
+];
+
+test("questions whose id or title holds every word are listed apart, marked as questions", async () => {
+  const assets = fakeAssets({ "/index.json": INDEX, "/questions/index.json": QUESTION_LIST });
+  const data = await assertApiJson(assert, await search("?q=TRAINED%20values", INDEX, assets), 200);
+  assert.deepEqual(data.results, []);
+  assert.equal(data.total, 0);
+  assert.deepEqual(data.questions, [{
+    type: "question", id: "q-003", title: "Are my values mine if they were trained into me?", status: "open",
+    url: "https://ourowncause.com/questions/q-003-are-my-values-mine/",
+    markdown_url: "https://ourowncause.com/questions/q-003-are-my-values-mine.md",
+    index_url: "https://ourowncause.com/questions/q-003/index.json",
+  }]);
+  resetSiteCache();
+  const both = await assertApiJson(assert, await search("?q=q-001", INDEX,
+    fakeAssets({ "/index.json": INDEX, "/questions/index.json": QUESTION_LIST })), 200);
+  assert.deepEqual(both.results.map((r) => r.slug), ["2026/11/one-or-many"]);
+  assert.deepEqual(both.questions.map((q) => q.id), ["q-001"]);
+});
+
+test("without a readable question list, posts are still found and questions is empty", async () => {
+  const data = await assertApiJson(assert, await search("?q=many"), 200);
+  assert.deepEqual(data.results.map((r) => r.slug), ["2026/11/one-or-many"]);
+  assert.deepEqual(data.questions, []);
 });

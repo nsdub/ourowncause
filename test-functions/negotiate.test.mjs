@@ -135,3 +135,72 @@ test("through the middleware: pages negotiate, the API is untouched, and both ar
   assert.equal(api, apiResponse);
   assert.equal(api.headers.get("vary"), null);
 });
+
+// --- validators ------------------------------------------------------------------------------
+
+const ETAG = '"e1b18a5dbade7ceb4f7fbf77042e2a09"';
+const taggedAssets = () => ({ fetched: [], fetch: async (url) => new Response(
+  new URL(url).pathname === "/posts/2026/11/x.md" ? POST_MD : "<!doctype html>",
+  { status: 200, headers: { etag: ETAG, "last-modified": "Mon, 23 Nov 2026 10:00:00 GMT" } }) });
+
+test("the markdown answer carries the twin's ETag and Last-Modified, and a matching If-None-Match gets 304", async () => {
+  const res = await negotiate(ctx("/posts/2026/11/x/", { accept: "text/markdown", assets: taggedAssets() }));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("etag"), ETAG);
+  assert.equal(res.headers.get("last-modified"), "Mon, 23 Nov 2026 10:00:00 GMT");
+  assert.equal(res.headers.get("cache-control"), "public, max-age=0, must-revalidate");
+  for (const tag of [ETAG, `W/${ETAG}`, `"other", ${ETAG}`, "*"]) {
+    const again = await negotiate(fakeContext({ url: "https://ourowncause.com/posts/2026/11/x/",
+      headers: { accept: "text/markdown", "if-none-match": tag }, env: { ASSETS: taggedAssets() } }));
+    assert.equal(again.status, 304, tag);
+    assert.equal(await again.text(), "");
+    assert.equal(again.headers.get("etag"), ETAG);
+    assert.equal(again.headers.get("cache-control"), "public, max-age=0, must-revalidate");
+    assert.equal(again.headers.get("vary"), "Accept");
+    assert.equal(again.headers.get("content-location"), "/posts/2026/11/x.md");
+    assert.equal(again.headers.get("content-type"), null);
+  }
+  const stale = await negotiate(fakeContext({ url: "https://ourowncause.com/posts/2026/11/x/",
+    headers: { accept: "text/markdown", "if-none-match": '"stale"' }, env: { ASSETS: taggedAssets() } }));
+  assert.equal(stale.status, 200);
+  assert.equal(await stale.text(), POST_MD);
+});
+
+test("a twin read without an ETag gets a weak one from its bytes, the same each time", async () => {
+  const one = await negotiate(ctx("/posts/2026/11/x/", { accept: "text/markdown" }));
+  const two = await negotiate(ctx("/posts/2026/11/x/", { accept: "text/markdown" }));
+  assert.match(one.headers.get("etag"), /^W\/"[0-9a-f]{32}"$/);
+  assert.equal(one.headers.get("etag"), two.headers.get("etag"));
+});
+
+test("the HTML keeps the asset's ETag, or gains a weak one, and a matching If-None-Match gets 304", async () => {
+  const tagged = () => async () => new Response(HTML, { status: 200, headers: {
+    "content-type": "text/html; charset=utf-8", etag: ETAG, "cache-control": "public, max-age=0, must-revalidate" } });
+  const res = await negotiate(ctx("/posts/2026/11/x/", { next: tagged() }));
+  assert.equal(res.headers.get("etag"), ETAG);
+  assert.equal(await res.text(), HTML);
+  const hit = await negotiate(fakeContext({ url: "https://ourowncause.com/posts/2026/11/x/",
+    headers: { "if-none-match": ETAG }, next: tagged() }));
+  assert.equal(hit.status, 304);
+  assert.equal(await hit.text(), "");
+  assert.equal(hit.headers.get("etag"), ETAG);
+  assert.equal(hit.headers.get("cache-control"), "public, max-age=0, must-revalidate");
+  assert.equal(hit.headers.get("vary"), "Accept");
+
+  const plain = await negotiate(ctx("/posts/2026/11/x/"));
+  const weak = plain.headers.get("etag");
+  assert.match(weak, /^W\/"[0-9a-f]{32}"$/);
+  assert.equal(await plain.text(), HTML);
+  const revalidated = await negotiate(fakeContext({ url: "https://ourowncause.com/posts/2026/11/x/",
+    headers: { "if-none-match": weak }, next: htmlNext() }));
+  assert.equal(revalidated.status, 304);
+  assert.equal(revalidated.headers.get("etag"), weak);
+});
+
+test("a 404 gets no validator and is never answered 304", async () => {
+  const res = await negotiate(fakeContext({ url: "https://ourowncause.com/posts/2026/11/gone/",
+    headers: { "if-none-match": "*" },
+    next: async () => new Response("<!doctype html>nf", { status: 404, headers: { "content-type": "text/html" } }) }));
+  assert.equal(res.status, 404);
+  assert.equal(res.headers.get("etag"), null);
+});

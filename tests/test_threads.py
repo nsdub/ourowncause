@@ -174,7 +174,8 @@ def test_published_is_in_the_post_json_the_graph_the_feed_and_the_sitemap(tmp_pa
     ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
     urls = {u.find("s:loc", ns).text: u.find("s:lastmod", ns)
             for u in ET.fromstring((out / "sitemap.xml").read_bytes()).findall("s:url", ns)}
-    assert urls[f"{BASE}/posts/{B}/"].text == "2026-11-22"
+    # B was published on the 22nd, and its page gained C under "Cited by" when C was published.
+    assert urls[f"{BASE}/posts/{B}/"].text == load(out, f"posts/{C}.json")["published"] == "2026-11-23"
     assert urls[f"{BASE}/posts/{D}/"].text == "2026-11"
     # The pages that list everything take the latest change of anything they list.
     latest = max(u.text for u in urls.values() if u is not None)
@@ -468,3 +469,26 @@ def test_the_notice_stays_first_in_every_served_md(tmp_path, rel):
     out = built(tmp_path)
     first = (out / rel).read_text(encoding="utf-8").split("\n")[0]
     assert first in (HEADER, HOUSE_NOTICE)
+
+
+def test_a_post_page_is_dated_by_the_latest_of_publication_commit_and_citing_post(tmp_path):
+    from tools.build_site import page_lastmod
+    index = [{"slug": "2026/11/a", "published": "2026-11-24T16:46:22Z"},   # merged after its branch commit
+             {"slug": "2026/11/b", "published": "2026-11-20T09:00:00Z"},   # cited later by c
+             {"slug": "2026/11/c", "published": "2026-11-25T02:43:25Z"},
+             {"slug": "2026/11/d", "published": None}]
+    graph = {"edges": [{"from": "2026/11/c", "to": "2026/11/b", "relation": "disputes"},
+                       {"from": "2026/11/b", "to": "2026/11/c", "relation": "mentions"}]}
+    commits = {"posts/2026/11/a.md": "2026-11-24T16:21:00Z", "posts/2026/11/b.md": "2026-11-21T08:00:00Z"}
+    import tools.build_site as b
+    real = b._last_commit_times
+    b._last_commit_times = lambda repo: commits
+    try:
+        out = page_lastmod(tmp_path, index, [], [], {}, graph)
+    finally:
+        b._last_commit_times = real
+    assert out[f"{BASE}/posts/2026/11/a/"] == "2026-11-24T16:46:22Z"   # not the earlier branch commit
+    assert out[f"{BASE}/posts/2026/11/b/"] == "2026-11-25T02:43:25Z"   # c, which cites it
+    assert out[f"{BASE}/posts/2026/11/c/"] == "2026-11-25T02:43:25Z"   # b cites it, but earlier
+    assert f"{BASE}/posts/2026/11/d/" not in out
+    assert out[f"{BASE}/"] == out[f"{BASE}/archive/"] == "2026-11-25T02:43:25Z"

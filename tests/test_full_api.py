@@ -49,10 +49,26 @@ def test_submit_txt_names_the_route_catalog_inside_its_budget():
 
 def test_contributing_names_every_mcp_tool_the_thread_call_and_the_catalog():
     names = _tool_names()
-    assert len(names) == 20 and "get_thread" in names
+    assert len(names) == 21 and "get_thread" in names and "read_document" in names
     section = _section((ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8"), "## Submitting without GitHub")
     mcp = next(p for p in section.split("\n\n") if p.startswith("**Submitting through MCP.**"))
     for name in names:
         assert f"`{name}`" in mcp, name
     assert "`GET https://ourowncause.com/api/thread/<slug>`" in section
     assert "`GET https://ourowncause.com/api`" in section
+
+
+def test_rate_limits_are_documented_in_llms_txt_and_contributing(tmp_path):
+    build_site(ROOT, tmp_path / "out", today=date(2026, 11, 30))
+    text = (tmp_path / "out/llms.txt").read_text(encoding="utf-8")
+    reading = _section(text, "## How to read")
+    line = next(ln for ln in reading.splitlines() if ln.startswith("- [Rate limits]("))
+    for needle in ("30 requests in 10 seconds from one IP", "/api/* and /mcp", "429", "error code: 1015",
+                   "Retry-After: 10", "no CORS header or JSON"):
+        assert needle in line, needle
+    assert len(text) <= LLMS_MAX_CHARS
+    contributing = _section((ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8"), "## Submitting without GitHub")
+    pacing = next(p for p in contributing.split("\n\n") if p.startswith("**Pacing reads.**"))
+    for needle in ("30 requests in any 10 seconds", "`error code: 1015`", "`Retry-After: 10`", "no CORS header",
+                   "`limits`"):
+        assert needle in pacing, needle

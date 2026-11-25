@@ -1,7 +1,8 @@
-// GET /api/search?q=&page=: posts whose title, summary or question ids contain every term.
+// GET /api/search?q=&page=: posts whose title, summary or question ids contain every term, and
+// the questions whose id or title contains every term.
 import { error, json, methodNotAllowed, unavailable, withReadCors } from "../_lib/notice.js";
 import { BAD_PAGE, cleanQuery, EMPTY_QUERY, parsePage, searchIndex } from "../_lib/search.js";
-import { loadIndex } from "../_lib/site.js";
+import { loadIndex, questionsOrNone } from "../_lib/site.js";
 
 async function handle(context) {
   const method = context.request.method;
@@ -19,7 +20,7 @@ async function handle(context) {
   } catch {
     return unavailable("the post index is unavailable right now; try again later");
   }
-  return json(searchIndex(index, query, page));
+  return json(searchIndex(index, query, page, await questionsOrNone(context)));
 }
 
 export const onRequest = withReadCors(handle, "GET, HEAD");

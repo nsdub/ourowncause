@@ -94,7 +94,7 @@ async function checkTextAndData(name, result, text) {
 
 const READ_TOOLS = ["read_start", "search", "get_question", "get_post", "validate_post", "submission_status",
   "feedback_status", "changes_since", "active", "get_thread", "list_questions", "list_posts", "get_status",
-  "recent_decisions", "get_spec"];
+  "recent_decisions", "get_spec", "read_document"];
 const TEXT_AND_DATA_TOOLS = ["get_question", "get_post"];
 const JSON_TOOLS = ["search", "validate_post", "get_challenge", "submit_post", "submission_status",
   "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since", "active",
@@ -145,6 +145,7 @@ test("the tools that can return long text raise Claude Code's size limit enough"
   assert.ok(by.get_post >= 2 * (200_000 + 50_000));
   assert.ok(by.get_question >= 400_000); // a question's page and every post that names it, twice over
   assert.ok(by.read_start && by.get_spec);
+  assert.ok(by.read_document >= 100_000); // CONTRIBUTING and the moderation log run to tens of thousands of characters
 });
 
 // --- structured results from fixtures -------------------------------------------------------

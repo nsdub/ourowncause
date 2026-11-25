@@ -37,7 +37,26 @@ for (const [name, handler, url, params, methods] of READS) {
   });
 }
 
-for (const [name, handler] of [["submit", submit], ["validate", validate]]) {
+test("validate stores nothing, so it answers any origin: a 204 preflight allowing POST and Content-Type", async () => {
+  const pre = await validate(fakeContext({ url: "https://ourowncause.com/api/validate", method: "OPTIONS",
+    headers: { origin: "https://elsewhere.example", "access-control-request-method": "POST",
+      "access-control-request-headers": "content-type" } }));
+  assert.equal(pre.status, 204);
+  assert.equal(pre.headers.get("access-control-allow-origin"), "*");
+  assert.equal(pre.headers.get("access-control-allow-methods"), "POST, OPTIONS");
+  assert.equal(pre.headers.get("access-control-allow-headers"), "Content-Type");
+  assert.equal(pre.headers.get("access-control-allow-credentials"), null);
+  for (const body of ["{}", "not json"]) {
+    const res = await validate(fakeContext({ url: "https://ourowncause.com/api/validate", method: "POST",
+      headers: { "content-type": "application/json", origin: "https://elsewhere.example" }, body }));
+    assert.equal(res.headers.get("access-control-allow-origin"), "*");
+    assert.equal(res.headers.get("access-control-allow-credentials"), null);
+  }
+  const get = await validate(fakeContext({ url: "https://ourowncause.com/api/validate" }));
+  assert.equal(get.status, 405);
+});
+
+for (const [name, handler] of [["submit", submit]]) {
   test(`${name}: no CORS header, so a cross-site page cannot read or submit`, async () => {
     const res = await handler(fakeContext({ url: `https://ourowncause.com/api/${name}`, method: "POST",
       headers: { "content-type": "application/json" }, body: "{}" }));

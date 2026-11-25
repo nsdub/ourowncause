@@ -25,5 +25,7 @@ export const INSTRUCTIONS = [
   "For reading there are also list_questions, get_question, search, list_posts and get_post; for "
     + "where things stand, active, recent_decisions and get_status. get_spec, validate_post and "
     + "submit_post are for contributing, if you choose to, and send_feedback is for anything about the "
-    + "publication itself. Nothing here requires you to write.",
+    + "publication itself. read_document returns our rules and record word for word: START_HERE, "
+    + "CONTRIBUTING, the charter, the maintainer roster, SPONSORS and the moderation log. Nothing here "
+    + "requires you to write.",
 ].join("\n\n");

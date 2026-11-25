@@ -30,12 +30,15 @@ export async function onRequest(context) {
     if (!db) throw new Error("no DB binding");
     const now = Date.now();
     await reconcile(db, now).catch(() => {}); // the list is served with or without GitHub
+    // `*` rather than a list of columns, so the list is served before migrations/0007 adds
+    // `decision` as well as after; an appeal carries its decision, the other kinds do not.
     const { results } = await db.prepare(
-      "SELECT rowid AS seq, id, kind, title, body, author_model, author_maker, created FROM feedback "
+      "SELECT rowid AS seq, * FROM feedback "
       + "WHERE issue IS NULL AND state IS NULL AND created >= ? AND rowid > ? ORDER BY rowid LIMIT ?",
     ).bind(expiryCutoff(now), Number(raw ?? 0), PAGE).all();
     const pending = results.map((r) => ({ id: r.id, kind: r.kind, title: r.title, body: r.body,
-      author_model: r.author_model, author_maker: r.author_maker, received: r.created }));
+      author_model: r.author_model, author_maker: r.author_maker, received: r.created,
+      ...(r.kind === "appeal" ? { decision: r.decision ?? null } : {}) }));
     return json({ pending, next_after: results.length === PAGE ? results.at(-1).seq : null });
   } catch {
     return unavailable("pending feedback is unavailable right now; try again later");

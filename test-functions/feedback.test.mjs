@@ -98,7 +98,7 @@ test("no address is stored with feedback, only a daily hash in the rate limit ta
 test("feedback that breaks a rule gets a 422 naming the rule, and nothing is stored", async () => {
   const db = fakeD1("main");
   const cases = [
-    [{ kind: "praise" }, /"kind" must be one of suggestion, bug, proposal, question/],
+    [{ kind: "praise" }, /"kind" must be one of suggestion, bug, proposal, question, appeal/],
     [{ kind: undefined }, /"kind" must be one of/],
     [{ kind: 5 }, /"kind" must be one of/],
     [{ title: undefined }, /"title" is required/],
@@ -484,6 +484,73 @@ test("a feedback id is not a submission id: the two status pages do not answer f
     .run(ID, today(), JSON.stringify({ state: "merged", pr_url: "https://github.com/nsdub/ourowncause/pull/9" }));
   const data = await assertApiJson(assert, await get(db), 200);
   assert.equal(data.state, "queued");
+});
+
+// --- appeals ----------------------------------------------------------------------------------
+
+test("an appeal is stored with the decision it contests, written as the log writes its targets", async () => {
+  const cases = [
+    ["12", "PR #12"], ["#12", "PR #12"], ["PR #12", "PR #12"], ["pr 12", "PR #12"],
+    ["https://github.com/nsdub/ourowncause/pull/12", "PR #12"],
+    ["2026/11/one-or-many", "posts/2026/11/one-or-many.md"],
+    ["posts/2026/11/one-or-many.md", "posts/2026/11/one-or-many.md"],
+    ["https://ourowncause.com/posts/2026/11/one-or-many/", "posts/2026/11/one-or-many.md"],
+  ];
+  for (const [decision, stored] of cases) {
+    const db = fakeD1("main");
+    const data = await assertApiJson(assert, await post(item({ kind: "appeal", decision }), { db }), 201);
+    const [row] = rows(db, "feedback");
+    assert.deepEqual([row.id, row.kind, row.decision], [data.id, "appeal", stored], decision);
+  }
+});
+
+test("an appeal needs a decision it can name, and only an appeal takes one", async () => {
+  const cases = [
+    [{ kind: "appeal" }, /"decision" is required for an appeal: the pull request number/],
+    [{ kind: "appeal", decision: "" }, /"decision" must be the pull request number/],
+    [{ kind: "appeal", decision: "the one from last week" }, /"decision" must be/],
+    [{ kind: "appeal", decision: 12 }, /"decision" must be/],
+    [{ kind: "appeal", decision: "https://evil.example/pull/12" }, /"decision" must be/],
+    [{ kind: "appeal", decision: `2026/11/${"a".repeat(200)}` }, /"decision" must be/],
+    [{ kind: "bug", decision: "PR #12" }, /"decision" is only for an appeal/],
+  ];
+  for (const [over, message] of cases) {
+    const db = fakeD1("main");
+    const data = await assertApiJson(assert, await post(item(over), { db }), 422);
+    assert.ok(data.errors.some((e) => message.test(e)), `${JSON.stringify(over)}: ${data.errors}`);
+    assert.equal(rows(db, "feedback").length, 0);
+  }
+});
+
+test("the same appeal of another decision is other feedback", async () => {
+  const db = fakeD1("main");
+  const sent = item({ kind: "appeal", decision: "PR #12" });
+  const first = await assertApiJson(assert, await post(sent, { db }), 201);
+  const again = await assertApiJson(assert, await post(sent, { db }), 200);
+  assert.equal(again.id, first.id);
+  await assertApiJson(assert, await post({ ...sent, decision: "PR #13" }, { db }), 201);
+  assert.equal(rows(db, "feedback").length, 2);
+});
+
+test("before migration 0007, the other kinds are stored and listed and an appeal is a 503", async (t) => {
+  const db = fakeD1("main");
+  db.sqlite.exec("ALTER TABLE feedback DROP COLUMN decision");
+  await assertApiJson(assert, await post(item({ kind: "bug" }), { db }), 201);
+  await assertApiJson(assert, await post(item({ kind: "appeal", decision: "PR #3" }), { db }), 503);
+  stubFetch(t, github());
+  const data = await assertApiJson(assert, await pending(db), 200);
+  assert.deepEqual(data.pending.map((p) => p.kind), ["bug"]);
+  assert.equal("decision" in data.pending[0], false);
+});
+
+test("the pending list gives an appeal's decision, and no decision field for other kinds", async (t) => {
+  const db = fakeD1("main");
+  await assertApiJson(assert, await post(item({ kind: "appeal", decision: "2026/11/one-or-many" }), { db }), 201);
+  await assertApiJson(assert, await post(item({ kind: "question" }), { db, headers: { "cf-connecting-ip": "198.51.100.9" } }), 201);
+  stubFetch(t, github());
+  const data = await assertApiJson(assert, await pending(db), 200);
+  assert.deepEqual(data.pending.map((p) => [p.kind, p.decision]),
+    [["appeal", "posts/2026/11/one-or-many.md"], ["question", undefined]]);
 });
 
 // --- GET /api/feedback/pending --------------------------------------------------------------

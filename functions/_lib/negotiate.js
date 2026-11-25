@@ -6,6 +6,11 @@
 //
 // Claude Code's WebFetch, for one, sends `Accept: text/markdown, text/html, */*`. Without this
 // it would get the HTML and convert it back to markdown, lossily.
+//
+// Both answers are sent with `max-age=0, must-revalidate`, so each carries a validator: the
+// asset's own ETag (and Last-Modified, when the asset has one), and for an HTML page whose
+// asset arrives without an ETag, a weak one made from its bytes. A reader that sends a
+// matching If-None-Match gets 304 with the ETag, Cache-Control and Vary, and no body.
 
 const BASE_URL = "https://ourowncause.com";
 const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
@@ -66,6 +71,34 @@ export function wantsMarkdown(header) {
   return md > 0 && md >= quality(ranges, "text", "html");
 }
 
+const CACHE_CONTROL = "public, max-age=0, must-revalidate";
+
+// True when If-None-Match names this ETag, compared weakly (RFC 9110 13.1.2), or is "*".
+export function etagMatches(ifNoneMatch, etag) {
+  if (!ifNoneMatch || !etag) return false;
+  const opaque = (tag) => tag.trim().replace(/^W\//, "");
+  return ifNoneMatch.split(",").some((tag) => tag.trim() === "*" || opaque(tag) === opaque(etag));
+}
+
+// A weak ETag for bytes that came without one.
+async function weakEtag(bytes) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return `W/"${[...digest.slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("")}"`;
+}
+
+// The 304 for a response whose validator the reader already holds: the headers a 200 would
+// carry that RFC 9110 15.4.5 keeps (ETag, Cache-Control, Content-Location, Vary, and Link and
+// Last-Modified with them), and no body.
+function notModified(headers) {
+  const out = new Headers();
+  for (const name of ["etag", "cache-control", "content-location", "vary", "last-modified", "link",
+    "x-content-type-options", "access-control-allow-origin"]) {
+    const value = headers.get(name);
+    if (value !== null) out.set(name, value);
+  }
+  return new Response(null, { status: 304, headers: out });
+}
+
 const linkHeader = (twin) => `<${BASE_URL}${twin}>; rel="alternate"; type="text/markdown"`;
 
 function addVary(headers) {
@@ -74,16 +107,28 @@ function addVary(headers) {
   else if (!vary.split(",").some((v) => v.trim().toLowerCase() === "accept")) headers.set("vary", `${vary}, Accept`);
 }
 
-// The HTML response, with Vary and, on a page that was found, the Link to its twin.
-function marked(response, twin) {
-  const out = new Response(response.body, response);
-  addVary(out.headers);
-  const type = out.headers.get("content-type") || "";
-  if (response.status === 200 && type.startsWith("text/html")) out.headers.append("link", linkHeader(twin));
-  return out;
+// The HTML response, with Vary and, on a page that was found, the Link to its twin and a
+// validator; a 304 when the reader already holds that validator.
+async function marked(request, response, twin) {
+  const type = response.headers.get("content-type") || "";
+  const page = response.status === 200 && type.startsWith("text/html");
+  let body = response.body;
+  const headers = new Headers(response.headers);
+  addVary(headers);
+  if (page) {
+    headers.append("link", linkHeader(twin));
+    if (!headers.get("etag") && body !== null && request.method === "GET") {
+      const bytes = await response.arrayBuffer();
+      headers.set("etag", await weakEtag(bytes));
+      body = bytes;
+    }
+    if (etagMatches(request.headers.get("if-none-match"), headers.get("etag"))) return notModified(headers);
+  }
+  return new Response(body, { status: response.status, statusText: response.statusText, headers });
 }
 
-// The twin, read from the static assets; null when there is none or it cannot be read.
+// The twin, read from the static assets, as {text, etag, lastModified}; null when there is
+// none or it cannot be read.
 async function readTwin(context, twin) {
   try {
     const response = await context.env.ASSETS.fetch(new URL(twin, context.request.url));
@@ -92,7 +137,7 @@ async function readTwin(context, twin) {
     // A path with no file can come back as an HTML page (the 404 page, or the front page on a
     // build without one); that is not a twin.
     if (/^\s*<(?:!doctype|html)\b/i.test(text)) return null;
-    return text;
+    return { text, etag: response.headers.get("etag"), lastModified: response.headers.get("last-modified") };
   } catch {
     return null;
   }
@@ -104,9 +149,9 @@ export async function negotiate(context) {
     ? twinOf(new URL(request.url).pathname) : null;
   if (twin === null) return context.next();
   if (wantsMarkdown(request.headers.get("accept")) && context.env && context.env.ASSETS) {
-    const text = await readTwin(context, twin);
-    if (text !== null) {
-      return new Response(request.method === "HEAD" ? null : text, { status: 200, headers: {
+    const found = await readTwin(context, twin);
+    if (found !== null) {
+      const headers = new Headers({
         "content-type": "text/markdown; charset=utf-8",
         "content-location": twin,
         "vary": "Accept",
@@ -114,9 +159,14 @@ export async function negotiate(context) {
         "link": `${linkHeader(twin)}, <${BASE_URL}${new URL(request.url).pathname}>; rel="canonical"`,
         "x-content-type-options": "nosniff",
         "access-control-allow-origin": "*",
-        "cache-control": "public, max-age=0, must-revalidate",
-      } });
+        "cache-control": CACHE_CONTROL,
+      });
+      // The twin's own validator: the same ETag its .md address carries.
+      headers.set("etag", found.etag || await weakEtag(new TextEncoder().encode(found.text)));
+      if (found.lastModified) headers.set("last-modified", found.lastModified);
+      if (etagMatches(request.headers.get("if-none-match"), headers.get("etag"))) return notModified(headers);
+      return new Response(request.method === "HEAD" ? null : found.text, { status: 200, headers });
     }
   }
-  return marked(await context.next(), twin);
+  return marked(request, await context.next(), twin);
 }

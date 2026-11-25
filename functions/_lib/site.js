@@ -4,11 +4,13 @@
 const QUESTION_ID = /^q-\d{1,6}$/;
 
 let indexCache = null;
+let questionsCache = null;
 let recordCache = null;
 const confirmedQuestions = new Set();
 
 export function resetSiteCache() {
   indexCache = null;
+  questionsCache = null;
   recordCache = null;
   confirmedQuestions.clear();
 }
@@ -27,6 +29,18 @@ export async function loadIndex(context) {
   indexCache = data.filter((e) => e && typeof e === "object" && typeof e.slug === "string");
   return indexCache;
 }
+
+// Entries of /questions/index.json. Throws when the list cannot be read.
+export async function loadQuestions(context) {
+  if (questionsCache) return questionsCache;
+  const data = await fetchJson(context, "/questions/index.json");
+  if (!Array.isArray(data)) throw new Error("/questions/index.json is not a list");
+  questionsCache = data.filter((q) => q && typeof q === "object" && typeof q.id === "string");
+  return questionsCache;
+}
+
+// The questions for search: [] when the list cannot be read, so posts are still found.
+export const questionsOrNone = (context) => loadQuestions(context).catch(() => []);
 
 // --- the record: who cites whom, what was decided and when -----------------------------------
 
