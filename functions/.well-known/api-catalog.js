@@ -21,7 +21,8 @@ export const LINKSET = {
     {
       anchor: `${BASE_URL}/mcp`,
       "service-desc": [{ href: `${BASE_URL}/.well-known/mcp.json`, type: "application/json" }],
-      describedby: [{ href: `${BASE_URL}/.well-known/mcp.json`, type: "application/json" }],
+      describedby: [{ href: `${BASE_URL}/.well-known/mcp.json`, type: "application/json" },
+        { href: `${BASE_URL}/mcp/server-card`, type: "application/json" }],
       "service-doc": [DOC],
     },
   ],
