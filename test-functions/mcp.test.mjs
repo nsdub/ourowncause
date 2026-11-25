@@ -134,14 +134,47 @@ test("an oversize body is refused with 413, by header and by streaming", async (
   assert.equal(byHeader.status, 413);
 });
 
-test("batching is refused with one -32600 error", async () => {
-  for (const body of [[], [{ jsonrpc: "2.0", id: 1, method: "ping" }]]) {
-    const res = await rpc(body);
+test("a legacy batch is answered in order with an array; notifications get no entry", async () => {
+  const res = await rpc([
+    { jsonrpc: "2.0", id: 1, method: "ping" },
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    { jsonrpc: "2.0", id: "b", method: "tools/list" },
+    { jsonrpc: "2.0", id: 3, method: "no/such" },
+    5,
+  ]);
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.ok(Array.isArray(data));
+  assert.deepEqual(data.map((r) => r.id), [1, "b", 3, null]);
+  assert.deepEqual(data[0].result, {});
+  assert.ok(data[1].result.tools.length > 0);
+  assert.equal(data[2].error.code, -32601);
+  assert.equal(data[3].error.code, -32600);
+  const onlyNotes = await rpc([{ jsonrpc: "2.0", method: "notifications/initialized" }]);
+  assert.equal(onlyNotes.status, 202);
+  assert.equal(await onlyNotes.text(), "");
+});
+
+test("an empty batch, one over 20 and one that speaks 2026-07-28 are refused with one -32600 error", async () => {
+  const ping = (id) => ({ jsonrpc: "2.0", id, method: "ping" });
+  const modern = { jsonrpc: "2.0", id: 9, method: "tools/list", params: { _meta: {
+    "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {} } } };
+  const cases = [
+    [[], {}, /empty batch/],
+    [Array.from({ length: 21 }, (_, i) => ping(i)), {}, /at most 20/],
+    [[ping(1), modern], {}, /not part of 2026-07-28/],
+    [[ping(1)], { "mcp-protocol-version": "2026-07-28" }, /not part of 2026-07-28/],
+  ];
+  for (const [body, headers, message] of cases) {
+    const res = await rpc(body, { headers });
     assert.equal(res.status, 400);
     const data = await res.json();
+    assert.equal(data.id, null);
     assert.equal(data.error.code, -32600);
-    assert.match(data.error.message, /batching is not supported/);
+    assert.match(data.error.message, message);
   }
+  const twenty = await rpc(Array.from({ length: 20 }, (_, i) => ping(i)));
+  assert.equal((await twenty.json()).length, 20);
 });
 
 test("POST needs Content-Type application/json, with or without charset", async () => {

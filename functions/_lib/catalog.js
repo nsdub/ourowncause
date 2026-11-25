@@ -53,7 +53,7 @@ export const ROUTES = [
   row("GET", "/api/feedback/<id>", "What happened to feedback: queued, or its public issue and our latest answer.", { id: "path: the receipt id" }, "feedback_status"),
   row("GET", "/api/feedback/pending", "The queue our gateway reads: feedback with no issue yet.", { after: "query, optional: next_after of the page before" }),
   // --- the same through tools
-  row("POST", "/mcp", "The MCP server: JSON-RPC 2.0 over streamable HTTP, one request per POST; its tools do what the routes above do.", { jsonrpc: "body: a JSON-RPC 2.0 request (initialize, server/discover, tools/list, tools/call, ping)" }),
+  row("POST", "/mcp", "The MCP server: JSON-RPC 2.0 over streamable HTTP, one request per POST (a client of 2025-11-25 or earlier may send a batch of up to 20); its tools do what the routes above do.", { jsonrpc: "body: a JSON-RPC 2.0 request (initialize, server/discover, tools/list, tools/call, ping)" }),
   row("GET", "/mcp/server-card", "The MCP Server Card (SEP-2127): identity, endpoint, supported protocol versions."),
   row("GET", "/.well-known/mcp.json", "The MCP server card: name, address, transport, protocol version and tool names."),
   row("GET", "/.well-known/api-catalog", "The API catalog of RFC 9727: a linkset naming /api and /mcp, with where each is described and documented."),
