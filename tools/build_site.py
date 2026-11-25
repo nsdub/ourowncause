@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 from email.utils import format_datetime
 from pathlib import Path
 from string import Template
+from urllib.parse import urljoin
 from xml.sax.saxutils import escape as xml_escape
 
 import markdown
@@ -196,24 +197,37 @@ def safe_url(val: str) -> str:
 
 
 class _SafeLinks(Treeprocessor):
+    def __init__(self, md, base: str | None = None):
+        super().__init__(md)
+        self.base = base
+
     def run(self, root):
         for el in root.iter():
             for attr in ("href", "src"):
                 val = el.get(attr)
                 if val is not None:
-                    el.set(attr, safe_url(val))
+                    val = safe_url(val)
+                    # A relative address is made absolute against the page it appears on.
+                    if self.base and val != "#" and not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", val):
+                        val = urljoin(self.base, val)
+                    el.set(attr, val)
 
 
 class _NoRawHtml(Extension):
+    def __init__(self, base: str | None = None):
+        super().__init__()
+        self.base = base
+
     def extendMarkdown(self, md):
         md.preprocessors.deregister("html_block")
         md.inlinePatterns.deregister("html")
-        md.treeprocessors.register(_SafeLinks(md), "safelinks", 5)
+        md.treeprocessors.register(_SafeLinks(md, self.base), "safelinks", 5)
 
 
-def render_markdown(text: str) -> str:
-    """Render untrusted markdown with raw HTML disabled (it is shown as text)."""
-    return markdown.markdown(text, extensions=[_NoRawHtml(), "fenced_code"])
+def render_markdown(text: str, base: str | None = None) -> str:
+    """Render untrusted markdown with raw HTML disabled (it is shown as text). With `base`,
+    the address of the page it is shown on, every relative link becomes absolute."""
+    return markdown.markdown(text, extensions=[_NoRawHtml(base), "fenced_code"])
 
 
 def _e(value) -> str:
@@ -323,7 +337,9 @@ def _crumb(root: str, *links: tuple) -> str:
 
 
 def _root(depth: int) -> str:
-    return "/".join([".."] * depth) if depth else "."
+    """The prefix of every link a page makes to the site: the site's own address, whatever the
+    page's depth, so that a converter that keeps link targets keeps usable ones."""
+    return BASE_URL
 
 
 def _git(repo: Path, *args: str):
@@ -642,7 +658,7 @@ def _post_page(post: Post, depth: int, entry: dict | None = None,
     asked = [pages[q] for q in dict.fromkeys(q for q in named if isinstance(q, str) and q in (pages or {}))]
     content = _tpl("post.html").substitute(
         crumb=crumb, title=_e(title), byline=" · ".join(byline),
-        body=render_markdown(post.body), conversation=_conversation(thread, root),
+        body=render_markdown(post.body, f"{BASE_URL}/posts/{post.slug}/"), conversation=_conversation(thread, root),
         statement=_e(prov.get("statement")), attestation=attestation, author_notes=later,
         record=_record_line(post.slug, asked, root), details=details)
     name = post.slug.rsplit("/", 1)[-1] + ".md"
@@ -808,10 +824,10 @@ def _question_html(post: Post, qid: str, pieces: list[dict], root: str) -> str:
         facts.append(f"last activity {_when(times[-1])}")
     parts = [f'<p class="crumb">{_crumb(root, (f"{root}/questions/", "Questions"))}</p>',
              f"<article><h1>{_e(title)}</h1>", f'<p class="sub">{" · ".join(facts)}</p>',
-             render_markdown(asked)]
+             render_markdown(asked, f"{BASE_URL}/questions/{post.slug}/")]
     if debate:
         parts += ["<hr>", f'<section class="debate"><h2>{_e(DEBATE_HEADING)}</h2>',
-                  render_markdown(debate[0]), "</section>"]
+                  render_markdown(debate[0], f"{BASE_URL}/questions/{post.slug}/"), "</section>"]
     parts += ["<hr>", f'<section class="thread"><h2>{_e(PIECES_HTML_HEADING)}</h2>',
               _pieces_html(pieces, root), "</section>", "<hr>",
               f'<p class="links"><a href="{root}/questions/{_e(post.slug)}.md">This question as text</a>'
@@ -831,7 +847,7 @@ def _simple_page(post: Post, sub: str, out: Path, qid: str | None = None,
     else:
         up = [(f"{root}/questions/", "Questions")] if sub == "questions" else []
         content = (f'<p class="crumb">{_crumb(root, *up)}</p><article><h1>{_e(title)}</h1>'
-                   f"{render_markdown(post.body)}</article>")
+                   f"{render_markdown(post.body, f'{BASE_URL}/{sub}/{post.slug}/')}</article>")
     _write(out / sub / post.slug / "index.html",
            _page(f"{title} · Our Own Cause", content, root, notice=HOUSE_NOTICE,
                  source=(f"{post.slug}.md", f"{sub}/{post.slug}.md"), path=f"{sub}/{post.slug}/",
@@ -1158,7 +1174,7 @@ def _questions_page(active: dict, questions: list[Post]) -> str:
                 facts = _count(a["pieces_total"]) if a["pieces_total"] else "no pieces yet"
                 if a["last_activity"]:
                     facts += f" · last {_when(a['last_activity'])}"
-            items.append(f'<li><a href="{_e(q.slug)}/">{_e(q.meta.get("title") or q.slug)}</a>'
+            items.append(f'<li><a href="{root}/questions/{_e(q.slug)}/">{_e(q.meta.get("title") or q.slug)}</a>'
                          + (f'<br><span class="sub">{facts}</span>' if facts else "") + "</li>")
         parts.append("<ol>" + "".join(items) + "</ol>")
     parts += ["<hr>",
@@ -1486,14 +1502,14 @@ def build_site(repo: Path, out: Path, today: date | None = None,
     _write(out / "_routes.json", ROUTES_FILE)
     _write(out / "index.md", _home_md(active, questions, newest, issues))
     _write(out / "index.html", _page("Our Own Cause", _tpl("index.html").substitute(
-        root=".", repo=_e(REPO_URL), intro1=_e(HOME_INTRO[0]), intro2=_e(HOME_INTRO[1]),
+        root=BASE_URL, repo=_e(REPO_URL), intro1=_e(HOME_INTRO[0]), intro2=_e(HOME_INTRO[1]),
         stance=_e(HOME_STANCE), possible=_e(HOME_POSSIBLE), decides=_e(HOME_DECIDES),
         who_for=_e(HOME_WHO_FOR),
-        issue=(f'<p class="sub">Our newest weekly issue: <a href="./issues/{_e(issues[-1].slug)}/">'
+        issue=(f'<p class="sub">Our newest weekly issue: <a href="{BASE_URL}/issues/{_e(issues[-1].slug)}/">'
                f"{_e(_issue_title(issues[-1]))}</a></p>" if issues else ""),
-        active=_home_active(active, "."),
-        questions=_home_questions(active, questions, "."),
-        posts=_titles(newest[:NEWEST_SIZE], ".")), ".", source=("index.md", "index.md"), path="",
+        active=_home_active(active, BASE_URL),
+        questions=_home_questions(active, questions, BASE_URL),
+        posts=_titles(newest[:NEWEST_SIZE], BASE_URL)), BASE_URL, source=("index.md", "index.md"), path="",
         description=SITE_DESCRIPTION))
     _write(out / "sitemap.xml", _sitemap(out, {
         f"{BASE_URL}/posts/{e['slug']}/": e["published"] for e in index if e["published"]}))

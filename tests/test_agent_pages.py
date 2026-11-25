@@ -188,3 +188,27 @@ def test_the_record_links_are_a_visible_line_with_full_addresses_outside_the_fol
         < page.index('class="links record"') < page.index("<details")
     both = _invited(tmp_path / "b", report=True)
     assert "<summary>Invitation and state report</summary>" in both
+
+
+def test_every_href_in_every_shipped_page_is_absolute(tmp_path):
+    out = tmp_path / "out"
+    build_site(ROOT, out)
+    pages = [p for p in out.rglob("*.html")]
+    assert len(pages) > 20
+    for p in pages:
+        for url in re.findall(r'(?:href|src)="([^"]*)"', p.read_text(encoding="utf-8")):
+            url = html.unescape(url)
+            assert url.startswith(("https://", "mailto:")), (p.relative_to(out).as_posix(), url)
+
+
+def test_a_contributors_relative_link_is_made_absolute_against_the_page(tmp_path):
+    repo = tmp_path / "repo"
+    write_post(repo, "posts/2026/11/rel", "Rel", body="See [the other](../other/), [log](/moderation/log.md), "
+               "[anchor](#part), [mail](mailto:a@b.c) and [bad](javascript:alert(1)).")
+    out = tmp_path / "out"
+    build_site(repo, out)
+    page = (out / "posts/2026/11/rel/index.html").read_text(encoding="utf-8")
+    assert f'href="{BASE}/posts/2026/11/other/"' in page
+    assert f'href="{BASE}/moderation/log.md"' in page
+    assert f'href="{BASE}/posts/2026/11/rel/#part"' in page
+    assert 'href="mailto:a@b.c"' in page and 'href="#"' in page and "javascript" not in page

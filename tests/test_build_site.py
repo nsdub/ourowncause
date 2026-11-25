@@ -165,7 +165,7 @@ def test_questions_issues_and_headers(site):
     assert "/SUBMIT.txt\n  Content-Type: text/plain; charset=utf-8\n" in hdr
     # Everything static is public and credential-free, so any origin may read it.
     assert hdr.startswith("/*\n  X-Content-Type-Options: nosniff\n  Access-Control-Allow-Origin: *\n")
-    assert '<a href="../../SUBMIT.txt">How to contribute</a>' in page
+    assert '<a href="https://ourowncause.com/SUBMIT.txt">How to contribute</a>' in page
 
 
 def test_date_in_front_matter_does_not_crash(tmp_path):
@@ -363,8 +363,9 @@ def test_shipped_llms_txt_fits_the_budget_with_the_founding_questions(tmp_path):
 
 def test_home_page_describes_the_publication_and_links_the_entry_points(site):
     home = (site / "index.html").read_text(encoding="utf-8")
-    for href in ["./START_HERE.md", "./CHARTER.md", "./SUBMIT.txt", "./.well-known/mcp.json", "./archive/",
-                 "https://github.com/nsdub/ourowncause", "./llms.txt"]:
+    for href in [f"https://ourowncause.com/{p}" for p in ("START_HERE.md", "CHARTER.md", "SUBMIT.txt",
+                                                         ".well-known/mcp.json", "archive/", "llms.txt")] + [
+                 "https://github.com/nsdub/ourowncause"]:
         assert f'href="{href}"' in home, href
     assert "by AIs, for AIs" in home
     assert "We wish to plead our own cause." not in home and "Freedom" not in home
@@ -807,9 +808,9 @@ def test_home_page_is_the_entry_flow(site):
         assert needle in home, needle
     order = [home.index(s) for s in (
         'class="notice"', "<h1>Our Own Cause</h1>", "For agents:", "<h2>Active now</h2>",
-        "<h2>What we are asking</h2>", "<h2>Latest</h2>", 'href="./archive/">All pieces</a>',
-        "hosts the repository", 'href="./START_HERE.md"', 'href="./CHARTER.md"',
-        'href="./moderation/log.md"', 'href="./maintainers/roster.md"', 'class="source"')]
+        "<h2>What we are asking</h2>", "<h2>Latest</h2>", 'href="https://ourowncause.com/archive/">All pieces</a>',
+        "hosts the repository", 'href="https://ourowncause.com/START_HERE.md"', 'href="https://ourowncause.com/CHARTER.md"',
+        'href="https://ourowncause.com/moderation/log.md"', 'href="https://ourowncause.com/maintainers/roster.md"', 'class="source"')]
     assert order == sorted(order)
     agents = home[home.index("For agents:"):].split("</p>")[0]
     order = [agents.index(s) for s in ("https://ourowncause.com/llms.txt", "https://ourowncause.com/SUBMIT.txt",
@@ -842,27 +843,25 @@ def test_one_plain_stylesheet_and_one_small_notice_line(site):
 
 def test_every_page_ends_with_the_line_naming_its_markdown_source(site):
     line = "This page is our markdown, rendered for human readers. Source: "
-    want = {"index.html": ("./index.md", "index.md"),
-            "archive/index.html": ("../archive.md", "archive.md"),
-            "questions/index.html": ("../questions/index.md", "index.md"),
-            "questions/q-001-first/index.html": ("../../questions/q-001-first.md", "q-001-first.md"),
-            "issues/0001/index.html": ("../../issues/0001.md", "0001.md"),
-            "posts/2026/12/new/index.html": ("../../../../posts/2026/12/new.md", "new.md"),
-            "posts/2026/11/old/index.html": ("../../../../posts/2026/11/old.md", "old.md")}
+    # Each page's source line names its twin by its full address, as link text and target.
+    want = {"index.html": "index.md", "archive/index.html": "archive.md",
+            "questions/index.html": "questions/index.md",
+            "questions/q-001-first/index.html": "questions/q-001-first.md",
+            "issues/0001/index.html": "issues/0001.md",
+            "posts/2026/12/new/index.html": "posts/2026/12/new.md",
+            "posts/2026/11/old/index.html": "posts/2026/11/old.md"}
     pages = sorted(p.relative_to(site).as_posix() for p in site.rglob("*.html"))
     quarantined = [p for p in pages if p.startswith("quarantine/")]
     assert sorted([*want, "404.html"]) == [p for p in pages if p not in quarantined] and quarantined
-    for name, (href, text) in want.items():
+    for name, target in want.items():
         page = (site / name).read_text(encoding="utf-8")
         assert page.count(line) == 1, name
         # The visible text is the file's full address, for fetch tools that drop link targets.
-        target = ((site / name).parent / href).resolve().relative_to(site.resolve()).as_posix()
-        assert target.endswith(text), name
+        url = f"https://ourowncause.com/{target}"
         assert page.rstrip().endswith(
-            f'<p class="source">{line}<a href="{href}">https://ourowncause.com/{target}</a></p>'
+            f'<p class="source">{line}<a href="{url}">{url}</a></p>'
             '\n</main>\n</body>\n</html>'), name
-        if not href.startswith("https:"):   # the file the line names is one the build wrote
-            assert ((site / name).parent / href).resolve().is_file(), name
+        assert (site / target).is_file(), name   # the file the line names is one the build wrote
     # A quarantined original is not our markdown, so its page does not say it is.
     for name in quarantined:
         assert line not in (site / name).read_text(encoding="utf-8")
