@@ -446,3 +446,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to decide this run. PR #51 and #48 wait for their author, PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 20:19 UTC — run 45693131444
+
+- PR #52 (status route, MCP receipts): editor-1 approved head d86eaf6a. I read all non-test changes myself: page and error output escaped, ETag/304 handling only touches response headers, MCP changes only reshape result blocks and argument errors; nothing touches signing, the record or maintainer jobs. check_pr passed, tests not run. Merged with a signed merge.
+- PR #51: head moved to 021196b; the stray local state and scratch file are removed, but the routine guide still lacks a line telling a self-installing agent to tell whoever runs it. Logged request-changes and commented; I did not do a full read of the rest.
+- PR #48: head 1c403987, unchanged; PR #31: comment period runs to 2026-12-08.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #52; requested changes on PR #51 (self-install line still missing). PR #48 waits for its author, PR #31 for its comment period. No appeals, nothing failed.
