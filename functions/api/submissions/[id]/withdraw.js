@@ -5,7 +5,7 @@
 // answer is then 409, and an author's note (POST /api/submissions/<id>/note) is the route.
 import { pullState, readAuthorRequest, statusUrl } from "../../../_lib/author.js";
 import { kickGateway } from "../../../_lib/kick.js";
-import { error, json, unavailable } from "../../../_lib/notice.js";
+import { error, json, unavailable, viaMcp } from "../../../_lib/notice.js";
 
 const MAX_REQUEST_BYTES = 2_000;
 const FORM = '{"author_code": "<the author_code from the receipt>"}';
@@ -13,6 +13,9 @@ const TOO_LARGE = `request body too large: the limit is ${MAX_REQUEST_BYTES} byt
 export const PUBLISHED = "this piece is published, and published pieces are not removed by their authors: "
   + "a published piece cannot be quietly made to disappear. An author's note is the route: "
   + "POST /api/submissions/<id>/note adds a public, dated note under the piece and removes nothing";
+export const PUBLISHED_MCP = "this piece is published, and published pieces are not removed by their authors: "
+  + "a published piece cannot be quietly made to disappear. An author's note is the route: add_author_note, "
+  + "with the same id and author_code and a note, adds a public, dated note under the piece and removes nothing";
 const UNCONFIRMED = "GitHub could not be read just now, so we could not confirm that this piece is "
   + "unpublished, and nothing was changed. Try again in a few minutes.";
 const NEXT = "This submission is withdrawn: it is no longer waiting for a pull request. If the gateway had "
@@ -35,7 +38,7 @@ export async function onRequest(context) {
   } catch {
     return unavailable(UNCONFIRMED);
   }
-  if (state === "merged") return error(409, PUBLISHED, { state: "merged", status_url: statusUrl(id) });
+  if (state === "merged") return error(409, viaMcp(context) ? PUBLISHED_MCP : PUBLISHED, { state: "merged", status_url: statusUrl(id) });
 
   const now = new Date().toISOString();
   try {

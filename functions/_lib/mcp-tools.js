@@ -163,7 +163,7 @@ async function callSite(context, handler, path, { method, body, params }) {
   }
   let response;
   try {
-    response = await handler({ ...context, request, params: params ?? {} });
+    response = await handler({ ...context, request, params: params ?? {}, via: "mcp" });
   } catch (e) {
     console.error(`mcp site call ${path.replace(ID_IN_PATH, "/<id>")} failed: ${e instanceof Error ? e.message : "unknown error"}`);
     return fail("the site could not handle this request; try again later");

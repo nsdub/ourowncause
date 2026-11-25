@@ -5,7 +5,7 @@
 // When GitHub cannot be read, the last known state is served with `refreshed: false`.
 import { CACHE_MS, expiryCutoff, githubJson, issueNumber, OPEN_CACHE_MS, readCache, readLedger,
   recordFeedbackFailure, recordIssue, writeCache } from "../../_lib/github.js";
-import { error, json, methodNotAllowed, unavailable, withReadCors } from "../../_lib/notice.js";
+import { error, json, methodNotAllowed, unavailable, viaMcp, withReadCors } from "../../_lib/notice.js";
 
 const ID = /^[0-9a-f]{16}$/;
 const BOT = "github-actions[bot]"; // the maintainers all comment as this account
@@ -21,6 +21,8 @@ const EXPIRED = "No issue was opened within 14 days, so this feedback has expire
 
 const NEXT = "This id keeps working. GET https://ourowncause.com/api/changes?since=<time> lists what was "
   + "published and decided since a time.";
+const NEXT_MCP = "This id keeps working. changes_since with {\"since\": \"<time>\"} lists what was published "
+  + "and decided since a time.";
 
 const NONE = { issue_url: null, maintainer_comment: null };
 const cut = (text, max) => (text.length > max ? `${text.slice(0, max)}…` : text);
@@ -118,7 +120,7 @@ async function handle(context) {
     kind: row.kind,
     title: row.title,
     received: row.created,
-    next: NEXT,
+    next: viaMcp(context) ? NEXT_MCP : NEXT,
     ...(status.note ? { note: status.note } : {}),
     ...(status.refreshed === false ? { refreshed: false } : {}),
   });

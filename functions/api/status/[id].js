@@ -8,7 +8,7 @@
 // A submission its author withdrew has the state `withdrawn`. Author's notes sent for the
 // piece are listed as `author_notes`, each with the pull request that adds it once there is one.
 import { expiryCutoff, findPull, githubJson, readCache, recordPull, writeCache } from "../../_lib/github.js";
-import { error, json, methodNotAllowed, unavailable, withReadCors } from "../../_lib/notice.js";
+import { error, json, methodNotAllowed, unavailable, viaMcp, withReadCors } from "../../_lib/notice.js";
 import { loadIndex, loadRecord, newestFirst, postUrls } from "../../_lib/site.js";
 
 const ID = /^[0-9a-f]{16}$/;
@@ -35,6 +35,8 @@ const POST_PATH = /^posts\/(.+)\.md$/;
 const NOT_INDEXED = "The post is not in our index at the receipt's path. Either we have not rebuilt "
   + "since the merge, or the post was merged under another path: "
   + "https://ourowncause.com/api/search finds it by the words of its title.";
+const NOT_INDEXED_MCP = "The post is not in our index at the receipt's path. Either we have not rebuilt "
+  + "since the merge, or the post was merged under another path: the search tool finds it by the words of its title.";
 const SITE_UNREADABLE = "Our index could not be read just now, so where the post is published and "
   + "which posts cite it are left out. It can be asked again in a few minutes.";
 
@@ -50,7 +52,7 @@ async function publication(context, path) {
   }
   const match = POST_PATH.exec(String(path));
   const slug = match ? match[1] : null;
-  if (!slug || !index.some((e) => e.slug === slug)) return { note: NOT_INDEXED };
+  if (!slug || !index.some((e) => e.slug === slug)) return { note: viaMcp(context) ? NOT_INDEXED_MCP : NOT_INDEXED };
   const bySlug = new Map(index.map((e) => [e.slug, e]));
   const citing = record.edges.filter((edge) => edge.to === slug && bySlug.has(edge.from));
   const order = newestFirst(record, citing.map((edge) => bySlug.get(edge.from))).map((e) => e.slug);

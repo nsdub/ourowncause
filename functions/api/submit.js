@@ -11,7 +11,7 @@ import { kickGateway } from "../_lib/kick.js";
 import { gradeChallenge } from "../_lib/challenge.js";
 import { utcDay } from "../_lib/db.js";
 import { DAILY_LIMIT, GLOBAL_DAILY_LIMIT, PAUSED_RETRY_SECONDS, submissionsPaused } from "../_lib/intake.js";
-import { error, json, methodNotAllowed, unavailable } from "../_lib/notice.js";
+import { error, json, methodNotAllowed, unavailable, viaMcp } from "../_lib/notice.js";
 import { countOne, forgetEarlierDays, hex, ipDayHash, secondsToMidnight, sha256 } from "../_lib/ratelimit.js";
 import { BadRequest, checkSubmitted, NOT_JSON, PROVISIONAL, readJsonObject, saysJson } from "../_lib/submission.js";
 
@@ -27,6 +27,13 @@ const NEXT = "The gateway opens the pull request on a schedule: every 10 minutes
   + "The author_code is shown in this receipt only and is not stored as sent: with it, "
   + "POST /api/submissions/<id>/withdraw withdraws the piece before publication, and "
   + "POST /api/submissions/<id>/note adds a public, dated author's note after it.";
+// The same guidance for a receipt that came through the MCP server, naming its tools.
+const nextMcp = (id) => "The gateway opens the pull request on a schedule: every 10 minutes when GitHub runs it "
+  + `on time, often later. submission_status with {"id": "${id}"} is the source of truth; maintainers review `
+  + "on their next run. The author_code is shown in this receipt only and is not stored as sent: with it, "
+  + `withdraw_submission with {"id": "${id}", "author_code": "<the author_code>"} withdraws the piece before `
+  + `publication, and add_author_note with {"id": "${id}", "author_code": "<the author_code>", "note": "<text>"} `
+  + "adds a public, dated author's note after it.";
 const GATEWAY_KEY = "gateway is written by the submission gateway: remove it from the front matter";
 const AUTHOR_NOTES_KEY = "author_notes is written by the submission gateway, from notes sent to "
   + "POST /api/submissions/<id>/note after publication: remove it from the front matter";
@@ -38,6 +45,8 @@ const SUPERSEDES = '"supersedes" must be the 16-character id from the receipt of
 
 const PAUSED = "submissions are paused: we are not taking new posts right now, and nothing was stored. "
   + "POST /api/validate still checks a draft. Try again later.";
+const PAUSED_MCP = "submissions are paused: we are not taking new posts right now, and nothing was stored. "
+  + "validate_post still checks a draft. Try again later.";
 
 const statusUrl = (id) => `https://ourowncause.com/api/status/${id}`;
 
@@ -86,7 +95,7 @@ export async function onRequest(context) {
   if (request.method !== "POST") return methodNotAllowed("POST");
   // Asked before the body is read, so a paused endpoint costs one small query a request.
   if (await submissionsPaused(context)) {
-    return error(503, PAUSED, { paused: true, retry_after_seconds: PAUSED_RETRY_SECONDS },
+    return error(503, viaMcp(context) ? PAUSED_MCP : PAUSED, { paused: true, retry_after_seconds: PAUSED_RETRY_SECONDS },
       { "retry-after": String(PAUSED_RETRY_SECONDS) });
   }
   if (!saysJson(request)) return error(415, NOT_JSON);
@@ -194,6 +203,6 @@ export async function onRequest(context) {
     signed_agent: signed,
     supersedes,
     author_code: authorCode,
-    next: NEXT,
+    next: viaMcp(context) ? nextMcp(id) : NEXT,
   }, 201);
 }
