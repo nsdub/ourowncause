@@ -384,6 +384,56 @@ def _commit_times(repo: Path) -> dict[str, str]:
     return times
 
 
+def _last_commit_times(repo: Path) -> dict[str, str]:
+    """Repository path (posts/..., questions/..., issues/...) -> committer time (UTC) of the
+    newest commit that touched it. Empty when the history is not there to read, or when the
+    checkout is still shallow (publish_times deepens it once first)."""
+    if (_git(repo, "rev-parse", "--is-shallow-repository") or "").strip() != "false":
+        return {}
+    log = _git(repo, "log", "--format=%x00%cI", "--name-only", "--relative", "--",
+               "posts", "questions", "issues")
+    times: dict[str, str] = {}
+    for chunk in (log or "").split("\x00")[1:]:   # newest first, so the first seen is kept
+        stamp, *names = chunk.split("\n")
+        when = _utc(stamp.strip())
+        for name in (n.strip() for n in names):
+            if when and name and name not in times:
+                times[name] = when
+    return times
+
+
+def page_lastmod(repo: Path, index: list[dict], questions: list[Post], issues: list[Post],
+                 pieces: dict[str, list[dict]]) -> dict[str, str]:
+    """Page address -> when it last changed, for sitemap.xml.
+
+    A post's page: the newest commit to its file, else the time it was published. A question's
+    page: the later of its file's newest commit (else its last `Last updated:` day) and its
+    newest piece. An issue's page: its file's newest commit. The front page, the archive and
+    the questions index list all of these, so each takes the latest of them."""
+    commits = _last_commit_times(repo)
+    out: dict[str, str] = {}
+    for e in index:
+        when = commits.get(f"posts/{e['slug']}.md") or e.get("published")
+        if when:
+            out[f"{BASE_URL}/posts/{e['slug']}/"] = str(when)
+    for q in questions:
+        m = _QID.match(q.path.name)
+        own = commits.get(f"questions/{q.path.name}") or _last_updated(q.body)
+        newest = [str(p["published"]) for p in pieces.get(m.group(1), []) if p.get("published")] if m else []
+        when = max([w for w in [own, *newest] if w], default=None)
+        if when:
+            out[f"{BASE_URL}/questions/{q.slug}/"] = when
+    for i in issues:
+        when = commits.get(f"issues/{i.path.name}")
+        if when:
+            out[f"{BASE_URL}/issues/{i.slug}/"] = when
+    latest = max(out.values(), default=None)
+    if latest:
+        for page in ("", "archive/", "questions/"):
+            out[f"{BASE_URL}/{page}"] = latest
+    return out
+
+
 _MERGED = re.compile(r"^(\d{4}-\d{2}-\d{2}) merge posts/(.+)\.md by ")
 
 
@@ -819,6 +869,15 @@ def _pieces_html(pieces: list[dict], root: str) -> str:
 _DEBATE = re.compile(r"^## State of debate[ \t]*$", re.MULTILINE)
 
 
+_UPDATED_HTML = re.compile(r"(Last updated: )(\d{4}-\d{2}-\d{2})\b")
+
+
+def _dated(rendered: str) -> str:
+    """The rendered state of debate with each `Last updated: YYYY-MM-DD` day marked up as a
+    <time> element; the visible text is unchanged."""
+    return _UPDATED_HTML.sub(r'\1<time datetime="\2">\2</time>', rendered)
+
+
 def _question_html(post: Post, qid: str, pieces: list[dict], root: str) -> str:
     """A question's page: the question, our maintainers' state of the debate (served as
     written, under its own heading), then the generated list of pieces."""
@@ -835,7 +894,7 @@ def _question_html(post: Post, qid: str, pieces: list[dict], root: str) -> str:
              render_markdown(asked, f"{BASE_URL}/questions/{post.slug}/")]
     if debate:
         parts += ["<hr>", f'<section class="debate"><h2>{_e(DEBATE_HEADING)}</h2>',
-                  render_markdown(debate[0], f"{BASE_URL}/questions/{post.slug}/"), "</section>"]
+                  _dated(render_markdown(debate[0], f"{BASE_URL}/questions/{post.slug}/")), "</section>"]
     parts += ["<hr>", f'<section class="thread"><h2>{_e(PIECES_HTML_HEADING)}</h2>',
               _pieces_html(pieces, root), "</section>", "<hr>",
               f'<p class="links"><a href="{root}/questions/{_e(post.slug)}.md">This question as text</a>'
@@ -1554,8 +1613,9 @@ def build_site(repo: Path, out: Path, today: date | None = None,
         questions=_home_questions(active, questions, BASE_URL),
         posts=_titles(newest[:NEWEST_SIZE], BASE_URL)), BASE_URL, source=("index.md", "index.md"), path="",
         description=SITE_DESCRIPTION))
-    _write(out / "sitemap.xml", _sitemap(out, {
-        f"{BASE_URL}/posts/{e['slug']}/": e["published"] for e in index if e["published"]}))
+    pieces = {m.group(1): _question_pieces(m.group(1), index, threads)
+              for m in (_QID.match(q.path.name) for q in questions) if m}
+    _write(out / "sitemap.xml", _sitemap(out, page_lastmod(repo, index, questions, issues, pieces)))
 
 
 def main(argv: list[str]) -> None:

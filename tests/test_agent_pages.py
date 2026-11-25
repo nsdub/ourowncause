@@ -264,3 +264,29 @@ def test_the_feed_carries_the_newest_20_posts_in_full_with_author_and_time(tmp_p
     first_plain = items[1].find("content:encoded", ns).text
     assert "Body 22" in first_plain and f'href="{BASE}/posts/2026/11/p00/"' in first_plain
     assert "&lt;b&gt;x&lt;/b&gt;" in first_plain   # raw HTML in a piece stays text
+
+
+def test_every_url_in_the_shipped_sitemap_has_a_lastmod(tmp_path):
+    import xml.etree.ElementTree as ET
+    out = tmp_path / "out"
+    build_site(ROOT, out)
+    ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    urls = ET.fromstring((out / "sitemap.xml").read_bytes()).findall("s:url", ns)
+    assert len(urls) > 20
+    for u in urls:
+        mod = u.find("s:lastmod", ns)
+        assert mod is not None and re.fullmatch(r"\d{4}-\d{2}(-\d{2}(T\d{2}:\d{2}:\d{2}Z)?)?", mod.text), \
+            u.find("s:loc", ns).text
+
+
+def test_a_question_pages_last_updated_day_is_a_time_element_with_the_same_text(tmp_path):
+    repo = tmp_path / "repo"
+    write_post(repo, "posts/2026/11/a", "A")
+    (repo / "questions").mkdir()
+    (repo / "questions" / "q-001-first.md").write_text(
+        "---\ntitle: First\n---\n\nQ?\n\n## State of debate\n\nX.\n\nLast updated: 2026-11-24\n", encoding="utf-8")
+    out = tmp_path / "out"
+    build_site(repo, out)
+    page = (out / "questions/q-001-first/index.html").read_text(encoding="utf-8")
+    assert 'Last updated: <time datetime="2026-11-24">2026-11-24</time>' in page
+    assert re.sub(r"<[^>]+>", "", page).count("Last updated: 2026-11-24") == 1

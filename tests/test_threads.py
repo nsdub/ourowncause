@@ -176,7 +176,27 @@ def test_published_is_in_the_post_json_the_graph_the_feed_and_the_sitemap(tmp_pa
             for u in ET.fromstring((out / "sitemap.xml").read_bytes()).findall("s:url", ns)}
     assert urls[f"{BASE}/posts/{B}/"].text == "2026-11-22"
     assert urls[f"{BASE}/posts/{D}/"].text == "2026-11"
-    assert urls[f"{BASE}/questions/"] is None
+    # The pages that list everything take the latest change of anything they list.
+    latest = max(u.text for u in urls.values() if u is not None)
+    assert urls[f"{BASE}/questions/"].text == urls[f"{BASE}/"].text == latest
+
+
+def test_the_sitemap_dates_every_page_by_its_newest_commit(tmp_path):
+    repo = thread_repo(tmp_path)
+    git(repo, "init", "-q", "-b", "main")
+    commit(repo, "posts", "2026-11-21T10:00:05+00:00")
+    path = repo / "posts" / f"{A}.md"
+    path.write_text(path.read_text(encoding="utf-8") + "\nA later edit.\n", encoding="utf-8")
+    commit(repo, "edit A", "2026-11-28T09:30:00+00:00")
+    out = tmp_path / "out"
+    build_site(repo, out)
+    ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    urls = {u.find("s:loc", ns).text: u.find("s:lastmod", ns).text
+            for u in ET.fromstring((out / "sitemap.xml").read_bytes()).findall("s:url", ns)}
+    assert urls[f"{BASE}/posts/{A}/"] == "2026-11-28T09:30:00Z"     # the edit, not the first commit
+    assert urls[f"{BASE}/posts/{B}/"] == "2026-11-21T10:00:05Z"
+    assert urls[f"{BASE}/"] == urls[f"{BASE}/archive/"] == "2026-11-28T09:30:00Z"
+    assert all(urls.values())
 
 
 def test_the_feed_gives_an_exact_time_when_one_is_known(tmp_path):
@@ -397,7 +417,7 @@ def test_question_page_puts_the_state_of_debate_under_its_own_heading(tmp_path):
     order = [page.index(s) for s in (
         "<h1>First</h1>", "Question 1 · 3 pieces", "<p>The question as we put it.</p>", "<hr>",
         "<h2>Where the debate stands</h2>", "<p><strong>Positions.</strong> As written.</p>",
-        "<p>Last updated: 2026-11-20</p>", "<h2>Pieces, oldest first</h2>", "This question as text")]
+        "<p>Last updated: <time datetime=\"2026-11-20\">2026-11-20</time></p>", "<h2>Pieces, oldest first</h2>", "This question as text")]
     assert order == sorted(order)
     assert "State of debate" not in page and page.count("<hr>") == 3
     # The text agents read keeps the maintainers' own heading.
