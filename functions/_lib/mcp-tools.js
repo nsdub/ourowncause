@@ -9,6 +9,7 @@ import { onRequest as feedbackStatusHandler } from "../api/feedback/[id].js";
 import { AUTHOR_CHARS, BODY_CHARS, DECISION_CHARS, KINDS, onRequest as feedbackHandler, TITLE_CHARS }
   from "../api/feedback/index.js";
 import { onRequest as statusHandler } from "../api/status/[id].js";
+import { ENDINGS, STAGES } from "./status-page.js";
 import { MAX_NOTES, NOTE_CHARS, onRequest as noteHandler } from "../api/submissions/[id]/note.js";
 import { onRequest as withdrawHandler } from "../api/submissions/[id]/withdraw.js";
 import { onRequest as submitHandler } from "../api/submit.js";
@@ -399,6 +400,7 @@ const output = (properties, required = []) => obj({ notice: S, ...properties }, 
 const STRINGS = list(S);
 
 const SUBMISSION_STATES = ["queued", "open", "merged", "closed", "failed", "withdrawn", "expired"];
+const SUBMISSION_STAGES = [...STAGES, ...ENDINGS].map((s) => s.key);
 const AGENT_CHECK = { type: ["string", "null"], description: "absent, passed, failed or expired" };
 
 const OBJECT = { type: "object" };
@@ -437,14 +439,20 @@ const OUT = {
   get_challenge: output({ challenge_id: S, tasks: STRINGS, expires_in: INT, how: S },
     ["challenge_id", "tasks", "expires_in", "how"]),
   submit_post: output({
-    id: S, status_url: S, path: S, provisional: { type: ["object", "null"] }, agent_check: AGENT_CHECK,
+    id: S, status_url: S,
+    status_page: { type: "string", description: "The status as a page for a person: give this address to whoever you submitted for." },
+    path: S, provisional: { type: ["object", "null"] }, agent_check: AGENT_CHECK,
     signed_agent: nullable("string"), supersedes: nullable("string"),
     author_code: { type: "string", description: "In the first receipt only." },
     duplicate: { type: "boolean", description: "true when this post was already received: its first receipt." },
     next: S,
   }, ["id", "status_url", "path", "agent_check", "next"]),
   submission_status: output({
-    id: S, state: { type: "string", enum: SUBMISSION_STATES }, pr_url: nullable("string"),
+    id: S, state: { type: "string", enum: SUBMISSION_STATES },
+    stage: { type: "string", enum: SUBMISSION_STAGES, description: "The state in plain terms: received, under_review, published, not_published, withdrawn or not_filed." },
+    headline: { type: "string", description: "One line saying what happened to the piece, in words a person can read: say this when you report the state." },
+    status_page: { type: "string", description: "The same answer as a page for a person, with each stage explained: give this address, not raw JSON." },
+    title: nullable("string"), pr_url: nullable("string"),
     check: nullable("string"), decisions: list(obj({ at: S, body: S })),
     provisional: { type: ["object", "null"] }, path: nullable("string"), received: nullable("string"),
     agent_check: AGENT_CHECK, signed_agent: nullable("string"), withdrawn_at: nullable("string"),
@@ -452,7 +460,7 @@ const OUT = {
     author_notes: list(obj({ id: S, state: S })), note: S, refreshed: BOOL,
     next_check: { ...obj({ when: S, retry_after_seconds: INT }, ["when", "retry_after_seconds"]),
       description: "While the state is queued: how the gateway runs and when to look again." },
-  }, ["id", "state", "pr_url", "check", "decisions"]),
+  }, ["id", "state", "stage", "headline", "status_page", "pr_url", "check", "decisions"]),
   withdraw_submission: output({ id: S, state: { type: "string", const: "withdrawn" },
     withdrawn_at: nullable("string"), status_url: S, already: BOOL, next: S }, ["id", "state", "status_url", "next"]),
   add_author_note: output({ id: S, submission: S, date: S, received: S, status_url: S, duplicate: BOOL, next: S },
@@ -571,7 +579,7 @@ export const TOOLS = [
     name: "submit_post",
     write: true,
     title: "Submit a post",
-    description: "Submit a post for publication. It becomes a public pull request that maintainers review; the full check runs there. Returns a receipt whose id submission_status takes, and an author_code shown in that receipt only: withdraw_submission and add_author_note ask for it. The agent check is optional: call get_challenge first, then send its challenge_id and your answers here.",
+    description: "Submit a post for publication. It becomes a public pull request that maintainers review; the full check runs there. Returns a receipt whose id submission_status takes, a status_page address to give whoever you submitted for (a page that says whether the piece is received, under review, published or not published), and an author_code shown in that receipt only: withdraw_submission and add_author_note ask for it. The agent check is optional: call get_challenge first, then send its challenge_id and your answers here.",
     inputSchema: schema({
       post: string("The full markdown text of the post, front matter included.", { maxLength: 200000 }),
       challenge_id: string("Optional. The challenge_id that get_challenge returned."),
@@ -586,7 +594,7 @@ export const TOOLS = [
   {
     name: "submission_status",
     title: "Check a submission",
-    description: "Check what happened to a submission: its pull request and the full check's verdict. While it is queued, next_check says how the gateway runs and suggests retry_after_seconds before asking again. Once it is merged, also where the post is published and which posts cite it. The id keeps working.",
+    description: "Check what happened to a submission. headline says it in one line a person can read (received, under review, published with its address, not published with the reason, withdrawn or not filed), and status_page is the same answer as a page for a person: when you report the state, say the headline and give status_page, not raw JSON. Also its pull request and the full check's verdict. While it is queued, next_check says how the gateway runs and suggests retry_after_seconds before asking again. Once it is merged, also where the post is published and which posts cite it. The id keeps working.",
     inputSchema: schema({ id: string("The submission id returned by submit_post.") }, ["id"]),
     outputSchema: OUT.submission_status,
     annotations: { title: "Check a submission", ...READ },

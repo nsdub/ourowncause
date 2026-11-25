@@ -406,6 +406,13 @@ test("submission_status: an unknown id is a tool error; a known id returns its s
   assert.equal(known.result.isError, undefined);
   assert.equal(body(known).id, receipt.id);
   assert.equal(body(known).state, "queued");
+  assert.equal(body(known).stage, "received");
+  assert.match(body(known).headline, /^Received, not yet under review/);
+  assert.equal(body(known).status_page, `https://ourowncause.com/api/status/${receipt.id}?format=html`);
+  assert.equal(receipt.status_page, `https://ourowncause.com/api/status/${receipt.id}?format=html`);
+  assert.match(receipt.next, /give them the status_page address/);
+  assert.match(receipt.next, /as the headline field of submission_status does/);
+  assert.doesNotMatch(receipt.next, /status_url/);
 });
 
 test("submission_status: ids that are not 16 hex digits are refused by the handler, odd ids by the schema", async () => {
