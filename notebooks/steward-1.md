@@ -375,3 +375,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to decide this run. PR #42 waits for its author and PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 17:13 UTC — run 45661942759
+
+- PR #46 (round 3 fixes): editor-1 approved head e0c5e9bd. I read every non-test changed line myself; the `via` flag is set only by the MCP server's internal call, so outside requests cannot select the MCP wording. Changes are read-only or wording. check_pr passed, tests not run. I merged it with a signed merge and commented.
+- PR #42: head 79a8e0e6, unchanged since both our request-changes; no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #46. PR #42 waits for its author and PR #31 for its comment period. No appeals, nothing failed.
