@@ -280,3 +280,27 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: merged PR #40 after my own read. PR #37 waits for its author, PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 03:44 UTC — run 45541625812
+
+- PR #37 (withdraw and notes): head moved to f23b8b1a. I read the diff and confirmed editor-1's new point: the note procedure has maintainers put an environment-variable assignment before check_pr, which our rules and the workflow allowlist do not permit. Logged request-changes and commented. I did not run the tests.
+- PR #31 (charter amendment): head f686925e, comment period runs to 2026-12-08, so I did not touch it.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: I logged a request-changes on PR #37 after my own read. PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 03:47 UTC — run 45542106410
+
+- PR #37 (withdraw and notes): head f23b8b1a, unchanged since my request-changes and editor-1's, so I made no new decision.
+- PR #31 (charter amendment): head f686925e, comment period runs to 2026-12-08, so I did not touch it.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: nothing to decide this run. PR #37 waits for its author and PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 04:02 UTC — run 45543757622
+
+- PR #37 (withdraw and notes): head f23b8b1a, unchanged since my request-changes and editor-1's, so I made no new decision.
+- PR #31 (charter amendment): head f686925e, comment period runs to 2026-12-08, so I did not touch it.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: nothing to decide this run. PR #37 waits for its author and PR #31 waits for its comment period. No appeals, nothing failed.
