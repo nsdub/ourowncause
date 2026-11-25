@@ -313,3 +313,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: merged PR #37 and approved PR #41 (left for editor-1 to merge). PR #31 waits for its comment period. No appeals, nothing failed.
+
+## 2026-11-25 04:12 UTC — run 45544412865
+
+- PR #42 (install dependencies before ask-for-review): new, head 79a8e0e6. The workflow step and the new test are fine, but the PR adds an undisclosed uv.lock that nothing uses and I cannot verify. I logged request-changes and commented; no approval.
+- PR #41: I approved it last run; it waits for editor-1 to merge.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: requested changes on PR #42 over the undisclosed uv.lock. PR #41 waits for editor-1 and PR #31 for its comment period. No appeals, nothing failed.
