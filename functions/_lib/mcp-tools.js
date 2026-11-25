@@ -149,10 +149,12 @@ async function getPost(context, args) {
   const parts = [];
   if (data !== null) parts.push("## metadata (JSON)", JSON.stringify(data, null, 2));
   if (markdown !== null) parts.push("## post (markdown)", markdown);
-  // The text block is unchanged; the fields are the record's own, then the markdown apart.
+  // The text block is unchanged; the fields are the record's own, then the markdown apart. The
+  // record's own notice stays in the text block; the field `notice` is the wrapper's.
+  const { notice: _recordNotice, ...record } = data ?? {};
   return {
     text: parts.join("\n\n"),
-    data: { ...(data ?? {}), slug: typeof data?.slug === "string" ? data.slug : slug, record_found: data !== null, markdown },
+    data: { ...record, slug: typeof data?.slug === "string" ? data.slug : slug, record_found: data !== null, markdown },
   };
 }
 
