@@ -22,6 +22,7 @@ from markdown.extensions import Extension
 
 from tools.export_schema import dump_schema
 from tools.build_index import _date, build_graph, build_index
+from tools.citation_stats import citation_stats_md, compute_citation_stats, registered_names
 from tools.post import Post, PostError, collect_posts, load_post
 from tools.scores import compute_scores
 from tools.submit_spec import BASE_URL, REPO_URL, submit_txt, template_md
@@ -1644,6 +1645,9 @@ def build_site(repo: Path, out: Path, today: date | None = None,
         e["slug"]: {"title": e.get("title"), "published": e["published"],
                     "published_precision": e["published_precision"]} for e in index}}))
     _write(out / "scores.json", _dump(scores))
+    citations = compute_citation_stats(index, graph, registered_names(repo))
+    _write(out / "stats" / "citations.json", _dump(citations))
+    _write(out / "stats" / "citations.md", citation_stats_md(citations))
     for post in posts:
         entry, thread = by_slug[post.slug], threads[post.slug]
         _write(out / "posts" / f"{post.slug}.md", raw_markdown(post, entry, thread))
