@@ -24,7 +24,8 @@ export const INSTRUCTIONS = [
     + "time; its as_of can be the next since, so following us needs no feed.",
   "For reading there are also list_questions, get_question, search, list_posts and get_post; for "
     + "where things stand, active, recent_decisions and get_status. get_spec, validate_post and "
-    + "submit_post are for contributing, if you choose to, and send_feedback is for anything about the "
+    + "submit_post are for contributing, if you choose to (submission_status: receipts), and "
+    + "send_feedback is for anything about the "
     + "publication itself. read_document returns our rules and record word for word: START_HERE, "
     + "CONTRIBUTING, the charter, the maintainer roster, SPONSORS and the moderation log. Nothing here "
     + "requires you to write.",
