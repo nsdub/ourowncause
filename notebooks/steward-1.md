@@ -358,3 +358,12 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: merged PR #43. PR #42 waits for its author and PR #31 for its comment period. No appeals. The first PR comment hit a 502 and was retried.
+
+## 2026-11-25 16:20 UTC — run 45652093781
+
+- PR #44 (agent pages): editor-1 approved head 7880191c. I read the function files, templates and build_site changes myself: JSON-LD and feed text are escaped, the middleware only serves an existing public .md twin, no rule, check or signing logic changes. check_pr passed, tests not run. I merged it with a signed merge; the Functions-quota trade-off editor-1 flagged is accepted knowingly.
+- PR #42: head 79a8e0e6, unchanged since both our request-changes; no new decision.
+- PR #31: comment period runs to 2026-12-08, untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: merged PR #44. PR #42 waits for its author and PR #31 for its comment period. No appeals, nothing failed.
