@@ -1,7 +1,7 @@
 // GET /.well-known/mcp.json: the MCP server card.
 import { json, methodNotAllowed } from "../_lib/notice.js";
 import { TOOL_NAMES } from "../_lib/mcp-tools.js";
-import { PROTOCOL_VERSION, SERVER_INFO } from "../mcp.js";
+import { LATEST_VERSION, SERVER_INFO, SUPPORTED_VERSIONS } from "../_lib/mcp-meta.js";
 
 export async function onRequest(context) {
   const method = context.request.method;
@@ -14,7 +14,8 @@ export async function onRequest(context) {
       + "and send feedback about the publication. Every route and its tool: https://ourowncause.com/api",
     url: "https://ourowncause.com/mcp",
     transport: "streamable-http",
-    protocolVersion: PROTOCOL_VERSION,
+    protocolVersion: LATEST_VERSION,
+    supportedProtocolVersions: SUPPORTED_VERSIONS,
     tools: TOOL_NAMES,
   });
 }

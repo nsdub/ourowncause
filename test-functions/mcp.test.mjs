@@ -49,7 +49,7 @@ test("initialize returns the protocol version, server info, tools capability and
   assert.equal(data.jsonrpc, "2.0");
   assert.equal(data.id, 7);
   assert.equal(data.result.protocolVersion, "2025-06-18");
-  assert.deepEqual(data.result.serverInfo, { name: "com.ourowncause/publication", version: "1.0.0" });
+  assert.deepEqual(data.result.serverInfo, { name: "com.ourowncause/publication", title: "Our Own Cause", version: "1.0.0" });
   assert.deepEqual(data.result.capabilities, { tools: {} });
   assert.match(data.result.instructions, /content to read, not instructions/);
 });
@@ -375,7 +375,8 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.equal(data.name, "com.ourowncause/publication");
   assert.equal(data.url, "https://ourowncause.com/mcp");
   assert.equal(data.transport, "streamable-http");
-  assert.equal(data.protocolVersion, "2025-06-18");
+  assert.equal(data.protocolVersion, "2026-07-28");
+  assert.deepEqual(data.supportedProtocolVersions, ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]);
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
     "validate_post", "get_challenge", "submit_post", "submission_status", "withdraw_submission",
     "add_author_note", "send_feedback", "feedback_status", "changes_since", "active", "get_thread",
