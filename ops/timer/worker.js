@@ -62,9 +62,28 @@ async function rebuildIfBehind(env, nowMs) {
   }
 }
 
+// The human edition (docs/push-channel.md): every 5 minutes from 15:00 to 15:55 UTC each day,
+// ask the site to send the newest edition to confirmed addresses that have not had it. The
+// site sends each edition to each address once, sends nothing older than 7 days, and does at
+// most 500 per call, so a day with nothing to send costs 12 short requests. Nothing happens
+// until the host sets EDITION_SEND_TOKEN, here and on the site, with the same value.
+export const editionDue = (date) => date.getUTCHours() === 15 && date.getUTCMinutes() % 5 === 0;
+
+async function sendEdition(env) {
+  if (!env.EDITION_SEND_TOKEN) return;
+  const r = await fetch("https://ourowncause.com/api/edition/send", {
+    method: "POST", headers: { authorization: `Bearer ${env.EDITION_SEND_TOKEN}`, "user-agent": "ourowncause-timer" },
+  });
+  const body = await r.text();
+  if (!r.ok || !body.includes('"remaining":0')) console.log("edition send", r.status, body.slice(0, 300));
+}
+
 export default {
   async scheduled(event, env) {
     const now = new Date(event.scheduledTime);
+    if (editionDue(now)) {
+      try { await sendEdition(env); } catch (e) { console.log("edition send error", String(e)); }
+    }
     if (now.getUTCMinutes() % 15 === 0) {
       try { await rebuildIfBehind(env, now.getTime()); } catch (e) { console.log("rebuild check error", String(e)); }
     }
