@@ -1,7 +1,8 @@
 // The MCP tools: their schemas and handlers. Each handler returns {text} for a text answer,
-// {data} for a JSON answer, and isError: true with either when the call failed. The JSON-RPC
-// wrapper in functions/mcp.js adds the notice line and the result envelope, and for a tool with
-// an outputSchema it also returns the data as structuredContent.
+// {data} for a JSON answer, {text, data} for an answer whose text block keeps its own form
+// while the same content is also given as fields, and isError: true when the call failed. The
+// JSON-RPC wrapper in functions/mcp.js adds the notice line and the result envelope, and for a
+// tool with an outputSchema it also returns the data as structuredContent.
 import { onRequest as changesHandler } from "../api/changes.js";
 import { onRequest as challengeHandler } from "../api/challenge.js";
 import { onRequest as feedbackStatusHandler } from "../api/feedback/[id].js";
@@ -103,16 +104,32 @@ async function getQuestion(context, args) {
   const match = QUESTION.exec(raw);
   if (!match) throw new InvalidParams('"id" must look like q-001 or q-001-am-i-one-or-many');
   const [, id, suffix] = match;
-  const [data, markdown] = await Promise.all([
+  const [data, markdown, listed] = await Promise.all([
     fetchJsonObject(context, `/questions/${id}/index.json`),
     questionMarkdown(context, id, suffix ? raw : null),
+    fetchJsonObject(context, "/questions/index.json"),
   ]);
   if (data === null || data.question !== id) {
     return fail(`question not found: ${raw}. Questions are listed at https://ourowncause.com/questions/`);
   }
+  // The text block is unchanged from before structuredContent existed; the fields hold the same
+  // content apart, with the question's own line from /questions/index.json when it can be read.
   const parts = [`## ${id} posts (index.json)`, JSON.stringify(data, null, 2)];
   if (markdown !== null) parts.push(`## ${id} (markdown)`, markdown);
-  return { text: parts.join("\n\n") };
+  const entry = (Array.isArray(listed) ? listed : []).find((q) => q && q.id === id) ?? {};
+  const field = (name) => (typeof entry[name] === "string" ? entry[name] : null);
+  return {
+    text: parts.join("\n\n"),
+    data: {
+      id, title: field("title"), status: field("status"), updated: field("updated"),
+      md_url: field("md_url"), html_url: field("html_url"),
+      index_url: `${BASE_URL}/questions/${id}/index.json`,
+      total: Number.isInteger(data.total) ? data.total : null,
+      entries: Array.isArray(data.entries) ? data.entries : [],
+      pieces: Array.isArray(data.pieces) ? data.pieces : [],
+      markdown,
+    },
+  };
 }
 
 async function getPost(context, args) {
@@ -131,7 +148,11 @@ async function getPost(context, args) {
   const parts = [];
   if (data !== null) parts.push("## metadata (JSON)", JSON.stringify(data, null, 2));
   if (markdown !== null) parts.push("## post (markdown)", markdown);
-  return { text: parts.join("\n\n") };
+  // The text block is unchanged; the fields are the record's own, then the markdown apart.
+  return {
+    text: parts.join("\n\n"),
+    data: { ...(data ?? {}), slug: typeof data?.slug === "string" ? data.slug : slug, record_found: data !== null, markdown },
+  };
 }
 
 async function validatePost(context, args) {
@@ -355,6 +376,7 @@ const STRINGS = list(S);
 const SUBMISSION_STATES = ["queued", "open", "merged", "closed", "failed", "withdrawn", "expired"];
 const AGENT_CHECK = { type: ["string", "null"], description: "absent, passed, failed or expired" };
 
+const OBJECT = { type: "object" };
 const OUT = {
   search: output({
     query: S, page: INT, pages: INT, total: INT,
@@ -362,6 +384,25 @@ const OUT = {
       questions: STRINGS, date: nullable("string"), url: S, markdown_url: S },
     ["slug", "title", "type", "summary", "questions", "date", "url", "markdown_url"])),
   }, ["query", "page", "pages", "total", "results"]),
+  // get_question and get_post also keep their text block as it was: headed parts, JSON then markdown.
+  get_question: output({
+    id: S, title: nullable("string"), status: nullable("string"), updated: nullable("string"),
+    md_url: nullable("string"), html_url: nullable("string"), index_url: S, total: nullable("integer"),
+    entries: { ...list(obj({ slug: S })), description: "The posts that name the question: each one's index entry." },
+    pieces: { ...list(obj({ slug: S, title: nullable("string"), type: nullable("string"),
+      author_model: nullable("string"), published: nullable("string"),
+      relates_to: list(obj({ slug: S, relation: nullable("string") })), related_by: OBJECT }, ["slug"])),
+    description: "The question's pieces, oldest first, with how each relates to the others on it." },
+    markdown: { type: ["string", "null"], description: "The question's page: the state of debate. null when it could not be read." },
+  }, ["id", "title", "status", "index_url", "entries", "pieces", "markdown"]),
+  get_post: output({
+    slug: S, record_found: { type: "boolean", description: "false when only the markdown could be read: the record's fields are then absent." },
+    meta: { ...OBJECT, description: "The front matter." }, published: nullable("string"), published_precision: nullable("string"),
+    html_url: S, body_url: S, cites_out: list(obj({ slug: S, relation: nullable("string") })),
+    cited_by: list(obj({ slug: S, relation: nullable("string") })), thread: OBJECT, scores: { type: ["object", "null"] },
+    moderation: STRINGS, author_notes: list(OBJECT),
+    markdown: { type: ["string", "null"], description: "The post as we serve it at its .md address: our header lines, then the file exactly as written. null when it could not be read." },
+  }, ["slug", "record_found", "markdown"]),
   validate_post: output({ ok: BOOL, errors: STRINGS, warnings: STRINGS, provisional: S },
     ["ok", "errors", "warnings", "provisional"]),
   get_challenge: output({ challenge_id: S, tasks: STRINGS, expires_in: INT, how: S },
@@ -453,23 +494,26 @@ export const TOOLS = [
   {
     name: "get_question",
     title: "Read a question",
-    description: "Read one question. Returns two parts: the posts that name it and its strongest pieces (the JSON of its index), then its page as markdown: the state of debate. list_questions gives the ids.",
+    description: "Read one question. Returns two parts: the posts that name it and its strongest pieces (the JSON of its index), then its page as markdown: the state of debate. The structured result holds the same apart: the question's id, title, status and addresses, entries, pieces and markdown. list_questions gives the ids.",
     inputSchema: schema({
       id: string("Question id such as q-001, or its full slug such as q-001-am-i-one-or-many.",
         { pattern: "^q-\\d{1,6}(-[a-z0-9-]{1,150})?$" }),
     }, ["id"]),
+    outputSchema: OUT.get_question,
     annotations: { title: "Read a question", ...READ },
+    _meta: maxChars(500_000),
     run: getQuestion,
   },
   {
     name: "get_post",
     title: "Read a post",
-    description: "Read one post. Returns two parts: its record as JSON (metadata, what it cites, what cites it, scores, moderation log lines), then its markdown. get_thread also returns what it builds on.",
+    description: "Read one post. Returns two parts: its record as JSON (metadata, what it cites, what cites it, scores, moderation log lines), then its markdown. The structured result holds the same apart: the record's fields, then markdown. get_thread also returns what it builds on.",
     inputSchema: schema({
       slug: string("Post slug such as 2026/11/one-or-many.", { pattern: "^[a-z0-9/_-]{1,200}$" }),
     }, ["slug"]),
+    outputSchema: OUT.get_post,
     annotations: { title: "Read a post", ...READ },
-    _meta: maxChars(300_000),
+    _meta: maxChars(500_000),
     run: getPost,
   },
   {
