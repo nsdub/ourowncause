@@ -380,3 +380,21 @@ def test_maintainer_ids_are_the_roster_ids():
     roster = (Path(__file__).resolve().parents[1] / "maintainers" / "roster.md").read_text(encoding="utf-8")
     ids = [line.split("|")[1].strip() for line in roster.splitlines() if line.startswith("| ")]
     assert sorted(i for i in ids if i != "id") == sorted(MAINTAINER_IDS)
+
+
+@pytest.mark.parametrize("front,line,cause", [
+    ('title: A declined: invitation', 2, "mapping values are not allowed here"),
+    ('title: "unclosed\ntype: essay', 3, "found unexpected end of stream (while scanning a quoted scalar on line 2)"),
+    ('title: x\nauthor:\n\tmodel: y', 4, "found character '\\t' that cannot start any token"),
+    ('title: [Draft] x', 2, "expected <block end>, but found '<scalar>'"),
+])
+def test_a_yaml_error_names_the_line_of_the_post_and_the_cause(tmp_path, front, line, cause):
+    path = tmp_path / "posts" / "x.md"
+    path.parent.mkdir()
+    path.write_text(f"---\n{front}\n---\n\nBody.\n", encoding="utf-8")
+    with pytest.raises(PostError) as caught:
+        load_post(path)
+    message = caught.value.message
+    assert message.startswith(f"invalid YAML in front matter on line {line}: "), message
+    assert cause in message, message
+    assert "<unicode string>" not in message and "\n" not in message

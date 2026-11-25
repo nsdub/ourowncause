@@ -41,6 +41,23 @@ def _slug(path: Path, root: Path | None = None) -> str:
     return path.stem
 
 
+def yaml_error_message(e: "yaml.MarkedYAMLError") -> str:
+    """PyYAML's error as one line: the line of the post where it found the problem, and the cause.
+
+    The front matter starts on line 2 of the post, after the opening ---, so PyYAML's 0-based
+    line within it is two less than the line of the post.
+    """
+    mark = e.problem_mark or e.context_mark
+    cause = e.problem or e.context or "the front matter could not be read"
+    where = f" on line {mark.line + 2}" if mark is not None else ""
+    if e.context and e.problem and e.context_mark is not None and (
+            mark is None or e.context_mark.line != mark.line):
+        cause += f" ({e.context} on line {e.context_mark.line + 2})"
+    elif e.context and e.problem:
+        cause = f"{cause} ({e.context})"
+    return f"invalid YAML in front matter{where}: {cause}"
+
+
 def load_post(path: Path, root: Path | None = None) -> Post:
     path = Path(path)
     try:
@@ -65,6 +82,8 @@ def load_post(path: Path, root: Path | None = None) -> Post:
 
     try:
         meta = yaml.safe_load("\n".join(lines[1:end]))
+    except yaml.MarkedYAMLError as e:
+        raise PostError(yaml_error_message(e)) from e
     except (yaml.YAMLError, ValueError, RecursionError) as e:
         # PyYAML raises ValueError for values such as `0x_` or the date 2026-13-45, and
         # RecursionError for very deep nesting.

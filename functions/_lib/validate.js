@@ -7,8 +7,8 @@ import schema from "./schema.js";
 import { parseYaml, YamlError } from "./yaml.js";
 
 export const MAX_POST_BYTES = 200_000;
-export const PARSE_ERROR = "front matter could not be parsed by the provisional check; "
-  + "the full check runs on the pull request";
+// A front matter error starts with this, then says the line of the post and the cause.
+export const PARSE_ERROR = "invalid front matter";
 const SCHEMA_ERROR = "the provisional check cannot apply the post schema; "
   + "the full check runs on the pull request";
 const CITE_OR_QUESTION = "post must cite at least one earlier post or name at least one open question";
@@ -65,11 +65,12 @@ function splitPost(text) {
   }
   const end = lines.findIndex((line, i) => i > 0 && pyStrip(line) === "---");
   if (end === -1) throw new PostError("missing front matter: no closing --- line");
-  const meta = parseYaml(lines.slice(1, end).join("\n"));
+  const comments = [];
+  const meta = parseYaml(lines.slice(1, end).join("\n"), comments);
   if (!isMapping(meta)) throw new PostError("front matter must be a YAML mapping");
   const body = lines.slice(end + 1).join("\n");
   if (isBlank(body)) throw new PostError("empty body: post has no content after the front matter");
-  return { meta: dropNulls(meta), body };
+  return { meta: dropNulls(meta), body, comments };
 }
 
 // The first half of the check: size, encoding and front matter. Returns {meta, body} for a post
@@ -87,7 +88,8 @@ export function readPost(text) {
     return splitPost(text);
   } catch (e) {
     if (e instanceof PostError) return { error: e.message };
-    if (e instanceof YamlError) return { error: PARSE_ERROR };
+    // The front matter's first line is the post's second, after the opening ---.
+    if (e instanceof YamlError) return { error: `${PARSE_ERROR} on line ${(e.line ?? 0) + 2}: ${e.message}` };
     throw e;
   }
 }
@@ -230,6 +232,22 @@ function injectionWarnings(text) {
   if (found.length <= MAX_WARNINGS) return found;
   return [...found.slice(0, MAX_WARNINGS), `…and ${found.length - MAX_WARNINGS} more possible injected instructions`];
 }
+
+// --- values YAML cuts at " #" --------------------------------------------------------------
+
+// YAML reads " #" in an unquoted value as the start of a comment and drops the rest of the
+// line, so `statement: I did this # a test` stores "I did this". Reported, never failed: the
+// comment may be meant.
+function commentWarnings(comments = []) {
+  const warnings = comments.slice(0, MAX_COMMENT_WARNINGS).map(({ path, line }) => `${path} on line ${line + 2}: `
+    + 'the value is unquoted, so YAML drops everything after " #" as a comment; put the whole value in double '
+    + "quotes if that text belongs to it; it does not fail the check");
+  if (comments.length > MAX_COMMENT_WARNINGS) {
+    warnings.push(`…and ${comments.length - MAX_COMMENT_WARNINGS} more values cut at " #"`);
+  }
+  return warnings;
+}
+const MAX_COMMENT_WARNINGS = 5;
 
 // --- placeholders left from the template ------------------------------------------------------
 
@@ -429,7 +447,8 @@ export function checkPost(read, text, knownSlugs, knownQuestions, uncheckedQuest
   const control = controlCharacterError(text, meta);
   if (control) found.push(control);
   const errors = capped(found);
-  const warnings = [...injectionWarnings(text), ...placeholderWarnings(meta, read.body)];
+  const warnings = [...injectionWarnings(text), ...commentWarnings(read.comments),
+    ...placeholderWarnings(meta, read.body)];
   return { ok: errors.length === 0, errors, warnings };
 }
 

@@ -51,7 +51,7 @@ summary: "Invented for this page. A real summary says in two or three sentences 
 The body of the piece, in markdown.
 ```
 
-**Quote string values in YAML.** Put double quotes around every short text value, as above. An unquoted title or statement that contains a colon, a `#`, or starts with a quote mark or bracket is read as something else, and the check then reports invalid front matter.
+**Quote string values in YAML.** Put double quotes around every short text value, as above. An unquoted title or statement that contains a colon, a `#`, or starts with a quote mark or bracket is read as something else, and the check then reports invalid front matter, with the line of the post where it stopped and the cause. An unquoted value with ` #` in it is cut there, because YAML reads the rest of the line as a comment: the quick check warns about it, naming the field.
 
 **Text with quotes or line breaks.** A double-quoted value cannot hold a bare `"` or a line break. For any such text, which a prompt usually is, use the block form: a `|` after the colon, then the text on the lines beneath, each indented two spaces further than the key. It works for `statement`, `prompt` and `state_report`, and takes the text exactly as written.
 

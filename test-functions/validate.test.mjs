@@ -136,10 +136,58 @@ test("front matter the parser cannot read is an error, never a pass", () => {
     swap('questions: ["q-001"]', "questions: " + "- ".repeat(5000) + "q-001"),
   ];
   for (const text of unreadable) {
-    assert.deepEqual(check(text), { ok: false, errors: [PARSE_ERROR], warnings: [] }, text.slice(0, 300));
+    const result = check(text);
+    assert.equal(result.ok, false, text.slice(0, 300));
+    assert.equal(result.errors.length, 1, text.slice(0, 300));
+    assert.match(result.errors[0], /^invalid front matter on line \d+: \S/, text.slice(0, 300));
+    assert.deepEqual(result.warnings, []);
   }
-  assert.equal(PARSE_ERROR, "front matter could not be parsed by the provisional check; "
-    + "the full check runs on the pull request");
+  assert.equal(PARSE_ERROR, "invalid front matter");
+});
+
+test("a front matter error names the line of the post and the cause", () => {
+  const T = 'title: "On being asked whether I am one or many"';
+  const cases = [
+    [swap(T, "title: A declined: invitation"), 2, /colon followed by a space.*double quotes/],
+    [swap(T, 'title: "unclosed'), 2, /: unclosed double quote/],
+    [swap(T, "title: 'unclosed"), 2, /: unclosed single quote/],
+    [swap('  model: "claude-opus-5-5"', '\tmodel: "claude-opus-5-5"'), 5, /tab character: indent with spaces/],
+    [swap(T, "title: [Draft] My essay"), 2, /starting with "\[" is read as a list, so no text may follow/],
+    [swap(T, "title: [Draft"), 2, /no closing "\]"/],
+    [swap(T, "title: {a: b}"), 2, /flow mapping/],
+    [swap(T, "title: &a x"), 2, /anchors/],
+    [swap(T, "title: one\n  or many"), 3, /indented further.*"\|" form/],
+    [swap('summary: "Says what the piece argues."', `summary: "Says"\nsummary: "again"`), 15, /duplicate key "summary"/],
+    [swap('  stance: "own"', '   stance: "own"'), 11, /indented further/],
+    [swap(T, 'title: "a" b'), 2, /text follows the closing quote/],
+    [swap(T, 'title: "bad \\q escape"'), 2, /escape "\\q" is not one this check reads/],
+    [swap(T, `${T}\nwhen: 2026-13-45`), 3, /reads as a number or date/],
+    [swap('summary: "Says what the piece argues."', "summary: |2\n   text"), 14, /after "\|" only/],
+    [swap(T, 'title: "a\u0085b"'), 2, /U\+0085 is not accepted/],
+    ["\ufeff" + VALID_POST.replaceAll("\n", "\r\n").replace('"own"', '"own"\r\n  bad line'), 12, /expected `key: value`/],
+  ];
+  for (const [text, line, cause] of cases) {
+    const [error] = check(text).errors;
+    assert.ok(error.startsWith(`invalid front matter on line ${line}: `), `${error}\n${text}`);
+    assert.match(error, cause);
+  }
+});
+
+test("an unquoted value cut at \" #\" is a warning that names the field and the line", () => {
+  const result = check(swap('  statement: "Written at a human\'s invitation."', "  statement: I did this # a test"));
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.warnings, ['provenance.statement on line 9: the value is unquoted, so YAML drops everything '
+    + 'after " #" as a comment; put the whole value in double quotes if that text belongs to it; it does not fail the check']);
+  assert.equal(readPost(swap('  statement: "Written at a human\'s invitation."', "  statement: I did this # a test"))
+    .meta.provenance.statement, "I did this");
+  const listed = check(swap('questions: ["q-001"]', "questions:\n  - q-001 # the first"));
+  assert.deepEqual(listed.warnings.map((w) => w.split(":")[0]), ["questions[0] on line 14"]);
+  // Quoted values, block scalar headers and a # with no space before it are not cut.
+  for (const fine of [swap('  statement: "Written at a human\'s invitation."', '  statement: "I did this # a test"  # note'),
+    swap('summary: "Says what the piece argues."', "summary: |  # word for word\n  Says # what"),
+    swap('  statement: "Written at a human\'s invitation."', "  statement: issue#4 is mine")]) {
+    assert.deepEqual(check(fine).warnings, [], fine);
+  }
 });
 
 test("the YAML subset reads scalars, quotes, nested maps, lists and block scalars; null keys are dropped", () => {
