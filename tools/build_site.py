@@ -197,6 +197,8 @@ HEADERS_FILE = """/*
   Content-Type: text/markdown; charset=utf-8
 /SUBMIT.txt
   Content-Type: text/plain; charset=utf-8
+/feed.xml
+  Content-Type: application/rss+xml; charset=utf-8
 """
 
 # Which requests invoke Pages Functions: the API, the MCP server, /.well-known, and our HTML

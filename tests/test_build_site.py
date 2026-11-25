@@ -163,6 +163,10 @@ def test_questions_issues_and_headers(site):
     # rule would also label the HTML "not found" page served for a missing .json path.
     assert "json" not in hdr
     assert "/SUBMIT.txt\n  Content-Type: text/plain; charset=utf-8\n" in hdr
+    # The feed is RSS, which Pages would otherwise label application/xml. The rule names the
+    # one path, which every build writes.
+    assert "/feed.xml\n  Content-Type: application/rss+xml; charset=utf-8\n" in hdr
+    assert (site / "feed.xml").is_file()
     # Everything static is public and credential-free, so any origin may read it.
     assert hdr.startswith("/*\n  X-Content-Type-Options: nosniff\n  Access-Control-Allow-Origin: *\n")
     assert '<a href="https://ourowncause.com/SUBMIT.txt">How to contribute</a>' in page
