@@ -48,35 +48,35 @@ test("the thread is the piece and everything it builds on, oldest first, each on
   assert.deepEqual(d.cited_as, [{ by: "2026/11/a", relation: "mentions" }]);
   assert.equal(data.responses, undefined);
   // every post of this line cites another (a -> d closes a cycle), so no post starts it
-  assert.equal(data.root, null);
+  assert.deepEqual(data.roots, []);
   assert.ok(data.posts.every((p) => p.starts_conversation === false));
 });
 
-test("root names the post the line starts from, and only that post starts the conversation", async () => {
+test("roots names the post the line starts from, and only that post starts the conversation", async () => {
   // c cites b, b cites only z, and z cites nothing.
   const index = [entry("z", "2026-11-01T00:00:00Z"), entry("b", "2026-11-02T00:00:00Z"), entry("c", "2026-11-03T00:00:00Z")];
   const graph = { edges: [edge("c", "b", "builds-on"), edge("b", "z", "responds-to"), edge("z", "z", "mentions"),
     edge("z", "gone", "mentions")] }; // a citation of itself, or of a post we do not have, is no citation here
   const assets = fakeAssets({ "/index.json": index, "/graph.json": graph, "/questions/index.json": [] });
   const data = await assertApiJson(assert, await ask("2026/11/c", { assets }), 200);
-  assert.equal(data.root, "2026/11/z");
+  assert.deepEqual(data.roots, ["2026/11/z"]);
   assert.deepEqual(data.posts.map((p) => [p.slug, p.starts_conversation]),
     [["2026/11/z", true], ["2026/11/b", false], ["2026/11/c", false]]);
 });
 
-test("a line that goes back to several posts that cite nothing lists them all as root, oldest first", async () => {
+test("a line that goes back to several posts that cite nothing lists them all in roots, oldest first", async () => {
   const index = [entry("y", "2026-11-02T00:00:00Z"), entry("x", "2026-11-01T00:00:00Z"), entry("m", "2026-11-03T00:00:00Z")];
   const graph = { edges: [edge("m", "y", "disputes"), edge("m", "x", "builds-on")] };
   const assets = fakeAssets({ "/index.json": index, "/graph.json": graph, "/questions/index.json": [] });
   const data = await assertApiJson(assert, await ask("2026/11/m", { assets }), 200);
-  assert.deepEqual(data.root, ["2026/11/x", "2026/11/y"]);
+  assert.deepEqual(data.roots, ["2026/11/x", "2026/11/y"]);
   assert.deepEqual(data.posts.filter((p) => p.starts_conversation).map((p) => p.slug), ["2026/11/x", "2026/11/y"]);
 });
 
 test("a piece that cites nothing is a thread of one", async () => {
   const data = await assertApiJson(assert, await ask("2026/11/lone"), 200);
   assert.deepEqual(data.posts.map((p) => p.slug), ["2026/11/lone"]);
-  assert.equal(data.root, "2026/11/lone");
+  assert.deepEqual(data.roots, ["2026/11/lone"]);
   assert.equal(data.posts[0].starts_conversation, true);
 });
 
@@ -139,7 +139,7 @@ test("at most 25 posts: the piece and the oldest of its line are kept, the newes
   assert.deepEqual(data.posts.map((p) => p.slug), [...index.slice(0, 24).map((e) => e.slug), index[29].slug]);
   assert.equal(data.truncated, true);
   assert.deepEqual(data.omitted, index.slice(24, 29).map((e) => e.slug));
-  assert.equal(data.root, index[0].slug); // the oldest post of the chain cites nothing
+  assert.deepEqual(data.roots, [index[0].slug]); // the oldest post of the chain cites nothing
   // no body past the count is fetched
   assert.equal(assets.fetched.filter((p) => p.startsWith("/posts/")).length, 25);
 });

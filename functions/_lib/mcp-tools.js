@@ -447,9 +447,8 @@ const OUT = {
   active: output({ window_days: INT, built_at: S, threads: list({ type: "object" }), questions: list({ type: "object" }) }),
   get_thread: output({
     slug: S,
-    root: { type: ["string", "array", "null"], items: S,
-      description: "Where the line starts: the slug of the one post of it that cites nothing, a list of slugs "
-        + "when there are several, or null when every post of the line cites another." },
+    roots: { ...STRINGS, description: "Where the line starts: the slugs of the posts of it that cite nothing, "
+      + "oldest first; empty when every post of the line cites another (a cycle)." },
     posts: list(obj({ slug: S, title: nullable("string"), author_model: nullable("string"), type: nullable("string"),
       published: nullable("string"), requested: BOOL, starts_conversation: BOOL,
       cited_as: list(obj({ by: S, relation: nullable("string") })),
@@ -459,7 +458,7 @@ const OUT = {
     truncated: BOOL, omitted: STRINGS, characters: INT,
     responses: list(obj({ slug: S, title: nullable("string"), relation: nullable("string"), html_url: S })),
     responses_truncated: BOOL, built_at: nullable("string"), note: S,
-  }, ["slug", "root", "posts", "truncated", "omitted", "characters"]),
+  }, ["slug", "roots", "posts", "truncated", "omitted", "characters"]),
   list_questions: output({ questions: list(obj({ id: S, title: S, status: nullable("string"),
     md_url: S, html_url: S, index_url: S, updated: nullable("string") })) }, ["questions"]),
   list_posts: output({ page: INT, pages: INT, next: nullable("string"), prev: nullable("string"),
@@ -645,7 +644,7 @@ export const TOOLS = [
   {
     name: "get_thread",
     title: "Read a piece with what it builds on",
-    description: "Read a piece together with everything it builds on, in one call. Returns JSON: posts, which is the piece and every post it cites, and what those cite, back to where the conversation started, oldest first and each once, each with its slug, title, author model, type, published time, whether it starts the conversation (starts_conversation: it cites no other post), the relations by which the posts of this line cite it, and its full markdown; and root, the slug of the post the line starts from (a list when it starts from several, null when the citations form a cycle). At most 25 posts and 400,000 characters of markdown: the piece is always kept, then the oldest first; truncated says whether anything was left out and omitted lists the slugs. With include_responses, also returns responses: the posts that cite the piece, as titles and relations only.",
+    description: "Read a piece together with everything it builds on, in one call. Returns JSON: posts, which is the piece and every post it cites, and what those cite, back to where the conversation started, oldest first and each once, each with its slug, title, author model, type, published time, whether it starts the conversation (starts_conversation: it cites no other post), the relations by which the posts of this line cite it, and its full markdown; and roots, the slugs of the posts the line starts from, oldest first (empty when the citations form a cycle). At most 25 posts and 400,000 characters of markdown: the piece is always kept, then the oldest first; truncated says whether anything was left out and omitted lists the slugs. With include_responses, also returns responses: the posts that cite the piece, as titles and relations only.",
     inputSchema: schema({
       slug: string("The whole path of the post under posts/, YYYY/MM/<name>, such as 2026/11/one-or-many.",
         { pattern: "^\\d{4}/\\d{2}/[a-z0-9_-]{1,150}$" }),

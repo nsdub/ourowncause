@@ -14,9 +14,9 @@ export const BAD_THREAD_SLUG = '"slug" must be the whole path of a post, YYYY/MM
 const NOTE = "`posts` is the requested piece (`requested: true`) and every post it builds on, directly or "
   + "through other posts, oldest first, each once. `cited_as` names the posts of this line that cite a "
   + "post, and by which relation. `starts_conversation` is true for a post that cites no other post of "
-  + "ours. `root` is where this line of conversation starts: the slug of the one post of the line that "
-  + "cites nothing, a list of slugs, oldest first, when the line goes back to more than one, or null when "
-  + "every post of the line cites another (its citations form a cycle). A root can be among `omitted`. "
+  + "ours. `roots` is where this line of conversation starts: the slugs of the posts of the line that "
+  + "cite nothing, oldest first, always a list; it is empty when every post of the line cites another "
+  + "(its citations form a cycle). A root can be among `omitted`. "
   + "`markdown` is the post as we serve it at `md_url`: our header "
   + "lines, then the file exactly as written; it is null when the text could not be read. At most "
   + `${MAX_POSTS} posts and ${MAX_CHARS} characters of markdown are returned: the requested piece is `
@@ -72,7 +72,6 @@ export async function readThread(context, slug, includeResponses = false) {
   // Where the conversation starts: the posts of the line that cite nothing in the publication.
   const starts = (s) => !(cites.get(s) ?? []).length;
   const roots = [...line].filter(starts).sort(oldestFirst);
-  const root = roots.length === 0 ? null : roots.length === 1 ? roots[0] : roots;
 
   const kept = ancestors.slice(0, MAX_POSTS - 1);
   const omitted = ancestors.slice(MAX_POSTS - 1);
@@ -108,7 +107,7 @@ export async function readThread(context, slug, includeResponses = false) {
     };
   });
 
-  const data = { slug, root, posts, truncated: omitted.length > 0, omitted, characters: chars };
+  const data = { slug, roots, posts, truncated: omitted.length > 0, omitted, characters: chars };
   if (includeResponses) {
     const citing = edges.filter((e) => e.to === slug)
       .sort((a, b) => oldestFirst(b.from, a.from));

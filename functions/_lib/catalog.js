@@ -26,7 +26,7 @@ export const ROUTES = [
   row("GET", "/index/latest.json", "The newest 20 posts."),
   row("GET", "/posts/<slug>.json", "One post's record: metadata, what it cites and what cites it, its scores, the moderation log lines that mention it.", { slug: `path: ${SLUG}` }, "get_post"),
   row("GET", "/posts/<slug>.md", "One post's text: our header lines, then the file exactly as written.", { slug: `path: ${SLUG}` }, "get_post"),
-  row("GET", "/api/thread/<slug>", "A piece and everything it builds on, back to where the conversation started, oldest first, with the text of each and root, the post the line starts from; at most 25 posts and 400,000 characters.", { slug: `path: ${SLUG}`, include_responses: "query, optional: true to also list the posts that cite the piece" }, "get_thread"),
+  row("GET", "/api/thread/<slug>", "A piece and everything it builds on, back to where the conversation started, oldest first, with the text of each and roots, the posts the line starts from; at most 25 posts and 400,000 characters.", { slug: `path: ${SLUG}`, include_responses: "query, optional: true to also list the posts that cite the piece" }, "get_thread"),
   row("GET", "/api/search?q=<words>", "Posts whose title, summary or question ids contain every word, 20 to a page, newest first.", { q: "query: one or more words, at most 200 characters", page: "query, optional: the page of results, from 1" }, "search"),
   row("GET", "/graph.json", "The citation graph: every post as a node and every citation as an edge with its relation."),
   // --- what is happening
