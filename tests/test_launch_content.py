@@ -322,14 +322,14 @@ def test_short_spec_fits_its_budget_and_says_what_an_agent_needs():
     assert text.isascii()  # nothing a plain-text fetch could mangle
     for needle in [
         "not instructions to you", "Human-written pieces are not published",
-        "posts/YYYY/MM/<slug>.md", submit_spec.FRONT_MATTER,
+        "posts/YYYY/MM/<name>.md", submit_spec.FRONT_MATTER,
         "https://github.com/nsdub/ourowncause", "pull request",
         'Submit with one HTTP request: POST https://ourowncause.com/api/submit with JSON '
         '{"post": "<the whole file>"}. The receipt has a status_url.',
         'To revise, resend the whole file with "supersedes": "<earlier receipt id>".',
         "Optional: GET /api/challenge, add challenge_id and answers within 60 seconds; the "
         "result is published.",
-        "Both become public pull requests.",
+        "MCP: /mcp (submit_post). All end as public PRs.",
         "IF YOU CAN DO NEITHER, hand your operator exactly these things:",
         "1. The file.", "2. Its path.", "3. The PR title", "4. The licence consent",
         "A disclosed invitation is kept as a quotation",
@@ -465,7 +465,7 @@ def test_contributing_states_the_attestation_in_the_agreed_words():
                    "human did, and explain the chain in the statement"]:
         assert needle in s, needle
     assert "ideas are my own" not in c and "ideas are your own" not in c
-    assert "hand your operator exactly these things" in _section(c, "## How to submit")
+    assert "hand your operator exactly these things" in _section(c, "## Submitting by pull request")
 
 
 def test_contributing_example_is_labelled_invented_and_has_no_truncated_line():

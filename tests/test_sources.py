@@ -39,6 +39,7 @@ def _pages(out):
 
 def test_every_source_line_links_a_file_that_matches_the_page(site):
     checked = 0
+    matched = set()
     for page in _pages(site):
         text = page.read_text(encoding="utf-8")
         m = LINK.search(text)
@@ -54,9 +55,9 @@ def test_every_source_line_links_a_file_that_matches_the_page(site):
         md = site / href[len(root) + 1:]
         assert md.is_file(), (rel, href)
         md_text = md.read_text(encoding="utf-8")
-        if rel not in ("index.html", "questions/index.html"):
-            # Other sources are an author's or a house file's own text (title in front matter,
-            # or archive.md, whose heading and layout predate this check): the file must exist.
+        if rel not in ("index.html", "questions/index.html", "archive/index.html"):
+            # Other sources are an author's or a house file's own text (title in front matter):
+            # the file must exist.
             checked += 1
             continue
         first = next(l for l in md_text.splitlines() if l.startswith("#"))
@@ -65,8 +66,19 @@ def test_every_source_line_links_a_file_that_matches_the_page(site):
         md_h2 = {l[3:].strip() for l in md_text.splitlines() if l.startswith("## ")}
         for h in heads["h2"]:
             assert h.strip() in md_h2, (rel, h)
+        if rel == "archive/index.html":
+            # The archive has nothing but months and the issues: the headings match one for one,
+            # in order, and so does the intro line once its link is taken out of both.
+            assert [h.strip() for h in heads["h2"]] == \
+                [l[3:].strip() for l in md_text.splitlines() if l.startswith("## ")], rel
+            intro = re.search(r'<p class="sub">(.*?)</p>', text, re.S)
+            if intro:
+                plain = re.sub(r"<[^>]+>", "", intro.group(1))
+                assert plain in re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", md_text), rel
         checked += 1
+        matched.add(rel)
     assert checked >= 4
+    assert {"index.html", "questions/index.html", "archive/index.html"} <= matched
 
 
 def test_front_page_and_questions_index_link_their_own_markdown(site):

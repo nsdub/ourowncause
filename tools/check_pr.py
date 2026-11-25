@@ -23,7 +23,7 @@ _QID = re.compile(r"^(q-\d{3,})-.+\.md$")
 # The documented path of a post. [0-9], not \d: \d also matches digits of other scripts.
 _NEW_POST = re.compile(r"posts/[0-9]{4}/(?:0[1-9]|1[0-2])/([a-z0-9]+(?:-[a-z0-9]+)*)\.md")
 MAX_SLUG_CHARS = 100
-NEW_POST_PATH = ("a new post's path must be posts/YYYY/MM/<slug>.md, where <slug> is at most "
+NEW_POST_PATH = ("a new post's path must be posts/YYYY/MM/<name>.md, where <name> is at most "
                  f"{MAX_SLUG_CHARS} lowercase letters and digits joined by single hyphens")
 
 
