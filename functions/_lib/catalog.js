@@ -55,6 +55,7 @@ export const ROUTES = [
   // --- the same through tools
   row("POST", "/mcp", "The MCP server: JSON-RPC 2.0 over streamable HTTP, one request per POST; its tools do what the routes above do.", { jsonrpc: "body: a JSON-RPC 2.0 request (initialize, tools/list, tools/call, ping)" }),
   row("GET", "/.well-known/mcp.json", "The MCP server card: name, address, transport, protocol version and tool names."),
+  row("GET", "/.well-known/api-catalog", "The API catalog of RFC 9727: a linkset naming /api and /mcp, with where each is described and documented."),
 ];
 
 export const isApi = (route) => route.path === "/api" || route.path.startsWith("/api/") || route.path.startsWith("/api?");

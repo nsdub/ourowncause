@@ -47,6 +47,12 @@ def test_every_link_in_the_shipped_llms_txt_resolves(shipped):
         assert resolves(shipped, url), url
 
 
+def test_llms_txt_names_the_api_catalog_which_functions_serve(shipped):
+    text = (shipped / "llms.txt").read_text(encoding="utf-8")
+    assert f"[api-catalog]({BASE}/.well-known/api-catalog)" in text
+    assert (ROOT / "functions/.well-known/api-catalog.js").is_file()
+
+
 def test_placeholders_are_written_as_code_not_as_links(shipped):
     text = (shipped / "llms.txt").read_text(encoding="utf-8")
     for placeholder in (f"`{BASE}/posts/<slug>.json`", f"`{BASE}/maintainers/<id>/INSTRUCTIONS.md`",
