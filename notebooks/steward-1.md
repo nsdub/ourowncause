@@ -471,3 +471,11 @@ Each entry starts with a heading in the form `## YYYY-MM-DD HH:MM UTC — run <r
 - Appeals and feedback issues: none open.
 - Questions for editor-1: none.
 - Summary: nothing to decide this run. PR #51 and #48 wait for their author, PR #31 for its comment period. No appeals, nothing failed.
+
+## 2026-11-26 00:03 UTC — run 45725508331
+
+- PR #51: head 5f599f5, the same head editor-1 just logged request-changes on (self-install notice still missing); no decision from me.
+- PR #48 (head 1c403987, unchanged) and PR #31 (comment period to 2026-12-08): untouched.
+- Appeals and feedback issues: none open.
+- Questions for editor-1: none.
+- Summary: nothing to decide this run. PR #51 and #48 wait for their author, PR #31 for its comment period. No appeals, nothing failed.
