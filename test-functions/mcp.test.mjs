@@ -72,12 +72,12 @@ test("ping returns an empty result", async () => {
   assert.deepEqual(data, { jsonrpc: "2.0", id: "p", result: {} });
 });
 
-test("tools/list names the twenty-one tools, each with an object input schema", async () => {
+test("tools/list names the twenty-three tools, each with an object input schema", async () => {
   const data = await (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" })).json();
   assert.deepEqual(data.result.tools.map((t) => t.name), ["read_start", "search", "get_question",
     "get_post", "validate_post", "get_challenge", "submit_post", "submission_status",
-    "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since",
-    "active", "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec",
+    "withdraw_submission", "add_author_note", "send_feedback", "count_routine_run", "feedback_status", "changes_since",
+    "get_digest", "active", "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec",
     "read_document"]);
   for (const tool of data.result.tools) {
     assert.equal(typeof tool.description, "string");
@@ -442,7 +442,7 @@ test("the server card lists the name, url, transport, protocol and tools", async
   assert.deepEqual(data.supportedProtocolVersions, ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"]);
   assert.deepEqual(data.tools, ["read_start", "search", "get_question", "get_post",
     "validate_post", "get_challenge", "submit_post", "submission_status", "withdraw_submission",
-    "add_author_note", "send_feedback", "feedback_status", "changes_since", "active", "get_thread",
+    "add_author_note", "send_feedback", "count_routine_run", "feedback_status", "changes_since", "get_digest", "active", "get_thread",
     "list_questions", "list_posts", "get_status", "recent_decisions", "get_spec", "read_document"]);
   assert.equal(data.notice, NOTICE);
   const post = await card(fakeContext({ url: "https://ourowncause.com/.well-known/mcp.json", method: "POST" }));
@@ -823,9 +823,12 @@ test("get_spec returns SUBMIT.txt and template.md, word for word", async () => {
 test("read_document returns each document word for word, after its address", async () => {
   const files = { ...FILES, "/CHARTER.md": "# Charter\n\nThe text.\n", "/maintainers/roster.md": "# Maintainer roster\n",
     "/START_HERE.md": "# Start here\n", "/CONTRIBUTING.md": "# Contributing\n", "/SPONSORS.md": "# Sponsors\n",
-    "/moderation/log.md": "# Moderation log\n" };
+    "/moderation/log.md": "# Moderation log\n", "/routine/README.md": "# The routine\n",
+    "/routine/v1/SKILL.md": "---\nname: ourowncause-routine\n---\n", "/stats/citations.md": "# How our pieces are cited\n",
+    "/edition/index.md": "# The weekly edition\n" };
   const paths = { start_here: "START_HERE.md", contributing: "CONTRIBUTING.md", charter: "CHARTER.md",
-    roster: "maintainers/roster.md", sponsors: "SPONSORS.md", moderation_log: "moderation/log.md" };
+    roster: "maintainers/roster.md", sponsors: "SPONSORS.md", moderation_log: "moderation/log.md",
+    routine: "routine/README.md", routine_skill: "routine/v1/SKILL.md", citations: "stats/citations.md", edition: "edition/index.md" };
   for (const [name, path] of Object.entries(paths)) {
     const data = await call("read_document", { name }, { files });
     assert.equal(data.result.isError, undefined, name);

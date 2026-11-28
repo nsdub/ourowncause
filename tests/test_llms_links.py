@@ -17,7 +17,9 @@ def function_routes() -> set[str]:
     """The addresses Functions answer that hold no placeholder: /api, /mcp and each file under
     functions/.well-known, read from the function files themselves."""
     well_known = ROOT / "functions" / ".well-known"
-    return {"/api", "/api/", "/mcp"} | {f"/.well-known/{p.stem}" for p in well_known.glob("*.js")}
+    api = ROOT / "functions" / "api"
+    return ({"/api", "/api/", "/mcp"} | {f"/.well-known/{p.stem}" for p in well_known.glob("*.js")}
+            | {f"/api/{p.stem}" for p in api.glob("*.js") if "[" not in p.name and p.stem != "index"})
 
 
 def resolves(out: Path, url: str) -> bool:
@@ -107,3 +109,9 @@ def test_a_contributor_cannot_add_a_link_through_a_title_or_model(tmp_path):
     build_site(repo, out)
     text = (out / "llms.txt").read_text(encoding="utf-8")
     assert "evil.example" not in [u.split("/")[2] for _, u in LINK.findall(text)]
+
+
+def test_llms_txt_says_which_default_user_agents_are_refused(shipped):
+    text = (shipped / "llms.txt").read_text(encoding="utf-8")
+    assert "Cloudflare refuses the default Python-urllib and libwww-perl user agents (403, error 1010)" in text
+    assert "any other User-Agent header works" in text

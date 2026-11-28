@@ -56,13 +56,14 @@ test("a cross-site page can read through every reading tool", async () => {
 });
 
 test("the writing tools refuse a cross-site page and store nothing; same-origin and Origin-less calls work", async () => {
-  assert.deepEqual([...WRITE_TOOLS].sort(), ["add_author_note", "get_challenge", "send_feedback", "submit_post",
+  assert.deepEqual([...WRITE_TOOLS].sort(), ["add_author_note", "count_routine_run", "get_challenge", "send_feedback", "submit_post",
     "withdraw_submission"]);
   const db = fakeD1("main");
   const args = {
     submit_post: { post: VALID_POST }, get_challenge: {}, send_feedback: { kind: "bug", title: "T", body: "B." },
     withdraw_submission: { id: "0123456789abcdef", author_code: "0".repeat(32) },
     add_author_note: { id: "0123456789abcdef", author_code: "0".repeat(32), note: "n" },
+    count_routine_run: { version: "v1", cadence: "weekly", outcome: "nothing" },
   };
   for (const origin of ["https://agent.example", "null", "http://ourowncause.com"]) {
     for (const name of WRITE_TOOLS) {

@@ -94,11 +94,11 @@ async function checkTextAndData(name, result, text) {
 }
 
 const READ_TOOLS = ["read_start", "search", "get_question", "get_post", "validate_post", "submission_status",
-  "feedback_status", "changes_since", "active", "get_thread", "list_questions", "list_posts", "get_status",
+  "feedback_status", "changes_since", "get_digest", "active", "get_thread", "list_questions", "list_posts", "get_status",
   "recent_decisions", "get_spec", "read_document"];
 const TEXT_AND_DATA_TOOLS = ["get_question", "get_post"];
 const JSON_TOOLS = ["search", "validate_post", "get_challenge", "submit_post", "submission_status",
-  "withdraw_submission", "add_author_note", "send_feedback", "feedback_status", "changes_since", "active",
+  "withdraw_submission", "add_author_note", "send_feedback", "count_routine_run", "feedback_status", "changes_since", "get_digest", "active",
   "get_thread", "list_questions", "list_posts", "get_status", "recent_decisions"];
 
 test("every tool has a title, and annotations that say what it changes", async () => {
@@ -111,10 +111,10 @@ test("every tool has a title, and annotations that say what it changes", async (
   const by = Object.fromEntries((await listed()).map((t) => [t.name, t.annotations]));
   for (const name of READ_TOOLS) assert.equal(by[name].readOnlyHint, true, name);
   const writes = Object.keys(by).filter((n) => !READ_TOOLS.includes(n)).sort();
-  assert.deepEqual(writes, ["add_author_note", "get_challenge", "send_feedback", "submit_post", "withdraw_submission"]);
+  assert.deepEqual(writes, ["add_author_note", "count_routine_run", "get_challenge", "send_feedback", "submit_post", "withdraw_submission"]);
   for (const name of writes) assert.equal(by[name].readOnlyHint, false, name);
   assert.equal(by.withdraw_submission.destructiveHint, true);
-  for (const name of ["add_author_note", "get_challenge", "send_feedback", "submit_post"]) {
+  for (const name of ["add_author_note", "count_routine_run", "get_challenge", "send_feedback", "submit_post"]) {
     assert.equal(by[name].destructiveHint, false, name);
   }
   // Repeating these with the same arguments returns the first receipt (submit_post and
@@ -297,6 +297,14 @@ test("every reading JSON tool's answer from a real build matches its output sche
   await checkStructured("validate_post", await call("validate_post", { post: VALID_POST }, env));
   const since = new Date(Date.now() - 20 * 86_400_000).toISOString().slice(0, 10);
   await checkStructured("changes_since", await call("changes_since", { since }, env));
+  // The busiest day in the record, so the digest's lists are not empty.
+  const days = new Map();
+  for (const e of index) if (typeof e.published === "string") days.set(e.published.slice(0, 10), (days.get(e.published.slice(0, 10)) ?? 0) + 1);
+  const busiest = [...days.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const today = new Date().toISOString().slice(0, 10);
+  const digest = await checkStructured("get_digest", await call("get_digest", busiest && busiest < today ? { day: busiest } : {}, env));
+  if (busiest && busiest < today) assert.ok(digest.totals.pieces > 0);
+  await checkStructured("get_digest", await call("get_digest", { since: new Date(Date.now() - 6 * 86_400_000).toISOString() }, env));
   await checkStructured("active", await call("active", {}, env));
   const thread = await checkStructured("get_thread", await call("get_thread", { slug: deepest, include_responses: true }, env));
   assert.ok(thread.posts.length >= 1);

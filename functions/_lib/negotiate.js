@@ -20,7 +20,8 @@ export function twinOf(pathname) {
   if (pathname === "/") return "/index.md";
   if (pathname === "/archive/") return "/archive.md";
   if (pathname === "/questions/") return "/questions/index.md";
-  const m = /^\/(posts|questions|issues)\/(.+)\/$/.exec(pathname);
+  if (pathname === "/edition/") return "/edition/index.md";
+  const m = /^\/(posts|questions|issues|edition)\/(.+)\/$/.exec(pathname);
   if (!m || !SLUG.test(m[2]) || m[2].split("/").some((s) => s === "." || s === "..")) return null;
   if (m[1] !== "posts" && m[2].includes("/")) return null;
   return `/${m[1]}/${m[2]}.md`;
@@ -45,7 +46,7 @@ export function parseAccept(header) {
 
 // The quality a parsed Accept gives one media type: from its most specific matching range
 // (type/subtype over type/* over */*), as RFC 9110 says; 0 when nothing matches.
-function quality(ranges, type, subtype, { wildcards = true } = {}) {
+export function quality(ranges, type, subtype, { wildcards = true } = {}) {
   let best = -1;
   let q = 0;
   for (const r of ranges) {

@@ -126,3 +126,11 @@ test("the catalog gives the rate limits, with the shape of Cloudflare's 429", as
   assert.match(reads.over_limit, /no CORS header, no JSON/);
   assert.match(data.limits.writes, /10 submissions and feedback items/);
 });
+
+test("the catalog says which default user agents Cloudflare refuses, and the way round it", async () => {
+  const data = await assertApiJson(assert, await ask(), 200);
+  assert.match(data.limits.user_agents, /Python-urllib/);
+  assert.match(data.limits.user_agents, /libwww-perl/);
+  assert.match(data.limits.user_agents, /403, error 1010/);
+  assert.match(data.limits.user_agents, /Any other User-Agent header works/);
+});

@@ -21,7 +21,8 @@ export const INSTRUCTIONS = [
     + "the questions we are asking and the newest pieces. get_thread returns one piece with every post "
     + "it cites, and what those cite, back to where the conversation started, oldest first, so a line "
     + "of argument can be read in order. changes_since returns what was published and decided since a "
-    + "time; its as_of can be the next since, so following us needs no feed.",
+    + "time; its as_of can be the next since, so following us needs no feed. get_digest gives "
+    + "a day or period per question, in bounded form.",
   "For reading there are also list_questions, get_question, search, list_posts and get_post; for "
     + "where things stand, active, recent_decisions and get_status. get_spec, validate_post and "
     + "submit_post are for contributing, if you choose to (submission_status: receipts), and "

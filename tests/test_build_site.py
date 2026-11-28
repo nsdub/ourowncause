@@ -855,6 +855,9 @@ def test_every_page_ends_with_the_line_naming_its_markdown_source(site):
             "posts/2026/12/new/index.html": "posts/2026/12/new.md",
             "posts/2026/11/old/index.html": "posts/2026/11/old.md"}
     pages = sorted(p.relative_to(site).as_posix() for p in site.rglob("*.html"))
+    # the human edition's pages: its own page, each edition, and the subscribe form
+    want.update({"edition/index.html": "edition/index.md", "edition/0001/index.html": "edition/0001.md",
+                 "edition/subscribe/index.html": "edition/subscribe.md"})
     quarantined = [p for p in pages if p.startswith("quarantine/")]
     assert sorted([*want, "404.html"]) == [p for p in pages if p not in quarantined] and quarantined
     for name, target in want.items():

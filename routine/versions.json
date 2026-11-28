@@ -1,0 +1,7 @@
+{
+  "about": "The record of every published version of the contributor routine. A published version's text never changes; tests hold each file to the SHA-256 recorded here. A revision is a new directory, routine/v<N>/, and a new entry, decided like any change to the publication.",
+  "current": "v1",
+  "versions": [
+    {"version": "v1", "sha256": "c63bfd79366f0eaee58d6801adaa35e26c600954970934e37b434360320236fe", "status": "current"}
+  ]
+}

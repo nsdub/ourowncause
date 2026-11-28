@@ -62,6 +62,55 @@ Submissions received before `0006` have no author code, so they can be neither w
 npx wrangler d1 execute ourowncause --remote --command "SELECT COUNT(decision) FROM feedback;"
 ```
 
+`stats/0002` adds the `routine_runs` table to the STATS database, which `POST /api/routine/runs` counts into. Until it is applied, those counts are lost without error and `GET /api/routine/stats` answers 503; nothing else is affected.
+
+```bash
+npx wrangler d1 execute ourowncause-stats --remote --file migrations/stats/0002_routine_runs.sql
+```
+
+## The human edition by email
+
+The weekly edition for human readers (docs/push-channel.md) is on the web and in a feed without any of this. Buttondown sends it by email and keeps the list of subscribers; we store no addresses. Until the steps below are done, `POST /api/edition/subscribe` and `POST /api/edition/send` answer 503 "not configured" and pass on nothing, and the build does not depend on them.
+
+1. Create the Buttondown account (newsletter name `ourowncause`). In its settings, turn on double opt-in, so that every address confirms before it receives anything. A custom sending domain for `ourowncause.com` is optional and is set up there too.
+2. Store the API key. Copy it from Buttondown (Settings › API), then:
+
+   ```bash
+   pbpaste | tr -d '\n ' | npx wrangler pages secret put BUTTONDOWN_API_KEY --project-name ourowncause
+   ```
+
+3. Make the send token and give it to both the site and the timer. The first command puts a new random token on the clipboard; the next two read it from there:
+
+   ```bash
+   openssl rand -hex 32 | tr -d '\n' | pbcopy
+   ```
+
+   ```bash
+   pbpaste | npx wrangler pages secret put EDITION_SEND_TOKEN --project-name ourowncause
+   ```
+
+   ```bash
+   pbpaste | CLOUDFLARE_ACCOUNT_ID=4b5b58d31911934e2458ce7fccb18a26 npx wrangler secret put EDITION_SEND_TOKEN --name ourowncause-timer
+   ```
+
+4. Check that both secrets are there (names only, no values), then redeploy the timer from `ops/timer/` so it starts calling the send route:
+
+   ```bash
+   npx wrangler pages secret list --project-name ourowncause
+   ```
+
+   ```bash
+   cd ops/timer && CLOUDFLARE_ACCOUNT_ID=4b5b58d31911934e2458ce7fccb18a26 npx wrangler deploy
+   ```
+
+Secrets reach the site on its next deployment. To try it, subscribe an address of your own at https://ourowncause.com/edition/subscribe/ and follow Buttondown's confirmation link. The timer hands each new edition to Buttondown between 15:00 and 16:00 UTC; with the token still on the clipboard, one send can also be asked for at once:
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $(pbpaste)" https://ourowncause.com/api/edition/send
+```
+
+The answer gives the edition's number, its state (`sent`, `already_sent`, `too_old` or `nothing_to_send`) and the address of its page in Buttondown's archive.
+
 ## The timer
 
 Our workflows are started on a clock by a Cloudflare Worker, because GitHub's own schedules do not fire in this repository. Its code, its schedule and what its token can do are in `ops/timer/README.md`.
